@@ -8,3 +8,11 @@ export const QODER_ACCOUNT_PATH = "/plugins/dsh-connect-qoder/account";
 export const QODER_ACCOUNT_RELOAD_PATH = "/plugins/dsh-connect-qoder/account/reload";
 /** Plugin-owned write route: the one online confirmation of a region's sign-in. */
 export const QODER_ACCOUNT_CONFIRM_PATH = "/plugins/dsh-connect-qoder/account/confirm";
+/**
+ * Plugin-owned write route: claim the daily check-in.
+ *
+ * Region-scoped like `dsh-connect-workbuddy`'s equivalent route: the host owns
+ * which round is live and never lets the card name a campaign of its own, so a
+ * day-old round can never be claimed from a stale render.
+ */
+export const QODER_CHECKIN_PATH = "/plugins/dsh-connect-qoder/checkin";

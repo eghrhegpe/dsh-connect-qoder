@@ -44,6 +44,20 @@ export const zh = {
 	"usage.promotion": "限时特惠",
 	"usage.viewDetails": "查看详情",
 	"usage.credits": "Credits",
+	// The daily check-in. Wording follows dsh-connect-workbuddy's own
+	// check-in row so two sibling cards read alike in the same list: a
+	// three-state button plus a line telling you what today's round is
+	// worth. `checkinGranted` names a real amount only when the upstream
+	// confirmed this call paid out — a repeat claim grants nothing and must
+	// not be rendered as though it did.
+	"usage.checkin": "每日签到",
+	"usage.checkinAvailable": "今日可领 {amount} Credits",
+	"usage.checkinClaim": "立即签到",
+	"usage.checkinClaiming": "签到中…",
+	"usage.checkinClaimed": "今日已签到",
+	"usage.checkinGranted": "已领取 {amount} Credits",
+	"usage.checkinAlready": "今天这份已经领过了",
+	"usage.checkinError": "签到失败：{message}",
 	"account.reload": "重新读取登录状态",
 	"account.confirm": "在线校验登录",
 	"account.confirming": "校验中…",
@@ -135,6 +149,14 @@ export const en = {
 	"usage.promotion": "Limited offer",
 	"usage.viewDetails": "View details",
 	"usage.credits": "Credits",
+	"usage.checkin": "Daily check-in",
+	"usage.checkinAvailable": "{amount} Credits to claim today",
+	"usage.checkinClaim": "Check in",
+	"usage.checkinClaiming": "Claiming…",
+	"usage.checkinClaimed": "Checked in today",
+	"usage.checkinGranted": "Claimed {amount} Credits",
+	"usage.checkinAlready": "Already claimed today",
+	"usage.checkinError": "Check-in failed: {message}",
 	"account.reload": "Re-read sign-in",
 	"account.confirm": "Confirm online",
 	"account.confirming": "Confirming…",

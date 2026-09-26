@@ -1,7 +1,7 @@
 
 import * as react from "react"
 import * as react_jsx_runtime from "react/jsx-runtime"
-import { QODER_MODELS_PATH, QODER_USAGE_PATH, QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH } from "./paths"
+import { QODER_MODELS_PATH, QODER_USAGE_PATH, QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH, QODER_CHECKIN_PATH } from "./paths"
 import { writeSettingsField } from "./settings-write"
 /** The three per-model image choices this card writes. */
 const IMAGE_MODES = ["auto", "on", "off"];
@@ -267,8 +267,52 @@ function QuotaBlock({ t, label, quota, when, badge }) {
 	});
 }
 
+/**
+ * Today's check-in row.
+ *
+ * Assembled from parts this card already had — the `.dsm-qoder-row` frame and
+ * the pill button every other action uses — rather than new CSS, and shaped
+ * after `dsh-connect-workbuddy`'s check-in row so the two sibling cards read
+ * alike in the same settings list.
+ *
+ * Everything it decides comes from the state the host computed. An earlier bug
+ * in this family of cards rendered an off-peak price the card had worked out
+ * for itself while the picker charged another, so this row deliberately holds
+ * no arithmetic of its own: whether today's round exists, and whether it has
+ * been claimed, are answered upstream and merely rendered here.
+ */
+function CheckinRow({ t, checkin, busy, onClaim }) {
+	const claimed = checkin.todayCheckedIn === true;
+	const amount = typeof checkin.amount === "number" ? checkin.amount : undefined;
+	return (0, react_jsx_runtime.jsxs)("div", {
+		className: "dsm-qoder-row",
+		children: [
+			(0, react_jsx_runtime.jsxs)("div", {
+				className: "dsm-qoder-row-main",
+				children: [
+					(0, react_jsx_runtime.jsx)("span", {
+						className: "dsm-qoder-usage-badge dsm-qoder-usage-badge-offer",
+						children: t("usage.checkin")
+					}),
+					amount !== undefined && !claimed ? (0, react_jsx_runtime.jsx)("span", {
+						className: "dsm-qoder-name",
+						children: t("usage.checkinAvailable", { amount })
+					}) : null
+				]
+			}),
+			(0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "dsm-qoder-button",
+				disabled: busy || claimed,
+				onClick: onClaim,
+				children: busy ? t("usage.checkinClaiming") : claimed ? t("usage.checkinClaimed") : t("usage.checkinClaim")
+			})
+		]
+	});
+}
+
 /** One region's usage block, as returned by the host usage route. */
-function RegionUsage({ t, entry }) {
+function RegionUsage({ t, entry, checkinBusy = false, checkinNotice = undefined, onClaimCheckin = undefined }) {
 	if (entry.available !== true) {
 		return (0, react_jsx_runtime.jsxs)("div", {
 			className: "dsm-qoder-usage-block",
@@ -315,6 +359,28 @@ function RegionUsage({ t, entry }) {
 					})
 				]
 			}, `pack:${pack.id}:${index}`)),
+			// The check-in sits next to the add-on quota because that is where
+			// the Credits land, and disappears entirely when no round is
+			// running instead of leaving a permanently grey button behind.
+			entry.checkin !== undefined && entry.checkin.active === true ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
+				children: [
+					(0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-usage-sep" }),
+					(0, react_jsx_runtime.jsx)(CheckinRow, {
+						t,
+						checkin: entry.checkin,
+						busy: checkinBusy,
+						onClaim: onClaimCheckin
+					}),
+					checkinNotice !== undefined ? (0, react_jsx_runtime.jsx)("p", {
+						className: checkinNotice.kind === "error" ? "dsm-qoder-error" : "dsm-qoder-state",
+						children: checkinNotice.kind === "error" ? t("usage.checkinError", {
+							message: checkinNotice.message ?? ""
+						}) : checkinNotice.kind === "granted" && typeof checkinNotice.amount === "number" ? t("usage.checkinGranted", {
+							amount: checkinNotice.amount
+						}) : t("usage.checkinAlready")
+					}) : null
+				]
+			}) : null,
 			campaigns.length > 0 ? (0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-usage-sep" }) : null,
 			campaigns.map((camp) => (0, react_jsx_runtime.jsxs)("p", {
 				className: "dsm-qoder-usage-promo",
@@ -358,6 +424,8 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }) {
 	const [status, setStatus] = (0, react.useState)("loading");
 	const [notice, setNotice] = (0, react.useState)(undefined);
 	const [busy, setBusy] = (0, react.useState)(false);
+	const [claimBusy, setClaimBusy] = (0, react.useState)(false);
+	const [claimNotice, setClaimNotice] = (0, react.useState)(undefined);
 	const mounted = (0, react.useRef)(true);
 	(0, react.useEffect)(() => {
 		mounted.current = true;
@@ -386,6 +454,38 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }) {
 			if (mounted.current) setBusy(false);
 		}
 	}, []);
+	// The daily check-in goes through the host rather than to Qoder: only the
+	// host can say which round is live at the moment of the click, and a card
+	// that carried its own campaign id could claim a round that closed
+	// yesterday. The usage re-read follows every claim because the Credits land
+	// in the add-on quota rendered a few lines above the button.
+	const claimCheckin = (0, react.useCallback)(async () => {
+		setClaimBusy(true);
+		setClaimNotice(void 0);
+		try {
+			const response = await fetch(`${QODER_CHECKIN_PATH}?region=${encodeURIComponent(activeRegion)}`, {
+				method: "POST",
+				headers: { accept: "application/json" },
+				credentials: "same-origin"
+			});
+			const value = await response.json().catch(() => void 0);
+			if (!response.ok) throw new Error(value?.error ?? `HTTP ${response.status}`);
+			if (mounted.current) setClaimNotice({
+				kind: value?.replayed === true ? "already" : "granted",
+				// Absent when the upstream replayed the round: a repeat claim
+				// grants nothing, so no amount is printed for it.
+				amount: typeof value?.amount === "number" ? value.amount : void 0
+			});
+			await load(true);
+		} catch (error) {
+			if (mounted.current) setClaimNotice({
+				kind: "error",
+				message: error instanceof Error ? error.message : String(error)
+			});
+		} finally {
+			if (mounted.current) setClaimBusy(false);
+		}
+	}, [activeRegion, load]);
 	(0, react.useEffect)(() => {
 		void load(false);
 	}, [load]);
@@ -436,7 +536,15 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }) {
 			// just picks the one the strip has selected.
 			(() => {
 				const active = regions.find((entry) => entry.region === activeRegion);
-				if (active !== undefined) return (0, react_jsx_runtime.jsx)(RegionUsage, { t, entry: active });
+				if (active !== undefined) return (0, react_jsx_runtime.jsx)(RegionUsage, {
+					t,
+					entry: active,
+					checkinBusy: claimBusy,
+					checkinNotice: claimNotice,
+					onClaimCheckin: () => {
+						void claimCheckin();
+					}
+				});
 				// The selected edition has no quota entry yet — it is not
 				// signed in or not started — so say so instead of leaving
 				// the panel body empty under its header.

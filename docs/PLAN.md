@@ -354,6 +354,24 @@ cleanup 已结束，**永久泄漏**。
   `Sonus`/`Cantus` 这类**路由档位别名**（不是模型）；考虑给一组默认策展与可选默认模型；
   让 PAT 的账号状态（恒判 `ok`）与实际可用性对齐。
 
+- **P3-4 每日签到（已实现，2026-09-27）**：插件历史上只有读操作，签到是**第一个、也是当前唯一的写操作**——
+  这条边界是被有意打破的，必须在 README 与这里都写清。实现要点（便于上游漂移时回溯）：
+
+  - 协议：复用用量面板已经在读的 `GET /sash/api/v1/me/campaigns`，挑 `actionType === "CLAIM_BENEFIT"`
+    且 `claimStatus === "CLAIMABLE"` 的当轮；领取走 `POST .../campaigns/{campaignId}/claim`。
+    （`fetchCampaigns` 的旧只读副本只抽促销文案，新逻辑在 `lib/claim.js` + `lib/upstream.js` 的 `claimCampaign`。）
+  - 两个过滤器缺一不可：同一账号下还有 `VIEW_DETAILS` 活动同样带 `claimStatus:"CLAIMED"` 却无 benefit；
+    顶层 `claimable` 在「已领」与「没活动」时都是 `false`，且 `c.claimable` 字段根本不存在。判据以真实返回
+    （`test/claim.test.js`，2026-09-27 双区实测）锁死。
+  - **只手动、不自动**：卡片按钮三态（`立即签到`/`签到中…`/`今日已签到`），每次点击先重读活动取当轮 id，
+    绝不复用渲染时的旧 id（一天一轮，旧 id 即上一轮）；领取后 `invalidateUsage()` 作废用量缓存重读，
+    因为 Credits 落在 `addOnQuota`。`replayed` 幂等（重复领不发券），`expiresAt` 是 RFC 3339 字符串——
+    解析统一收口到 `lib/time.js`（曾因 `upstream.js`/`claim.js` 两份 `toEpochMs` 阈值漂移而漏解析）。
+  - 路由 loopback-only（403 守卫）、POST-only（405）、区域未知 404、失败 502 带原因；
+    「未开放 / 已领 / 登录失效」三档分流，不统一弹一句失败。
+  - 风险：这是替用户的账号去领额度，性质不同于读。README 免责声明与 P3-2 的「封禁/条款风险写显眼」在此闭合。
+    CN 免费层计划额度为 0，签到资源包是其唯一额度来源——价值高，但封禁成本也高，故**不做定时自动签到**。
+
 ---
 
 ## 7. PR 划分与依赖

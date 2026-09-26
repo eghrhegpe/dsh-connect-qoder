@@ -95,6 +95,24 @@ test('the real bundle function is under test, not a copy', () => {
   )
 })
 
+test('the check-in row and the route it posts to are in the shipped bundle', () => {
+  // The check-in is the card's only write action, so losing it in a rebuild is
+  // silent in every other sense: nothing else here would go red, the card would
+  // simply render one row fewer. Called out by name rather than by index into a
+  // rendered tree, which this bundle cannot produce anyway.
+  for (const needle of [
+    '/plugins/dsh-connect-qoder/checkin',
+    'todayCheckedIn',
+    'usage.checkinClaiming',
+  ]) {
+    assert.ok(
+      BUNDLE.includes(needle),
+      `lib/client.js is missing ${needle} — the daily check-in has been dropped from the shipped ` +
+        'card. Rebuild it from src/client/ instead of editing the bundle.',
+    )
+  }
+})
+
 test('a live promotion inside its hours is off-peak', () => {
   const state = offPeakState({ promotion: P }, at('2026-09-26T23:30:00+08:00'))
   assert.strictEqual(state?.active, true)
