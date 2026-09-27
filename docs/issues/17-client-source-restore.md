@@ -26,7 +26,7 @@
 - 513–1903 这段**没有任何 region 标记**，是还原里最关键的一个未知量（见下）。
 - `test/client-bundle.test.js:50` 按 `function ${name}\([^)]*\) \{` 提取，配平花括号——**只依赖函数名与函数体文本**，不依赖所在文件，所以拆文件不会打断它。
 - `package.json`：只有 `test` / `test:coverage` / `verify:deploy`，无 `build`。
-- `test/KNOWN_GAPS.md:76-99` 已把"src 入库"列为价值最高的待办。
+- `docs/KNOWN_GAPS.md:76-99` 已把"src 入库"列为价值最高的待办。
 
 **对照组（本机已装）**：`.dsh/profiles/web/node_modules/dsh-connect-workbuddy@2.1.0` 的 bundle 同样保留 region 标记，源码结构是
 
@@ -49,7 +49,7 @@ src/client/index.tsx             ~80 行，只做注册
 
 | 脚本 | 作用 |
 |---|---|
-| `scripts/restore-client-src.mjs` | 按 region 机械切分产物 → `src/client/*.ts`（去缩进、`require`→`import`、`exports.x`→`export`、反推跨文件 import 图） |
+| `docs/history/restore-client-src.mjs` | 按 region 机械切分产物 → `src/client/*.ts`（去缩进、`require`→`import`、`exports.x`→`export`、反推跨文件 import 图） |
 | `scripts/build-client.mjs` | 从 `src/` 重建产物并与入库产物比较（`--tsdown` 换 bundler，`--write` 才写 `lib/`） |
 
 还原出的 import 图（从符号引用反推，非猜测）：`card → paths, settings-write`；`index → styles, copy, card`。
@@ -122,7 +122,7 @@ CI 侧新增**独立** build job（`build` → `git diff --exit-code lib/client.
 
 ## 验收标准
 
-- [x] `node scripts/restore-client-src.mjs` 可从当前 `lib/client.js` 稳定重放出 `src/client/`
+- [x] `node docs/history/restore-client-src.mjs` 可从当前 `lib/client.js` 稳定重放出 `src/client/`
 - [x] `node scripts/build-client.mjs --tsdown` 成功，且报告的差异都属辅助头/格式化/常量折叠，无逻辑行缺失
 - [x] 重建产物仍含 `offPeakState` / `rateAt` / `windowLabelOf` / `QoderPluginCard` / `writeSettingsField` 等关键符号
 - [x] `test/client-bundle.test.js` 对重建产物仍全绿（提取仍成功）——全套 269 通过 / 0 失败

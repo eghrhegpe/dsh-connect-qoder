@@ -10,7 +10,7 @@
 2. **文档与事实不符**：
    - README 的"零配置"只在 Windows 成立（凭据链只有 PowerShell + DPAPI，其它平台只剩 `QODER_PAT` 环境变量）；
    - README 里两处 503 是两件不同的事（可发生的 `settings-save.js:171-180` vs 不可达的 `index.js:884-887`）；
-   - `test/KNOWN_GAPS.md:171-173` 的基线（branches 87.38）与实测（86.37）不符，
+   - `docs/KNOWN_GAPS.md:171-173` 的基线（branches 87.38）与实测（86.37）不符，
      安全垫被夸大约 43%；凭据层那批零覆盖**未登记**，而 README:203 声称缺口都登记在 KNOWN_GAPS。
 3. **默认不策展**：默认不过滤 → 选择器灌入 31 项（CN 14 + 全球 17），含
    `Auto`/`Ultimate`/`Performance`/`Efficient`/`Sonus`/`Cantus` 这类**路由档位别名**（不是模型）；

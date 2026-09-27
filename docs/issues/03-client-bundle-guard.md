@@ -13,7 +13,7 @@
 - `test/client-bundle.test.js:49-96`（正则 + 花括号配平 + `new Function` 提取，
   外加一句 `source.includes('promo.active !== true')`）
 - `package.json`：只有 `test` / `test:coverage` / `verify:deploy`，无 `build`
-- `test/KNOWN_GAPS.md:76-99`：自己把"src 入库"列为价值最高的待办
+- `docs/KNOWN_GAPS.md:76-99`：自己把"src 入库"列为价值最高的待办
 - 真实事故：提交 `5206c4c` 曾把 16 字节 `// gutted stub` 作为 `lib/client.js` 提交
   （`lib/client.js | 1971 +---`），卡片/样式/设置写入整体消失而模型通道照常；
   已 amend 为 `61f8aaf`

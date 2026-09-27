@@ -9,17 +9,17 @@
 `upstream.js` 行覆盖 49.93% / 函数 38.89%（SSE 主循环、目录抓取整段未覆盖）；
 `credentials.js` 的整条 PowerShell+DPAPI 链路 0%；`shim.js` 请求主段 0%。
 
-另外 `test/KNOWN_GAPS.md:171-173` 的基线数字已过期（branches 写 87.38，实测 86.37；
+另外 `docs/KNOWN_GAPS.md:171-173` 的基线数字已过期（branches 写 87.38，实测 86.37；
 functions 写 69.51，实测 72.62），把安全垫夸大了约 43%。
 
 ## 证据
 
 - `npm run test:coverage` 报告里没有 `adapter.js` / `client.js` / `index.js` 三行
-- `test/KNOWN_GAPS.md:19-62`（自己登记了这两条缺口的方案）
+- `docs/KNOWN_GAPS.md:19-62`（自己登记了这两条缺口的方案）
 
 ## 修法
 
-采用 `test/KNOWN_GAPS.md:39-62` 已给的两种方案之一：`--experimental-test-module-mocks` 桩掉
+采用 `docs/KNOWN_GAPS.md:39-62` 已给的两种方案之一：`--experimental-test-module-mocks` 桩掉
 `@deepseek-ai/*` 与 pi-ai；或把路由 handler 抽成 `(req, deps) => result` 纯函数
 （`applySettingsSave` 已证明可行）。顺带把凭据层的零覆盖缺口登记进 KNOWN_GAPS。
 

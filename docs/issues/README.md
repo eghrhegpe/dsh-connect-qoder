@@ -14,8 +14,8 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 
 | 文件 | 优先级 | 一句话 |
 |---|---|---|
-| [01-sweep-junction-zeroing.md](01-sweep-junction-zeroing.md) | P0 | sweep 跟随目录联接，把插件目录之外的文件清成 NUL |
-| [02-plaintext-key-residue.md](02-plaintext-key-residue.md) | P0 | 明文 `key.b64` 残留，回收只靠下次启动 |
+| [01-sweep-junction-zeroing.md](01-sweep-junction-zeroing.md) | ~~P0~~ **已修** | sweep 跟随目录联接，把插件目录之外的文件清成 NUL |
+| [02-plaintext-key-residue.md](02-plaintext-key-residue.md) | ~~P0~~ **部分修复** | 明文 `key.b64` 残留，回收只靠下次启动（Windows 锁定场景无法截断，见文） |
 | [03-client-bundle-guard.md](03-client-bundle-guard.md) | P0 | 产物被桩不报错（已出过一次事故） |
 | [04-empty-catalog-freeze.md](04-empty-catalog-freeze.md) | P0 | 刷新成功但 0 模型时目录冻结 |
 | [05-refreshedat-not-truthful.md](05-refreshedat-not-truthful.md) | P0 | "已更新（时间）"在刷新失败时照显 |

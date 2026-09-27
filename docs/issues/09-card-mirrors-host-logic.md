@@ -16,7 +16,7 @@
 - 窗口标签：`lib/pi-model.js:109-134` vs `lib/client.js:664-670`（`windowLabelOf`）
 - 测试守卫现状：`test/model-row.test.js:44-118` 是**手抄副本**；
   `test/client-bundle.test.js:87-96` 只是一句产物文本断言
-- `test/KNOWN_GAPS.md:76-99` 已把这条列为"价值最高的待办"
+- `docs/KNOWN_GAPS.md:76-99` 已把这条列为"价值最高的待办"
 
 ## 修法
 
