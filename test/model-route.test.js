@@ -222,7 +222,105 @@ test('missing settings are served as the defaults, not omitted', () => {
   assert.strictEqual(payload.useMaximumContextWindow, false)
 })
 
-test('the payload reports when it was rendered', () => {
-  const at = new Date('2026-09-26T23:30:00+08:00')
-  assert.strictEqual(build([runtimeOf('qoder-cn', [])], {}, at).refreshedAt, at.getTime())
+test('the payload reports when the rows were FETCHED, not when it was rendered', () => {
+  // This assertion used to demand the render time, and that was issue 05: a
+  // refresh that failed outright kept the last good catalog, so the payload
+  // still carried a brand-new "now" and the card rendered it as
+  // "已更新（刚刚）" — a claim about upstream data that nothing in the response
+  // had verified. The time shipped must be the fetch time, which does not move
+  // when nothing was fetched.
+  const fetchedAt = new Date('2026-09-26T14:00:00+08:00').getTime()
+  const runtime = runtimeOf('qoder-cn', [])
+  runtime.runtime.catalog.fetchedAt = fetchedAt
+
+  const renderedAt = new Date('2026-09-26T23:30:00+08:00')
+  assert.strictEqual(
+    build([runtime], {}, renderedAt).refreshedAt,
+    fetchedAt,
+    'a render nine hours later must not re-date a catalog fetched at 14:00',
+  )
+})
+
+test('no fetch has ever happened means no time is reported, not a fabricated one', () => {
+  // A fresh install has a store that never fetched. Reporting "now" there is the
+  // same lie as reporting "now" after a failure, so the field is absent and the
+  // card shows no timestamp at all.
+  const payload = build([runtimeOf('qoder-cn', [])], {}, new Date('2026-09-26T23:30:00+08:00'))
+  assert.strictEqual(payload.refreshedAt, undefined)
+})
+
+test('the reported time is the OLDEST region fetch, not the newest', () => {
+  // Two regions at different ages: vouching for the newer one would claim the
+  // older one's rows are equally current, and a failure since then would be
+  // invisible. The minimum is the only honest single number.
+  const early = runtimeOf('qoder-cn', [])
+  early.runtime.catalog.fetchedAt = new Date('2026-09-26T14:00:00+08:00').getTime()
+  const late = runtimeOf('qoder', [])
+  late.runtime.catalog.fetchedAt = new Date('2026-09-26T22:00:00+08:00').getTime()
+
+  assert.strictEqual(
+    build([early, late], {}, new Date('2026-09-26T23:30:00+08:00')).refreshedAt,
+    early.runtime.catalog.fetchedAt,
+  )
+  // Order must not matter — the oldest wins whichever way round they arrive.
+  assert.strictEqual(
+    build([late, early], {}, new Date('2026-09-26T23:30:00+08:00')).refreshedAt,
+    early.runtime.catalog.fetchedAt,
+  )
+})
+
+test('a region that never fetched does not drag the reported time to zero', () => {
+  // A runtime whose store has never fetched (no sign-in yet) is not evidence
+  // that everything is stale; it simply has nothing to contribute.
+  const fetched = runtimeOf('qoder-cn', [])
+  fetched.runtime.catalog.fetchedAt = new Date('2026-09-26T14:00:00+08:00').getTime()
+  const never = runtimeOf('qoder', [])
+
+  assert.strictEqual(build([fetched, never], {}, NOW).refreshedAt, fetched.runtime.catalog.fetchedAt)
+})
+
+test('a stale region is named, with the reason, instead of being inferred from a time', () => {
+  // Issue 05's other half. A payload that says "updated 14:00" without saying
+  // WHY leaves the reader to guess, and the card guessed wrong by showing a
+  // successful-looking stamp. The reason has to survive the round trip, and the
+  // protocol one has to stay distinct from a transient one.
+  const stale = runtimeOf('qoder-cn', [entryFor()])
+  stale.runtime.refreshFailed = {
+    reason: 'protocol-shape-changed',
+    error: new Error('Qoder replied in a shape this plugin does not recognise (no `chat` group)'),
+  }
+  const healthy = runtimeOf('qoder', [entryFor({ key: 'B', name: 'B' })])
+  healthy.runtime.catalog.fetchedAt = new Date('2026-09-26T14:00:00+08:00').getTime()
+
+  const payload = build([stale, healthy], {}, NOW)
+  assert.strictEqual(payload.refreshFailures.length, 1)
+  assert.strictEqual(payload.refreshFailures[0].region, 'qoder-cn')
+  assert.strictEqual(payload.refreshFailures[0].reason, 'protocol-shape-changed')
+  assert.match(payload.refreshFailures[0].detail, /no `chat` group/)
+})
+
+test('a healthy payload reports no failures rather than omitting the field', () => {
+  // Sent as an empty array, so the card's check is a comparison instead of an
+  // `in` check on a key that may be missing.
+  const runtime = runtimeOf('qoder-cn', [entryFor()])
+  runtime.runtime.catalog.fetchedAt = NOW.getTime()
+  assert.deepStrictEqual(build([runtime], {}, NOW).refreshFailures, [])
+})
+
+test('a failed refresh does not change the rows the payload serves', () => {
+  // The three outcomes of issue 04, as the route sees them. A fetch failure and
+  // a protocol change both keep the previous catalog — the point is that what is
+  // SERVED is unchanged, while `refreshFailures` says why.
+  const withRows = (failure) => {
+    const runtime = runtimeOf('qoder-cn', [entryFor()])
+    runtime.runtime.catalog.fetchedAt = new Date('2026-09-26T14:00:00+08:00').getTime()
+    if (failure !== undefined) runtime.runtime.refreshFailed = failure
+    return build([runtime], {}, NOW)
+  }
+  const ok = withRows()
+  for (const failure of [{ reason: 'fetch', error: new Error('HTTP 500') }, { reason: 'credential' }]) {
+    const payload = withRows(failure)
+    assert.deepStrictEqual(payload.models, ok.models, 'a stale catalog is still the best answer')
+    assert.strictEqual(payload.refreshedAt, ok.refreshedAt, 'and its age does not move')
+  }
 })

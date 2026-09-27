@@ -186,6 +186,35 @@ function rateAt(model, now) {
 }
 
 /**
+ * The one refresh verdict this card should show, from the host's report.
+ *
+ * A pure function of `value` so the decision can be tested against the shipped
+ * bundle (see test/protocol-shape-card.test.js) rather than only by reading JSX.
+ *
+ * The host sends `{ refreshedAt, refreshFailures }`. Three outcomes, kept apart
+ * on purpose — collapsing them is the bug this replaces:
+ *
+ * - **no failure** → `null`: the rows shown are the last upstream answer, and
+ *   the "已更新（time）" stamp is honest.
+ * - **a transient failure** (`fetch` / `credential` / `no-credential`) → the
+ *   stamp still shows, marked stale, because the rows on screen are real, just
+ *   old. The user's next move is to retry.
+ * - **`protocol-shape-changed`** → the envelope moved and the plugin is out of
+ *   date. This is the case that used to be indistinguishable from a queue: the
+ *   user was told to re-sign, or waited out a retry ladder that could not
+ *   possibly help. Neither appears here — the copy points at a plugin update.
+ *
+ * The protocol verdict wins over a transient one in the same payload, since it
+ * is the one that cannot resolve on its own.
+ */
+function refreshNoticeKey(value) {
+	const failures = Array.isArray(value?.refreshFailures) ? value.refreshFailures : [];
+	if (failures.length === 0) return null;
+	if (failures.some((f) => f?.reason === "protocol-shape-changed")) return "protocol-shape-changed";
+	return "transient";
+}
+
+/**
  * The set of model ids currently ticked, given what the host reported.
  *
  * The host stores an empty list as "no filter" (every model shows), so the
@@ -987,6 +1016,12 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 	const [notice, setNotice] = (0, react.useState)(undefined);
 	const [refreshing, setRefreshing] = (0, react.useState)(false);
 	const [refreshedAt, setRefreshedAt] = (0, react.useState)(undefined);
+	// The host's own verdict about the last refresh, folded to one of
+	// `null` / "transient" / "protocol-shape-changed" by refreshNoticeKey.
+	// Kept apart from `notice` (which is the save/discard banner) so an
+	// upstream problem never borrows the save banner's styling, and from
+	// `status` (which is about whether the ROUTE answered at all).
+	const [refreshFailure, setRefreshFailure] = (0, react.useState)(null);
 	// Bumped when the account panel's re-read lands; the usage panel
 	// treats a non-zero value as "force a fresh quota pull".
 	const [usageBump, setUsageBump] = (0, react.useState)(0);
@@ -1073,7 +1108,14 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 				setEnabledIds(savedEnabled);
 				setSavedEnabledIds(savedEnabled);
 			}
-			setRefreshedAt(typeof value.refreshedAt === "number" ? value.refreshedAt : Date.now());
+			// The host sends when the rows were FETCHED, not when this response
+			// was rendered. The old `else Date.now()` fallback was the browser
+			// half of issue 05: a route that answered while every refresh was
+			// failing still stamped a brand-new time, so the card claimed a
+			// successful update it had no evidence for. Without a number there is
+			// nothing honest to show, so nothing is shown.
+			setRefreshedAt(typeof value.refreshedAt === "number" ? value.refreshedAt : undefined);
+			setRefreshFailure(refreshNoticeKey(value));
 			setStatus("ready");
 		} catch (error) {
 			if (!mounted.current || signal?.aborted === true) return;
@@ -1466,7 +1508,22 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 							children: t(regionAllTicked ? "row.disableAll" : "row.enableAll")
 						}), refreshedAt !== undefined && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
 							className: "dsm-qoder-state",
-							children: t("row.refreshed", { time: new Date(refreshedAt).toLocaleTimeString() })
+							// Three shapes, one slot. A protocol change replaces the
+							// timestamp entirely rather than decorating it: the time
+							// of a last successful fetch is not useful next to "your
+							// plugin is out of date", and offering a time there
+							// invites the user to believe the rows are current.
+							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : t(refreshFailure === "transient" ? "row.refreshStale" : "row.refreshed", { time: new Date(refreshedAt).toLocaleTimeString() })
+						}) : refreshFailure !== null && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
+							// No fetch has ever succeeded for this profile, so there is
+							// no time to show — but the failure is still true and still
+							// needs to be visible. This is the state a fresh install
+							// with a broken protocol lands in, so swallowing it here
+							// would restore the original "everything looks fine"
+							// reading for exactly the case that matters.
+							className: "dsm-qoder-state",
+							title: refreshFailure === "protocol-shape-changed" ? undefined : t("row.refreshFailed", { reason: refreshFailure }),
+							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : t("row.refreshFailed", { reason: refreshFailure })
 						}) : null]
 					}),
 					(0, react_jsx_runtime.jsxs)("div", {

@@ -36,6 +36,14 @@ export const zhRow = {
 	"row.refreshModels": "刷新计费",
 	"row.refreshing": "正在刷新…",
 	"row.refreshed": "已更新（{time}）",
+	// Issue 05: the host now ships the fetch time and names a stale region,
+	// so the card can say what it knows instead of stamping "now" on a refresh
+	// that never happened. A protocol change gets its own wording on purpose —
+	// its fix is a plugin update, so pointing at a re-sign-in would send the
+	// user through a ritual that cannot possibly work.
+	"row.refreshStale": "上次更新：{time}（刷新失败）",
+	"row.refreshFailed": "刷新失败：{reason}",
+	"row.protocolChanged": "Qoder 的接口返回了本插件不认识的格式——请更新插件（重新登录没有用）",
 	"row.offPeakOn": "错峰价",
 	"row.offPeakOff": "标准价",
 	"row.offPeakUntil": "{time} 后切换",
@@ -86,6 +94,9 @@ export const enRow = {
 	"row.refreshModels": "Refresh rates",
 	"row.refreshing": "Refreshing…",
 	"row.refreshed": "Updated ({time})",
+	"row.refreshStale": "Last updated: {time} (refresh failed)",
+	"row.refreshFailed": "Refresh failed: {reason}",
+	"row.protocolChanged": "Qoder replied in a format this plugin does not recognise — update the plugin (signing in again will not help)",
 	"row.offPeakOn": "off-peak",
 	"row.offPeakOff": "standard",
 	"row.offPeakUntil": "switches in {time}",

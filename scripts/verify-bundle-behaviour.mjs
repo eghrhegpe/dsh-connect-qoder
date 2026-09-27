@@ -42,6 +42,11 @@ const PROBES = [
   'parseClock', 'localSecondsOf', 'offPeakState', 'rateAt', 'rateLabelOf',
   'windowLabelOf', 'formatCountdown', 'formatContextWindowForUi',
   'enabledIdsFor', 'imageModeOf', 'initialOpenForView', 'fieldSnapshot', 'withDate',
+  // The card's refresh verdict (issue 05 / issue 10). It is pure and it decides
+  // whether the user is told to update the plugin or to try again, so it belongs
+  // in this comparison like every other pure function of the card: a rebuild that
+  // dropped or inverted it must not pass as "behaves like its baseline".
+  'refreshNoticeKey',
 ]
 
 /** Serialise anything, including `undefined`, functions and Dates. */
@@ -115,6 +120,13 @@ const POOL = [
   { promotion: PROMO },
   { promotion: { ...PROMO, active: false } },
   { models: [{ id: 'a', enabled: true }, { id: 'b' }] },
+  // Host payloads carrying the refresh verdict. Without these every probe
+  // argument would collapse to "no failures", and a card that had lost the
+  // protocol-change branch would still be called identical.
+  { refreshedAt: 1, refreshFailures: [] },
+  { refreshedAt: 1, refreshFailures: [{ region: 'qoder', reason: 'fetch' }] },
+  { refreshedAt: 1, refreshFailures: [{ region: 'qoder-cn', reason: 'protocol-shape-changed' }] },
+  { refreshedAt: 1, refreshFailures: 'not-an-array' },
   new Date('2026-09-26T23:30:00+08:00'),
   new Date('2026-09-26T12:00:00+08:00'),
 ]
