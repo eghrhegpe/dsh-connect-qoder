@@ -158,7 +158,7 @@ test('installNamesFor lists both name spellings for a scoped package', () => {
   // hide behind the rename.
   const repo = mkdtempSync(join(tmpdir(), 'qoder-drift-names-'))
   temporaries.push(repo)
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.2.1' }))
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.3.0' }))
   assert.deepStrictEqual(
     installNamesFor(repo),
     ['@eghrhegpe/dsh-connect-qoder', 'dsh-connect-qoder'],
@@ -180,7 +180,7 @@ test('installsIn finds both the scoped install and a stale bare-era copy', () =>
   // installsIn actually looks in both.
   const repo = mkdtempSync(join(tmpdir(), 'qoder-drift-names-'))
   temporaries.push(repo)
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.2.1' }))
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.3.0' }))
 
   const home = mkdtempSync(join(tmpdir(), 'qoder-drift-home-'))
   temporaries.push(home)
@@ -198,7 +198,7 @@ test('installsIn finds both the scoped install and a stale bare-era copy', () =>
 test('installsIn returns nothing when neither spelling is installed', () => {
   const repo = mkdtempSync(join(tmpdir(), 'qoder-drift-names-'))
   temporaries.push(repo)
-  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.2.1' }))
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.3.0' }))
   const home = mkdtempSync(join(tmpdir(), 'qoder-drift-home-'))
   temporaries.push(home)
   mkdirSync(join(home, 'profiles', 'web', 'node_modules'), { recursive: true })
