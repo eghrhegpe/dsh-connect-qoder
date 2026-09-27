@@ -55,7 +55,7 @@ function readVersion(dir) {
  * The directory names a profile can hold this plugin under.
  *
  * pnpm places an install at `node_modules/<dependency name>`, and the
- * dependency name is this package's `name` — which the 0.3.1 rename moved
+ * dependency name is this package's `name` — which the 0.3.2 rename moved
  * from the bare spelling to the scoped one. Copies installed before that
  * rename still sit at the bare path, so drift must be checked under BOTH
  * spellings; a script that only knew its own era's name reports "not

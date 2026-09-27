@@ -132,7 +132,7 @@ const HEADER =
  * The host keys the client bundle on exactly the dependency name the profile
  * carries, and a bundle that registers itself under any other id executes and
  * vanishes: "already executed without registering <name>; loaded without
- * registering <name> via __ModuleLoader__.load". The 0.3.1 scoped rename
+ * registering <name> via __ModuleLoader__.load". The 0.3.2 scoped rename
  * turned the old literal into that failure; deriving the id makes a future
  * rename a one-line change in package.json.
  */

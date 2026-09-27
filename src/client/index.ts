@@ -68,7 +68,7 @@ function apply(ctx) {
 	 * `ledger.bundles.has(openPkg.name)`, and that set is read back from
 	 * these very slot registrations — a card registered under a key nobody
 	 * installs as a dependency is invisible even though `apply` ran.
-	 * The 0.3.1 scoped rename made that real: profiles may carry this
+	 * The 0.3.2 scoped rename made that real: profiles may carry this
 	 * bundle as either bare `dsh-connect-qoder` (the historical name) or
 	 * scoped `@eghrhegpe/dsh-connect-qoder` (the npm name), so each key is
 	 * registered in both identities. Registration itself degrades to a
