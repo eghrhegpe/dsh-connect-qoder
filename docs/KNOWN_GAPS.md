@@ -229,7 +229,7 @@
   地板：防的是"悄悄说谎"，防不了"写一句没用的真话"。
 - **覆盖率门槛已建立**（本条的前两版登记「没有阈值」，现已不成立）：
   `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=85
-  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 77.91 / 85.63 /
+  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 77.99 / 85.70 /
   76.24）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
   被挡住」——那还得看本文件。
 - **`verify:bundle` 的时钟脆弱性已根治**（原登记为"待根治"）：`offPeakState` / `rateAt` /

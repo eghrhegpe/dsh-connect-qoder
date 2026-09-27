@@ -116,3 +116,42 @@ test('the two sites do not drift into the same mode', () => {
   const post = /readAccountState\(([^)]*)\)/.exec(handlerFor('QODER_ACCOUNT_RELOAD_PATH'))
   assert.notStrictEqual(get?.[1], post?.[1], 'the render path and the re-read path must differ')
 })
+
+test('a zero-region activation keeps the card routes registered', () => {
+  // "No region started" is the NORMAL state of a fresh install — nobody has
+  // signed in yet. It used to `return` from `apply` right where the routes are
+  // mounted below, so every card fetch 404'd and the panel said "读取账号状态失败"
+  // instead of the copy that explains it, and — worse — the reload route that
+  // brings a region online was itself never mounted, making the documented
+  // "re-sign in, it appears without restarting DSH" path unreachable from a fresh
+  // install, which is the only case it exists for.
+  const activation = HOST.slice(HOST.indexOf('export async function apply('), HOST.length)
+  const zeroRegion = /if \(started\.length === 0\) \{[\s\S]*?\n  \}/.exec(activation)
+  assert.ok(zeroRegion !== null, 'the zero-region branch is gone; where does activation go now?')
+  // Match a `return` STATEMENT, not the word: the branch's own comment explains
+  // at length why it must not return, and a plain /return/ would match that.
+  assert.doesNotMatch(
+    zeroRegion[0],
+    /^\s*return\b/m,
+    'a zero-region activation must NOT return — the card routes are mounted after this point',
+  )
+})
+
+test('a zero-region publish is a no-op rather than a throw', () => {
+  // `createQoderAdapter` refuses an empty region set by design, so both adapter
+  // construction sites have to tolerate zero regions. `publishRegions` is the
+  // one the reload route reaches, and an uncaught throw there would take the
+  // whole route down.
+  const publish = /function publishRegions\(\) \{[\s\S]*?\n  \}/.exec(HOST)
+  assert.ok(publish !== null, 'lib/index.js no longer has a publishRegions')
+  assert.match(
+    publish[0],
+    /started\.length === 0\) return \{ ok: true \}/,
+    'publishRegions must answer "nothing to do" when no region started, not call createQoderAdapter',
+  )
+  assert.match(
+    HOST,
+    /let adapter = started\.length > 0 \? buildAdapter\(\) : undefined/,
+    'the initial adapter build must tolerate an empty region set',
+  )
+})
