@@ -64,7 +64,10 @@ function handlerFor(pathConst) {
 function payloadBuilder() {
   const at = HOST.indexOf('const accountPayload =')
   assert.notStrictEqual(at, -1, 'lib/index.js no longer builds an account payload')
-  return HOST.slice(at, at + 2000)
+  // Generous: the builder now carries the async reader, the mode selection and
+  // the concurrent region read, and a tight window truncates exactly the lines
+  // these assertions are about.
+  return HOST.slice(at, at + 2600)
 }
 
 test('the shared payload builder — the render path — reads the cached credential', () => {
@@ -76,11 +79,18 @@ test('the shared payload builder — the render path — reads the cached creden
   // is `appDataRootFor()`, so a lazy `[^)]*` would stop at its closing paren and
   // report a failure that says nothing about the flags.
   const builder = payloadBuilder()
-  assert.match(builder, /readAccountState\(/, 'the account payload builder must call readAccountState')
+  assert.match(builder, /readAccountStateAsync\(/, 'the account payload builder must call the async reader')
   assert.match(
     builder,
-    /readAccountState\([\s\S]{0,120}?cachedOnly: true/,
-    'the account payload must read with { cachedOnly: true } — a fresh unwrap here blocks every render',
+    /\{ cachedOnly: true \}/,
+    'the account payload must default to the cached read — a fresh unwrap here blocks every render',
+  )
+  // And the default really is the cached branch: `mode` is a ternary whose false
+  // arm is `cachedOnly`, so an edit that flipped the arms would show up here.
+  assert.match(
+    builder,
+    /force \? \{ force: true \} : \{ cachedOnly: true \}/,
+    'the render path must be the cached arm, not the forced one',
   )
 })
 
@@ -119,14 +129,39 @@ test('the shared builder reads cached by default and forced on request', () => {
   // One builder, two modes, and they must not be the same. `force ? { force: true }
   // : { cachedOnly: true }` is the whole decision; collapsing it to one mode is
   // the regression this file has been written against twice.
+  // Matched with a window rather than inside the parentheses: the first argument
+  // is `appDataRootFor()`, so a lazy `[^)]*` would stop at its closing paren and
+  // report a failure that says nothing about the flags. The mode is computed
+  // once into `mode` and passed on, so that is what is matched — and the reader
+  // is awaited, because the forced path unwraps (that is the whole point of the
+  // async entry point).
   const builder = payloadBuilder()
-  // A lazy `[^)]*` cannot span the nested call now that the first argument is
-  // `appDataRootFor()` rather than `process.env.APPDATA`, so the flags are
-  // matched within a window around the call instead of inside its parentheses.
+  assert.match(builder, /readAccountStateAsync\(/, 'the account payload must use the ASYNC reader')
   assert.match(
     builder,
-    /readAccountState\([\s\S]{0,120}?force \? \{ force: true \} : \{ cachedOnly: true \}/,
+    /const mode = force \? \{ force: true \} : \{ cachedOnly: true \}/,
     'accountPayload must take its read mode from its argument',
+  )
+  assert.match(
+    builder,
+    /readAccountStateAsync\(region, appDataRootFor\(\), mode\)/,
+    'and every region must be read in that mode',
+  )
+})
+
+test('the account payload is awaited, so a forced re-read does not freeze DSH', () => {
+  // The forced path DOES unwrap — ~0.5 s of PowerShell per region measured. A
+  // builder that answered synchronously would put that back on the host's event
+  // loop, which is the whole thing the async reader exists to avoid.
+  assert.match(
+    payloadBuilder(),
+    /async \(\{ force = false \} = \{\}\) =>/,
+    'accountPayload must be async — it awaits a reader that may unwrap',
+  )
+  assert.match(
+    payloadBuilder(),
+    /await Promise\.all\(/,
+    'and the regions must be read concurrently, not one 0.5 s freeze after another',
   )
 })
 
@@ -138,7 +173,7 @@ test('the two account routes answer with the SAME shape', () => {
   // one it just wrote.
   assert.match(
     handlerFor('QODER_ACCOUNT_RELOAD_PATH'),
-    /sendJson\(res, 200, accountPayload\(/,
+    /sendJson\(res, 200, await accountPayload\(/,
     'the reload route must send the shared payload, not a narrower object literal',
   )
   assert.doesNotMatch(

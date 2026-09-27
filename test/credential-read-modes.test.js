@@ -30,7 +30,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { readAccountState } from '../lib/account-state.js'
+import { readAccountState, readAccountStateAsync } from '../lib/account-state.js'
 
 const REGION = {
   id: 'qoder-cn',
@@ -60,25 +60,24 @@ function recordingReader(result = undefined) {
   }
 }
 
-test('the default read injects nothing extra', () => {
+test('the default read injects nothing extra', async () => {
   const reader = recordingReader()
-  readAccountState(REGION, '/nonexistent', { ...reader, loadEnvCredential: () => undefined })
+  await readAccountState(REGION, '/nonexistent', { ...reader, loadEnvCredential: () => undefined })
   assert.deepStrictEqual(reader.calls, [undefined], 'the default read must not carry a mode flag')
 })
 
-test('cachedOnly is routed to the cached reader, which never unwraps', () => {
+test('cachedOnly is routed to the cached reader, which never unwraps', async () => {
   // This is the assertion that matters for issue 07, and it cannot be made by
   // injecting a reader — an injected reader replaces the very dispatch under
-  // test. So the real `loadCredential` is used against a directory that exists
-  // but holds no credential: if the cached path were not taken, the real
-  // `oscryptKeyFor` would try to unwrap and (on a machine with PowerShell) pay
-  // a subprocess for it. A missing `Local State` keeps that cheap and inert
+  // test. So the real reader is used against a directory that exists but holds
+  // no credential: if the cached path were not taken, the real unwrap would try
+  // to spawn PowerShell. A missing `Local State` keeps that cheap and inert
   // while still exercising the branch, and the state it yields is the one the
   // panel must show.
   const root = mkdtempSync(join(tmpdir(), 'qoder-readmode-'))
   try {
     mkdirSync(join(root, 'com.qodercn.app.stable'), { recursive: true })
-    const record = readAccountState(REGION, root, {
+    const record = await readAccountStateAsync(REGION, root, {
       loadEnvCredential: () => undefined,
       cachedOnly: true,
     })
@@ -89,7 +88,7 @@ test('cachedOnly is routed to the cached reader, which never unwraps', () => {
   }
 })
 
-test('force reaches the unwrap path and produces the same state', () => {
+test('force reaches the unwrap path and produces the same state', async () => {
   // The counterpart: the user-driven re-read must NOT be answered from a
   // remembered failure, or the button would do nothing. With a real directory
   // and no key, both modes legitimately end at `needs-app` — what is asserted
@@ -97,7 +96,7 @@ test('force reaches the unwrap path and produces the same state', () => {
   const root = mkdtempSync(join(tmpdir(), 'qoder-readmode-'))
   try {
     mkdirSync(join(root, 'com.qodercn.app.stable'), { recursive: true })
-    const forced = readAccountState(REGION, root, {
+    const forced = await readAccountStateAsync(REGION, root, {
       loadEnvCredential: () => undefined,
       force: true,
     })
@@ -110,7 +109,7 @@ test('force reaches the unwrap path and produces the same state', () => {
   }
 })
 
-test('an explicit reader wins over the mode flags', () => {
+test('an explicit reader wins over the mode flags', async () => {
   // Dependency injection must keep working: the test suite (and any future
   // caller with its own reader) passes a reader and expects it to be used
   // verbatim, whatever the flags say. This is also why the two tests above
@@ -126,7 +125,7 @@ test('an explicit reader wins over the mode flags', () => {
   assert.deepStrictEqual(reader.calls, [undefined], 'an injected reader is called with no extra options')
 })
 
-test('all three modes report the same state from the same store', () => {
+test('all three modes report the same state from the same store', async () => {
   // The modes are a performance axis, not a semantic one. A mode that changed
   // the ANSWER would make the account panel lie depending on how it was
   // refreshed — the class of bug this repository keeps finding.
@@ -142,7 +141,7 @@ test('all three modes report the same state from the same store', () => {
     source: 'app',
   }
   for (const options of [{}, { cachedOnly: true }, { force: true }]) {
-    const record = readAccountState(REGION, '/nonexistent', {
+    const record = await readAccountState(REGION, '/nonexistent', {
       loadCredential: () => credential,
       loadEnvCredential: () => undefined,
       ...options,

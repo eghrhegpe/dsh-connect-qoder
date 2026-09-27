@@ -61,22 +61,29 @@ const envCred = {
   source: 'env-pat',
 }
 
-/** One app directory that `readAccountState` can probe, cleaned up on exit. */
-function withDir(root, dirName, run) {
+/**
+ * One app directory that `readAccountState` can probe, cleaned up on exit.
+ *
+ * Async because the reader is: `run` is awaited, so the directory is removed
+ * AFTER the verdict is produced. A synchronous `run()` here would return before
+ * the reader had answered, and the cleanup would pull the directory out from
+ * under it.
+ */
+async function withDir(root, dirName, run) {
   const dir = join(root, dirName)
   // A plain `mkdirSync`, not `mkdtempSync`: the reader probes by exact
   // directory name, and the temp helper would append random characters and
   // the probe would miss it.
   mkdirSync(dir)
   try {
-    run()
+    await run()
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 }
 
-test('a readable app credential is `ok`, with its local identity', () => {
-  const record = readAccountState(REGION, '/nonexistent/appdata', {
+test('a readable app credential is `ok`, with its local identity', async () => {
+  const record = await readAccountState(REGION, '/nonexistent/appdata', {
     loadCredential: () => appCred,
     loadEnvCredential: () => undefined,
   })
@@ -89,8 +96,8 @@ test('a readable app credential is `ok`, with its local identity', () => {
   assert.strictEqual(record.detail, undefined)
 })
 
-test('an env PAT is `ok` too — the PAT itself never expires locally', () => {
-  const record = readAccountState(REGION, '/nonexistent/appdata', {
+test('an env PAT is `ok` too — the PAT itself never expires locally', async () => {
+  const record = await readAccountState(REGION, '/nonexistent/appdata', {
     loadCredential: () => undefined,
     loadEnvCredential: () => envCred,
   })
@@ -101,8 +108,8 @@ test('an env PAT is `ok` too — the PAT itself never expires locally', () => {
   assert.strictEqual(record.identity.expiresAt, undefined)
 })
 
-test('an expired app credential is `expired`, not `ok`', () => {
-  const record = readAccountState(REGION, '/nonexistent/appdata', {
+test('an expired app credential is `expired`, not `ok`', async () => {
+  const record = await readAccountState(REGION, '/nonexistent/appdata', {
     loadCredential: () => ({ ...appCred, expired: true, expiresAt: Date.now() - 1000 }),
     loadEnvCredential: () => undefined,
   })
@@ -110,8 +117,8 @@ test('an expired app credential is `expired`, not `ok`', () => {
   assert.strictEqual(record.source, 'app')
 })
 
-test('the app credential wins when both an app sign-in and a PAT exist', () => {
-  const record = readAccountState(REGION, '/nonexistent/appdata', {
+test('the app credential wins when both an app sign-in and a PAT exist', async () => {
+  const record = await readAccountState(REGION, '/nonexistent/appdata', {
     loadCredential: () => appCred,
     loadEnvCredential: () => envCred,
   })
@@ -119,11 +126,11 @@ test('the app credential wins when both an app sign-in and a PAT exist', () => {
   assert.strictEqual(record.source, 'app')
 })
 
-test('a present app directory with a recorded unwrap cause is `needs-app` and says why', () => {
+test('a present app directory with a recorded unwrap cause is `needs-app` and says why', async () => {
   const root = mkdtempSync(join(tmpdir(), 'qoder-account-'))
   try {
-    withDir(root, 'com.qodercn.app.stable', () => {
-      const record = readAccountState(REGION, root, {
+    await withDir(root, 'com.qodercn.app.stable', async () => {
+      const record = await readAccountState(REGION, root, {
         loadCredential: () => undefined,
         loadEnvCredential: () => undefined,
         describeUnwrapFailure: (dirPath) =>
@@ -139,11 +146,11 @@ test('a present app directory with a recorded unwrap cause is `needs-app` and sa
   }
 })
 
-test('a present app directory without a recorded cause is `needs-app` with the generic detail', () => {
+test('a present app directory without a recorded cause is `needs-app` with the generic detail', async () => {
   const root = mkdtempSync(join(tmpdir(), 'qoder-account-'))
   try {
-    withDir(root, 'QoderCN', () => {
-      const record = readAccountState(REGION, root, {
+    await withDir(root, 'QoderCN', async () => {
+      const record = await readAccountState(REGION, root, {
         loadCredential: () => undefined,
         loadEnvCredential: () => undefined,
         describeUnwrapFailure: () => undefined,
@@ -157,10 +164,10 @@ test('a present app directory without a recorded cause is `needs-app` with the g
   }
 })
 
-test('neither app directory nor PAT is `signed-out`', () => {
+test('neither app directory nor PAT is `signed-out`', async () => {
   const root = mkdtempSync(join(tmpdir(), 'qoder-account-'))
   try {
-    const record = readAccountState(REGION, root, {
+    const record = await readAccountState(REGION, root, {
       loadCredential: () => undefined,
       loadEnvCredential: () => undefined,
     })
@@ -173,15 +180,15 @@ test('neither app directory nor PAT is `signed-out`', () => {
   }
 })
 
-test('the record carries no credential material of any kind', () => {
+test('the record carries no credential material of any kind', async () => {
   // The card is a browser surface. The credential record the reader hands back
   // holds the token and its refresh half; the state record must not.
   const serialised = JSON.stringify({
-    ok: readAccountState(REGION, '/nonexistent/appdata', {
+    ok: await readAccountState(REGION, '/nonexistent/appdata', {
       loadCredential: () => appCred,
       loadEnvCredential: () => undefined,
     }),
-    expired: readAccountState(REGION, '/nonexistent/appdata', {
+    expired: await readAccountState(REGION, '/nonexistent/appdata', {
       loadCredential: () => ({ ...appCred, expired: true }),
       loadEnvCredential: () => undefined,
     }),
@@ -191,17 +198,17 @@ test('the record carries no credential material of any kind', () => {
   }
 })
 
-test('the default readers are wired to the real credential layer', () => {
+test('the default readers are wired to the real credential layer', async () => {
   // A directory that cannot exist: the real `loadCredential` probes `%APPDATA%`
   // names, finds none, and returns undefined. With the env reader also
   // injecting "absent", only one answer is possible.
-  const record = readAccountState(REGION, '/nonexistent/appdata', {
+  const record = await readAccountState(REGION, '/nonexistent/appdata', {
     loadEnvCredential: () => undefined,
   })
   assert.strictEqual(record.state, 'signed-out', JSON.stringify(record))
 })
 
-test('the state vocabulary is exactly the four states', () => {
+test('the state vocabulary is exactly the four states', async () => {
   // The card maps `state` straight onto copy keys; a fifth value would render
   // as a raw `account.state.x` string. Pin the set.
   assert.deepStrictEqual([...ACCOUNT_STATES].sort(), ['expired', 'needs-app', 'ok', 'signed-out'])

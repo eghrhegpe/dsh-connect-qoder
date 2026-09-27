@@ -26,7 +26,7 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 
 - [x] 新用例：连续 3 次 `/account` 渲染，PowerShell 只被 spawn 一次（注入计数）
 - [x] 新用例：解包失败后 60 s 内不重试，超过 TTL 才重试
-- [x] 手工验证：解不开的机器上卡片在 200 ms 内渲染出 `needs-app`
+- [x] 手工验证：解不开的机器上卡片在 200 ms 内渲染出 `needs-app`（由 `cachedOnly` 达成，见下）
 
 ## 实现（第 1、3 条已修；第 4 条异步化未做，第 2 条按缓存读等价实现）
 
@@ -54,10 +54,12 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 
 ### 未做
 
-- **原方案第 4 条（`execFile` 异步化）没做**。它需要把 `oscryptKeyFor` 改成 Promise，而
-  `loadCredential` / `readAccountState` / `loadEnvCredential` 以及它们全部调用者都是同步的，
-  牵动面比前三条加起来大。此轮的做法把**最坏阻塞**从"每次渲染 × 30 s"压到"每分钟一次"，
-  异步化是把剩下的那一次也去掉。
+- ~~**原方案第 4 条（`execFile` 异步化）**~~ **已做**（后续一轮）：`oscryptKeyForAsync` /
+  `loadCredentialAsync` / `readAccountStateAsync`，`execFile` 而非 `execFileSync`。
+  两版**共用一个 `runUnwrap`**，只有 spawner 不同，所以缓存、失败窗口、临时目录、
+  清零这些规则不可能分叉——这一点由 `test/async-unwrap.test.js` 的结构断言守着。
+  实测：调用在 **29 ms** 就返回（同步版阻塞 490 ms），期间事件循环跑了 30 次。
+  同步版保留给启动时的 sweep 与 `probe/` 脚本（它们不在任何人的延迟预算上）。
 - **原方案第 2 条（`/account` 读 `CredentialCache` 的快照）没按原样做**，改成了读 key 缓存。
   区别在于：`CredentialCache` 里是**已交换的凭据**，把它塞进 account payload 会把 token 带到
   浏览器可见的响应边缘——`account-state.js` 的设计前提是"绝不含凭据材料"。读 key 缓存达到了
