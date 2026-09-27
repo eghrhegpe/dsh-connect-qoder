@@ -53,14 +53,19 @@
 它消费的 `rateNow` / `offPeakActive` / `offPeakRemaining` 早前已移到
 `lib/offpeak.js` 并被完整覆盖。
 
-**剩下的**：`createQoderAdapter` 组装 `PiAiAdapter` profile 的那部分——provider
-注册、inert 认证平面、per-build 读设置（`preferMaximumContext` / `imageModeFor` /
-`enabledIdsFor`）以免改设置要重注册 adapter。这部分是接线，没有可断言的纯逻辑，
-留在原地是因为抽它出来只会造出一个只被调用一次的间接层。
+**剩下的是什么**：`createQoderAdapter` 组装 `PiAiAdapter` profile 的那部分——provider
+注册、inert 认证平面、`PiAiAdapter` 的构造。这部分是接线，没有可断言的纯逻辑，
+留在原地是因为抽它出来只会造出一个只被调用一次的间接层。**它做的模型列表已经抽出**：
+`buildModelsFor` 现在住在 `lib/adapter-models.js`（区域开关、勾选过滤、最大上下文、
+逐模型图像模式）并由 `test/adapter-models.test.js` 覆盖。
 
-**要补上需要**：`node --experimental-test-module-mocks` 桩掉 pi-ai 与
-`@deepseek-ai/*`（已验证可行：桩掉三个 `@deepseek-ai/*` 之后 `lib/index.js`
-可以被 import）。这要在 test script 上加 flag，且只在需要时开启。
+**曾经登记为"可行"的方案，实测不可行**：`node --experimental-test-module-mocks` 桩掉
+pi-ai 与 `@deepseek-ai/*`。本机实测**两种做法都失败**，原因写在这里以免下一次再走一遍：
+（1）`mock.module()` 要求被桩的 specifier **先能解析**——而这些包恰恰不安装；
+（2）自定义 resolve hook 也够不着，因为 `lib/index.js` 在模块顶层**静态** import
+`adapter.js`，那条解析发生在 hook 链看到它之前。flag 本身在 Node 24.16 上可用，
+但对本仓库的用途无效。因此走的是另一条路：把有决策的部分抽成无 peer 依赖的模块
+（`adapter-models.js` / `region-gate.js` / `routes.js`），接线留在原地。
 
 ---
 
@@ -72,16 +77,19 @@
 
 **已经测到哪一步**：这个文件里所有**纯逻辑**都已经搬出去了——
 凭据缓存（`lib/credential-cache.js`）、目录落盘（`lib/catalog-store.js`）、
-设置写入与读回（`lib/settings-save.js`）、行投影与过滤（`lib/catalog-entry.js`）。
-留下的只有 HTTP 路由的收发、provider 注册、以及 dispose 时的定时器清理。
+设置写入与读回（`lib/settings-save.js`）、行投影与过滤（`lib/catalog-entry.js`）、
+刷新结果如何落地（`lib/catalog-refresh.js`）、能否上线一个区域（`lib/region-gate.js`）、
+以及**每条路由共用的两道闸与 body 读取器**（`lib/routes.js`：方法检查含 `Allow` 与
+`HEAD`、回环来源检查、64 KiB 上限）。
 
-**剩下的风险**：`ctx.inject(['webServer'])` 里的路由注册本身（路径、method 校验、
-64 KiB body 上限）；`ctx.effect` 的 dispose 时序（定时器与在途 `refreshCatalog`
-的竞态）；`registerAdapter` 失败时的回滚是否真的释放了 shim 端口。
+**剩下的风险**：`ctx.inject(['webServer'])` 里的路由**注册**与 handler 主体；
+`ctx.effect` 的 dispose 时序（定时器与在途 `refreshCatalog` 的竞态）；
+`registerAdapter` 失败时的回滚是否真的释放了 shim 端口。
 
-**要补上需要**：`--experimental-test-module-mocks` 加一套 Cordis 桩，
-或把每条路由的 handler 抽成 `(req, deps) => result` 的纯函数。
-后者与 `applySettingsSave` 是同一套路，已经证明可行。
+**要补上需要**：把每条 handler 抽成 `(req, deps) => result` 的纯函数——
+`applySettingsSave` 已证明可行，`lib/routes.js` 也是同一套路的前半段（闸已抽出，
+handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"的说法经实测是错的，
+不要按它排期。
 
 ---
 
@@ -229,8 +237,8 @@
   地板：防的是"悄悄说谎"，防不了"写一句没用的真话"。
 - **覆盖率门槛已建立**（本条的前两版登记「没有阈值」，现已不成立）：
   `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=85
-  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 77.99 / 85.70 /
-  76.24）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
+  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 78.98 / 86.40 /
+  77.36）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
   被挡住」——那还得看本文件。
 - **`verify:bundle` 的时钟脆弱性已根治**（原登记为"待根治"）：`offPeakState` / `rateAt` /
   `withDate` / `localSecondsOf` 读墙上时钟，脚本先 `load(OLD)` 再 `load(NEW)` 逐条对拍，

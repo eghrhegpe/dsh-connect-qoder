@@ -24,7 +24,7 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [08-keycache-staleness.md](08-keycache-staleness.md) | ~~P1~~ **已修** | `keyCache` 无失效路径 → 重装后永久 needs-app |
 | [09-card-mirrors-host-logic.md](09-card-mirrors-host-logic.md) | P1 | 卡片自算错峰价/窗口标签，与宿主分歧 |
 | [10-protocol-drift-probe.md](10-protocol-drift-probe.md) | ~~P1~~ **已修**（分诊落地；6 小时周期探测仍未做） | 上游协议漂移与"没登录"不可区分 |
-| [11-coverage-denominator.md](11-coverage-denominator.md) | P2 | 44.7% 的 lib 代码不在覆盖率分母里 |
+| [11-coverage-denominator.md](11-coverage-denominator.md) | ~~P2~~ **大部分已修**（module mocks 实测不可行，改走抽纯模块） | 44.7% 的 lib 代码不在覆盖率分母里 |
 | [12-small-fixes-batch.md](12-small-fixes-batch.md) | P2 | 12 处小时级小口子（含注释与代码相反） |
 | [13-lifecycle-dispose.md](13-lifecycle-dispose.md) | P2 | dispose 两条尾巴（在途刷新、路由未注销） |
 | [14-namespace-convergence.md](14-namespace-convergence.md) | P2 | 设置命名空间四套说法 |

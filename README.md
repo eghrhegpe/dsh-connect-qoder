@@ -189,6 +189,8 @@ dsh plugin --profile web add <本仓库路径>
 | `lib/account-state.js` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖）；三种读取模式（默认 / `cachedOnly` 不解包 / `force` 忽略失败窗口） |
 | `lib/settings-save.js` | 设置命名空间的解析（0.1.7 由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
 | `lib/pi-model.js` | pi-ai 模型描述符的构造（纯函数，无 peer 依赖） |
+| `lib/adapter-models.js` | 单个区域向 DSH 提供的模型列表：区域开关（只认显式 `true`）、勾选过滤、最大上下文开关、逐模型图像模式（从 `adapter.js` 抽出以便直测，无 peer 依赖） |
+| `lib/region-gate.js` | 一个区域能否作为 provider 上线：三档拒绝（无登录 / 已过期 / 读不到）各自的判定与日志级别（从 `index.js` 抽出以便直测，无 peer 依赖） |
 | `lib/preferences.js` | 四个设置项的读取与 volatile 解包（`enabledRegions` 区域开关：缺失/非对象一律读作开启，只有显式 `false` 才关） |
 | `lib/offpeak.js` | 错峰窗口与费率算术（无 peer 依赖） |
 | `lib/single-flight.js` | 同类异步任务的并发合并：刷新在途时，后来的调用并入同一次请求（目录/用量刷新用，无 peer 依赖） |
@@ -197,6 +199,7 @@ dsh plugin --profile web add <本仓库路径>
 | `lib/time.js` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
 | `lib/volatile.js` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
 | `lib/http-utils.js` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
+| `lib/routes.js` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与回环来源检查（403），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
 | `lib/index.js` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
 
 `lib/client.js` 是注入到宿主设置页的那张卡片的构建产物（`react` 由宿主提供，产物不打包它）。

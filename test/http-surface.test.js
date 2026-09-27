@@ -22,15 +22,14 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { sendJson } from '../lib/http-utils.js'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { methodAllowed, originAllowed, loopbackRequest, readJsonBody } from '../lib/routes.js'
 
-const HOST_SOURCE = readFileSync(
-  new URL('../lib/index.js', import.meta.url),
-  'utf8',
-).replaceAll('\r\n', '\n')
-
-/** A Node response stand-in that records exactly what was written. */
+/**
+ * A Node response stand-in that records exactly what was written.
+ *
+ * `method` also lands on `res.req.method`, because `sendJson` drops the body on
+ * a HEAD — the response object has to know what was asked for.
+ */
 function fakeRes(method = 'GET') {
   return {
     req: { method },
@@ -99,21 +98,18 @@ test('a response object without a `req` still gets its body', () => {
 })
 
 test('the 405 path advertises Allow and treats HEAD as GET', () => {
-  // The routing half, which lives in lib/index.js and cannot be imported. Both
-  // behaviours are asserted as source because their failure is silent: a
-  // malformed 405 and a rejected HEAD both look like a working server that
-  // says no.
-  const body = /function methodAllowed\([\s\S]*?\n\}/.exec(HOST_SOURCE)
-  assert.ok(body !== null, 'lib/index.js no longer has a methodAllowed helper')
-  const source = body[0]
-  assert.match(
-    source,
-    /Allow/,
-    'the 405 must advertise Allow — RFC 9110 §15.5.6 and the only way a client learns what to try',
-  )
-  assert.match(
-    source,
-    /req\.method === 'HEAD' && methods\.includes\('GET'\)/,
-    'a HEAD on a GET route must be served as a GET, not rejected',
-  )
+  // This half used to be a source-text assertion against lib/index.js. The
+  // gates now live in lib/routes.js, which has no peer dependencies and is
+  // imported here, so it is asserted for real instead — the text version could
+  // only ever prove a string was present.
+  for (const method of ['POST', 'PUT', 'DELETE']) {
+    const res = fakeRes(method)
+    assert.strictEqual(methodAllowed({ method, headers: {} }, res, 'GET'), false, method)
+    assert.strictEqual(res.status, 405)
+    assert.strictEqual(res.headers.Allow, 'GET, HEAD')
+  }
+  // And the HEAD-on-a-GET case, end to end through the gate and the writer.
+  const head = fakeRes('HEAD')
+  assert.strictEqual(methodAllowed({ method: 'HEAD', headers: {} }, head, 'GET'), true)
+  assert.strictEqual(head.ended, false, 'a HEAD answered as a GET sends no body')
 })
