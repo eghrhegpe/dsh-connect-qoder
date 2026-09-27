@@ -153,6 +153,12 @@ dsh plugin --profile web add <本仓库路径>
   下的另一个 `VIEW_DETAILS` 活动同样带着 `claimStatus: "CLAIMED"` 却没有 benefit，只按状态挑会对
   它去领；而列表顶层的 `claimable` 在「已领过」和「没有活动」时都是 `false`，不能当判据。
   按钮文案落到 `addOnQuota` 旁边，是因为国内版免费层的计划额度为 0，签到攒的资源包是它唯一的额度。
+- **国际版签到行需要 umid 机器身份**：国际版 `GET /sash/api/v1/me/campaigns` 把每日
+  `CLAIM_BENEFIT` 轮次按机器身份下发——请求须携带桌面应用 umid 服务的
+  `Cosy-MachineToken/Code/Type` 头，否则只回常驻的 `VIEW_DETAILS` 横幅，签到行按
+  `active: false` 设计隐藏。插件在 OpenAPI 请求上自动附加这组头（Windows 上定位安装
+  目录的 `resources\umid\runtime-info.exe` 读取，失败静默降级为原头组；国内版与 PAT
+  不受影响；发现与验证记录在 [docs/KNOWN_GAPS.md 第 8 条（国际版 campaigns 端点按 umid 机器身份门控每日签到）](docs/KNOWN_GAPS.md)）。
 
 ## 目录
 

@@ -9,7 +9,8 @@
 `--experimental-test-module-mocks`；第 3 条的根治已落地（见下），镜像本身是刻意
 接受的；第 4 条原理不可测；第 5 条是写了也测不到的等价路径；第 6 条是功能未实现
 （跨平台凭据链），不是测试缺口；第 7 条登记仓库级缺失，其中**文档漂移**一项已由
-`test/docs-facts.test.js` 建立门禁。
+`test/docs-facts.test.js` 建立门禁；第 8 条登记国际版 campaigns 端点的 umid 机器身份门控
+（2026-09-27 实测 + 修复已落地，见下）。
 
 **凭据 sweep 的身份守卫（issue 01）**：`sweepStaleOscryptDirs` 现在要求
 `lstat` 判真目录 + `.dsh-oscrypt` 标记文件 + `key.b64` 恰好解出 32 字节，
@@ -227,3 +228,46 @@
   call(s)」而 FAIL。实测同码连跑 5 次皆 IDENTICAL，偶发一次 2-diff。判据：先跑
   `git diff --stat -- lib/client.js`——若产物未改动而门禁红，即为该 flake，重跑即绿，
   不是回归。根治需把探针时间冻结（注入固定 `now`），属 issue 12/15 一档的小口子。
+
+---
+
+## 8. 国际版 campaigns 端点按 umid 机器身份门控每日签到
+
+**位置**：`lib/upstream.js`（`openApiHeaders` 与 `readCampaigns` / `claimCampaign` /
+`fetchUsage` / `fetchUserInfo` 共用的头组）、`lib/claim.js`（降级列表的语义）
+
+**发现（2026-09-27，本机两个真实账号）**：国际版 `GET /sash/api/v1/me/campaigns`
+对**不带 umid 机器身份头**的请求只下发常驻的 `VIEW_DETAILS` 横幅（首月翻倍广告），
+**不下发**每日 `CLAIM_BENEFIT` 轮次（100 Credits）。于是插件的 `checkinStateFrom`
+读到的列表里没有可领轮次，判 `{ active: false }`，卡片签到行按设计不渲染——判断逻辑
+本身没有 bug，缺的是请求侧的机器身份。
+
+**判别证据**（全部只读探测，脚本在 `probe/`）：
+
+| 请求 | 国际端返回 |
+|---|---|
+| 裸 bearer（插件原状） | 仅 `VIEW_DETAILS` |
+| bearer + `auth.machine-id` 文件值充数机器头 | 仅 `VIEW_DETAILS`（充数值不被接受） |
+| bearer + **真实 umid 头**（`resources\umid\runtime-info.exe` 输出的 `machineToken/Code/Type`） | `CLAIM_BENEFIT` + `VIEW_DETAILS` ✅ |
+| 对照：CN 端裸 bearer | `CLAIM_BENEFIT` + `VIEW_DETAILS`（CN 不门控） |
+
+**修复**：`openApiHeaders(credential, region)` 在 Windows 上定位安装目录下的
+`runtime-info.exe`（0.4.x 布局在 `Programs\Qoder\.qoder-versions\<v>\resources\umid\`，
+旧布局在 `Programs\Qoder\resources\umid\`），同步执行（5 s 超时、非 shell、
+`stdio` 管道）取其 JSON 输出作为 `Cosy-MachineToken/Code/Type` 头随 OpenAPI 请求发送；
+任一环节失败（非 Windows、未安装、二进制超时/输出不可解析）降级为原头组，
+CN 与 PAT 凭据不受影响。二进制每进程只跑一次（`umidInfo` 缓存）。
+
+**残留缺口**：
+
+- umid 头目前附加在**所有** OpenAPI 调用上（userinfo / usage / campaigns / claim）。
+  国际端 campaigns 是它的判别因子，其余端点是否也门控未逐一验证；若上游收紧
+  （只认机器身份、拒裸请求），全走 umid 头反而是对的。若上游将来对 umid 做
+  频控/绑定，需要按端点收窄。
+- `runtime-info.exe` 的 0.4.3 版本路径是**当前实测值**：0.4.x 的 `.qoder-versions`
+  布局升级后版本目录会变（例如 0.4.4），`umidRootsFor` 需要同步补档。
+- 跨平台（第 6 条）依旧：umid 二进制是 Windows 专物，macOS / Linux 上国际版
+  签到行会继续缺席，与跨平台凭据链缺口同源。
+- **领取幂等性未实测**：本轮只读验证了"看见轮次"，没有真发 POST 领取
+  （领取会真实进账，属于账号变更操作）。`normalizeClaimResult` 的 `replayed`
+  语义在 CN 端有既测，国际端同链路但缺一次实领确认。
