@@ -161,7 +161,37 @@
 
 ---
 
-## 6. 仍未建立的东西
+## 6. 跨平台凭据链未实现（macOS / Linux）
+
+**位置**：`lib/credentials.js`（OS keystore 封装、app user-data 根目录）、
+`lib/account-state.js`（`appDataRoot` 注入）、`lib/upstream.js`（`MACHINE_OS` darwin 回落）
+
+**为什么现在没有**：Qoder 桌面版已经在 macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上有
+下载，但本插件只实现了 Windows 这一条解密链。当前状态：
+
+1. **OS keystore 封装**：Windows 走 PowerShell + DPAPI（`Crypt32.dll`），macOS 需 Keychain
+   （`security`，Chromium Safe Storage service 名），Linux 需 libsecret（`secret-tool`）或
+   Chromium 在 Linux 上 `peanuts` 硬编码 key 兜底。
+2. **应用 user-data 根目录**：当前代码把 `process.env.APPDATA` 当作 app 目录所在，macOS 上
+   应是 `~/Library/Application Support`，Linux 上是 `~/.config`（或 `XDG_CONFIG_HOME`）。
+3. **`MACHINE_OS` 在 darwin 上回落成 `x86_64_linux`**（`lib/upstream.js:144-151`）：网关按
+   此字段路由/校验，darwin 实机需要 `aarch64_darwin` / `x86_64_darwin` 一档。
+4. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
+   Keychain 弹窗、签名打包、`secret-tool` 的 D-Bus session 都得在实机或 runner 上验。
+
+**要补上需要**：
+
+- 前三项是**纯工作量**（三套 keystore 封装 + 平台切换 + `MACHINE_OS` 加一档），无原理障碍。
+- 第四项决定是否敢作为"正式支持"发布：提交的是"盲代码"还是"已验代码"。
+- 在此之前，macOS / Linux 用户只能走 PAT 兜底（`QODER_PAT` / `QODERCN_PAT`），或自行
+  从本仓库移植。
+
+**影响面**：所有 macOS / Linux 上的 Qoder 桌面端用户，「零配置读应用凭据」的卖点在那些
+平台上不存在；README 的「平台边界」段已同步说明。
+
+---
+
+## 7. 仍未建立的东西
 
 这些不是「某处没测」，而是整个仓库层面的缺失：
 

@@ -46,8 +46,27 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 
 **平台边界：零配置路径只在 Windows 成立。** 解密链路是 PowerShell + DPAPI（`Crypt32.dll`），
 `lib/` 里没有任何 macOS / Linux 分支——在其它平台上应用凭据永远探测不到（`loadCredential`
-返回 `undefined`，该区域不注册），只剩上面的 PAT 兜底。CI 的 Ubuntu 绿灯说明**测试**在那边
-能跑，不等于零配置在 Linux 上存在。
+返回 `undefined`，该区域不注册），只剩上面的 PAT 兜底。
+
+**这不是"没有跨平台客户端"，而是客户端已跨平台、插件尚未跟上**：Qoder 桌面版在
+macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上都有下载（[qoder.com.cn/download](https://qoder.com.cn/download)），
+但 `lib/` 只实现了 Windows 这一条解密链。缺口在四处，全部已登记在
+[docs/KNOWN_GAPS.md 第 7 条](docs/KNOWN_GAPS.md)：
+
+1. **OS keystore 封装**：Windows 走 DPAPI；macOS 需 Keychain（`security`，Chromium Safe Storage
+   service 名），Linux 需 libsecret（`secret-tool`）或 Chromium 在 Linux 上 `peanuts` 硬编码
+   key 兜底。
+2. **应用 user-data 根目录**：当前代码把 `process.env.APPDATA` 当作 app 目录所在，macOS 上是
+   `~/Library/Application Support`，Linux 上是 `~/.config`（或 `XDG_CONFIG_HOME`）。
+3. **`MACHINE_OS` 在 darwin 上回落成 `x86_64_linux`**（`lib/upstream.js`）：Qoder 网关按这个
+   字段路由/校验，darwin 实机需要 `aarch64_darwin` / `x86_64_darwin` 一档。
+4. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
+   Keychain 弹窗、签名打包、`secret-tool` 的 D-Bus session 都得在实机或 runner 上验。
+
+补齐前三项是**纯工作量**，无原理障碍；第四项决定是否敢作为"正式支持"发布。在此之前，
+macOS / Linux 用户只能走 PAT 兜底，或自行从本仓库移植。
+
+CI 的 Ubuntu 绿灯说明**测试**在那边能跑，不等于零配置在 Linux 上存在。
 
 ## 安装
 

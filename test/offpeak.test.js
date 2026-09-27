@@ -69,7 +69,7 @@ function rateIs(actual, expected) {
   return Math.abs(actual - expected) < 1e-9
 }
 
-test('the aliases are the same functions, not re-implementations', () => {
+test('the re-exports are the same functions, not re-implementations', () => {
   // lib/adapter.js re-exports these under the names the rest of the plugin
   // imports. If a copy had crept in, the card and the picker could disagree.
   assert.strictEqual(rateNow, effectiveRate)
