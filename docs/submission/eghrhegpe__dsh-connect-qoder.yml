@@ -1,0 +1,23 @@
+# Submission draft for awesome-dsh-plugin.
+#
+# Copy this file to `data/plugins/eghrhegpe__dsh-connect-qoder.yml` in a fork of
+# awesome-dsh-plugin/awesome-dsh-plugin and open a PR that adds only it. Do not
+# edit that repository's READMEs — both are generated from data/plugins/.
+#
+# The description is read as a claim and checked against the code, so every
+# noun in it is one the source actually has:
+#   "already signed in on this machine … no token to configure" — credentials
+#     are decrypted out of the Qoder app's own store on this machine
+#     (lib/credentials.js, DPAPI / OSCrypt). The user never enters a PAT. This
+#     is also what separates the entry from mo-n/dsh-provider-qoder, which is
+#     already on the list and takes a Qoder Personal Access Token by hand.
+#   "CN and global" — lib/credentials.js and lib/client.js carry both
+#     (Qoder CN / 国内版 and 国际版, com.qoder.cn and qoder.com).
+#   "rate and off-peak window" — rateAt / offPeakState / windowLabelOf, and the
+#     countdown driven by promotion.active.
+url: https://github.com/eghrhegpe/dsh-connect-qoder
+name: eghrhegpe/dsh-connect-qoder
+category: model
+description:
+  en: 'Brings models from the Qoder app already signed in on this machine into DeepSeek Harness, with no token to configure, and shows each model rate and off-peak window on its settings card.'
+  zh: '把本机已登录的 Qoder 应用中的模型接入 DeepSeek Harness，无需配置任何令牌，并在设置卡片上显示每个模型的费率与错峰窗口。'

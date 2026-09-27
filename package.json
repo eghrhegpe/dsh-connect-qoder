@@ -1,13 +1,13 @@
 {
-  "name": "dsh-connect-qoder",
+  "name": "@eghrhegpe/dsh-connect-qoder",
   "displayName": "DSH Connect Qoder",
   "description": "将本机已登录的 Qoder（国内版 Qoder CN / 国际版 Qoder）模型接入 DeepSeek Harness —— bring locally signed-in Qoder models into DeepSeek Harness with zero configuration.",
-  "version": "0.2.0",
-  "author": "hdhgsysh",
-  "homepage": "https://github.com/hdhgsysh/dsh-connect-qoder",
+  "version": "0.2.1",
+  "author": "eghrhegpe",
+  "homepage": "https://github.com/eghrhegpe/dsh-connect-qoder",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hdhgsysh/dsh-connect-qoder.git"
+    "url": "git+https://github.com/eghrhegpe/dsh-connect-qoder.git"
   },
   "bugs": {
     "url": "https://github.com/hdhgsysh/dsh-connect-qoder/issues"
@@ -23,6 +23,15 @@
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=68 --test-coverage-branches=85 --test-coverage-functions=66 \"test/*.test.js\"",
+    "verify": "npm test && node scripts/build-client.mjs --tsdown && npm run verify:bundle",
+    "verify:deploy": "node scripts/check-deploy-drift.mjs",
+    "verify:bundle": "node scripts/verify-bundle-behaviour.mjs",
+    "build": "node scripts/build-client.mjs --tsdown --write",
+    "prepack": "npm run build"
+  },
   "main": "lib/index.js",
   "exports": {
     ".": {
@@ -37,6 +46,13 @@
     "cordis.patch.yml",
     "README.md"
   ],
+  "devDependencies": {
+    "tsdown": "^0.23.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "license": "MIT",
   "dsh": {
     "bundle": {
@@ -54,14 +70,14 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.2 <5.0.0",
-    "@deepseek-ai/dsh-llm": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
-    "@deepseek-ai/dsh-llm-pi-ai": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
-    "@deepseek-ai/dsh-settings": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
-    "@deepseek-ai/dsh-home-paths": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
-    "@deepseek-ai/dsh-host-webserver": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-settings": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.6 || 0.1.2-rc.1 || >=0.1.5-0 <0.2.0-0 || 0.1.6-alpha.1 || 0.1.6-alpha.2",
+    "@deepseek-ai/dsh-llm": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-settings": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.5 <0.2",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.5 <0.2",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@earendil-works/pi-ai": "^0.85.1"
   },

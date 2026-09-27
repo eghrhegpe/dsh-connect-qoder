@@ -1,0 +1,75 @@
+name: test
+
+# The suite needs no dependencies — not even the peer ones. Everything it can
+# reach was deliberately moved into modules that import nothing but node
+# builtins, so a plain checkout can run it. If a future change makes `npm ci`
+# necessary here, that is a signal something moved back behind a peer dependency.
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both lines the package declares support for. Node 24 is where
+        # AbortSignal.any and the module mock hooks the tests rely on are stable.
+        node: ['22.19', '24']
+        # Windows is not redundant: the shim binds a loopback listener, the
+        # catalog store relies on rename-over-existing, and the credential
+        # reader shells out to PowerShell. Those behave differently elsewhere.
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No `npm ci`: there is nothing to install. Running the script directly
+      # also proves it does not secretly depend on a lockfile.
+      - name: Run tests
+        run: npm test
+
+      # Enforced as a FLOOR, not as a score: `test:coverage` carries
+      # --test-coverage-lines/functions/branches set a little under the current
+      # numbers, so a change that silently loses coverage fails the build while
+      # an honest module split does not. A percentage still cannot say whether a
+      # specific regression is defended — test/KNOWN_GAPS.md remains the real
+      # register, and raising a threshold is a one-line review, not a redesign.
+      - name: Coverage
+        run: npm run test:coverage
+
+  # A separate job, and that is the point: `npm test` must keep working on a
+  # bare checkout with nothing installed (see the note at the top), while
+  # rebuilding the card needs a bundler. Splitting them keeps both guarantees
+  # instead of trading one for the other — one job proves the suite is
+  # dependency-free, this one proves the artifact is reproducible.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19'
+
+      # `.npmrc` sets legacy-peer-deps: the `@deepseek-ai/*` peers are supplied
+      # by the host at runtime and are not on the public registry, so npm's
+      # automatic peer install would fail before reaching tsdown.
+      - run: npm install --no-audit --no-fund
+
+      - name: Rebuild the card from src/client
+        run: npm run build
+
+      # The committed bundle must be exactly what the sources produce. A change
+      # that edits src/ without rebuilding fails here rather than shipping an
+      # artifact nobody can reproduce.
+      - name: The committed bundle is up to date
+        run: git diff --exit-code -- lib/client.js
+
+      # Byte equality is not reachable (docs/issues/17), so the artefact is
+      # judged on behaviour: 5460 probed calls against the committed bundle.
+      - name: The rebuild behaves like the committed bundle
+        run: npm run verify:bundle

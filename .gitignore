@@ -1,5 +1,6 @@
 # Build & test artefacts
 node_modules/
+.build/
 *.tgz
 *.tar.gz
 

@@ -1,0 +1,27 @@
+{
+  // Type declarations were erased when the card was rebuilt from its bundle
+  // (docs/issues/17): the sources are faithful, but they carry no annotations
+  // because a build artifact has none. `strict` is therefore off and
+  // `checkJs` off — turning either on today produces hundreds of errors that
+  // say nothing about correctness.
+  //
+  // This file still earns its place: it pins `jsx` to the automatic runtime,
+  // which is what makes the bundle import `react/jsx-runtime` instead of
+  // reaching for a global `React`, and it gives editors the same settings the
+  // build uses. Tighten it as annotations are added back by hand.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": false,
+    "noImplicitAny": false,
+    "allowJs": true,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["src/client/**/*.ts"]
+}
