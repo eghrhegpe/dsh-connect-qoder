@@ -67,9 +67,10 @@ function cardInstallsClock(rows) {
  *
  * This is a faithful transcription, guards and window arithmetic both, so the
  * comparison below is over the whole verdict. It is a SPECIFICATION of the
- * card's rule, not the card's code: the bundle is built from TypeScript sources
- * not in this repository, so the real function cannot be imported here at all
- * (see docs/KNOWN_GAPS.md item 3). If the card's gate is rewritten, this copy
+ * card's rule, not the card's code: the card runs in the browser and cannot be
+ * imported into a Node test, so this file pins the rule and
+ * test/client-bundle.test.js pins the shipped bundle (see docs/KNOWN_GAPS.md
+ * item 3（客户端卡片的门控表达式）). If the card's gate is rewritten, this copy
  * has to be rewritten with it.
  *
  * @returns whether the card would render an off-peak badge for this row.

@@ -10,12 +10,12 @@
  * shipped bytes, writing them would silently replace a working artifact with
  * a guess.
  *
- * The comparison is the point of this script. `lib/client.js` is the only
- * copy of the card's code this repository has (docs/issues/03), so a build
- * that merely "succeeds" proves nothing — what proves the restored sources
- * are faithful is that rebuilding them reproduces the same file. Any diff
- * printed here is either a build setting that is still wrong or a place
- * where the shipped bundle was edited by hand.
+ * The comparison is the point of this script. The shipped `lib/client.js`
+ * predates the restored sources (docs/issues/17), so a build that merely
+ * "succeeds" proves nothing — what proves the restored sources are faithful is
+ * that rebuilding them reproduces the same file. Any diff printed here is
+ * either a build setting that is still wrong or a place where the shipped
+ * bundle was hand-edited after the restore.
  *
  * The bundler comes from this package's own devDependencies, so a fresh clone
  * can run `npm install && npm run build`. The test suite still runs on a bare
@@ -118,8 +118,8 @@ const SHIM = [
 /**
  * A pointer for whoever opens the artifact next.
  *
- * For the whole life of this plugin `lib/client.js` was the only copy of the
- * card's code, so it had to be edited by hand and its comments were the
+ * For its whole life until the restore, `lib/client.js` used to hold the
+ * card's code alone, so it had to be edited by hand and its comments were the
  * documentation. Now that `src/client/` exists, this file is an output — and
  * the one thing a reader must not do is edit it and lose the change on the
  * next build.

@@ -5,8 +5,11 @@
 
 新增测试时请顺手更新本文件；删掉一条时请在提交信息里说明它为什么不再成立。
 
-**最近一次复核**：已解决 5 条（凭据缓存链路、目录落盘、设置读回校验、CLI 入口、
-`toPiModel` 抽离），仍存在 3 条，其中 2 条是原理上不可测而非尚未动手。
+**最近一次复核**（0.2.1 + 还原入库 + `121d1a3` 之后）：第 1、2 条是接线缺口，等
+`--experimental-test-module-mocks`；第 3 条的根治已落地（见下），镜像本身是刻意
+接受的；第 4 条原理不可测；第 5 条是写了也测不到的等价路径；第 6 条是功能未实现
+（跨平台凭据链），不是测试缺口；第 7 条登记仓库级缺失，其中**文档漂移**一项已由
+`test/docs-facts.test.js` 建立门禁。
 
 **凭据 sweep 的身份守卫（issue 01）**：`sweepStaleOscryptDirs` 现在要求
 `lstat` 判真目录 + `.dsh-oscrypt` 标记文件 + `key.b64` 恰好解出 32 字节，
@@ -14,11 +17,12 @@
 独立经手工变异验证承重（改回 `statSync` → junction 用例红；删 marker 检查 →
 4 条红）。sweep 与 `zeroOutFile` 里剩下的手工"实测全绿"条目不变。
 
-**第 3 条已部分解决**：客户端门控此前只由手抄副本守着，实测**抓不住任何东西**——
+**第 3 条的根治已经落地**：卡片此前只由手抄副本守着，实测**抓不住任何东西**——
 从 `lib/client.js` 删掉那行 `promo.active !== true`（正是阻止卡片显示拿不到的折扣价
 的那一行），`model-row.test.js` 依然 9 pass / 0 fail。现已增加
 `test/client-bundle.test.js`，直接从产物文本里提取 `offPeakState` 及其依赖并执行，
-同一个变异会让它 3 条变红。根治仍取决于 `src/client/*.ts` 入库。
+同一个变异会让它 3 条变红。此后 `src/client/*.ts` 已还原入库（issue 17，
+`121d1a3`），产物由 `npm run verify` 保证可由源码逐字节重建——剩下的缺口见第 3 条本身。
 
 ---
 
@@ -50,7 +54,7 @@
 
 ## 2. `RegionRuntime` 本身与 `activate` 的 Cordis 接线
 
-**位置**：`lib/index.js`（约 800 行）
+**位置**：`lib/index.js`（约 1300 行）
 
 **为什么没测**：模块顶层 import 四个 `@deepseek-ai/*` peer 包，本仓库不安装。
 
@@ -79,9 +83,11 @@
    复刻了 `offPeakState` 的**完整**判定——守卫加窗口算术——用来钉住卡片的错峰
    门控与 host 端 `isOffPeakActive` 永远一致。
 
-**为什么无法 import**：卡片是浏览器 bundle，由 5 个从不提交的 TypeScript 源文件
-构建（`src/client/{paths,styles,settings-write,copy,index}.ts`）。仓库里没有任何
-构建配置能重新生成 `lib/client.js`。
+**为什么无法 import**：卡片是浏览器 bundle——开头就取 `window.__ModuleLoader__` 与
+`react`，Node 测试里没有 DOM 宿主能装载它。源码如今**已经**入库
+（`src/client/*.ts`，issue 17 还原），`npm run build` 也能逐字节重建产物
+（verify 的 `--tsdown` 一步就是这道门），但"可重建"不等于"可 import"：测试里能执行的
+仍然只有从产物文本中提取的纯函数。
 
 **同步约束**：卡片里那两条表达式一旦改写，测试里的副本必须一起改，否则测试会在断言
 一条没人实现的规则的同时保持绿色。
@@ -99,10 +105,10 @@
 「完全不覆盖」比「覆盖一个可能过期的副本」更糟——这两个 bug 都恰恰是在那一层
 发生的。
 
-**根治办法**：把 `src/client/*.ts` 纳入仓库，让 `lib/client.js` 成为可复现的构建
-产物。这是本文件里价值最高的一条待办，但工作量也最大。在此之前，**往卡片上加
-任何 UI 判定逻辑之前，先想清楚它的 host 端对应物是什么**——两个界面算同一个数，
-就必须有两处测试。
+**根治办法（已落地）**：`src/client/*.ts` 入库，`lib/client.js` 成为可复现的构建产物。
+这消掉的是"产物无法修改"，**不是**"卡片无法进测试"——后者是 DOM 问题，本仓库不打算
+为此引入 jsdom。在这一层补上之前，规矩不变：**往卡片上加任何 UI 判定逻辑之前，先想
+清楚它的 host 端对应物是什么**——两个界面算同一个数，就必须有两处测试。
 
 ---
 
@@ -202,6 +208,13 @@
   钉住 bundle 文本里的 `promo.active !== true`，`test/pi-model.test.js` 钉住
   `compat.supportsDeveloperRole === false`，破坏它们各自都会变红；其余「实测全绿」
   的条目（5a–5c）仍是手工的。
+- **文档（prose）漂移此前没有任何门禁，现已建立**：还原入库（issue 17）作废了一整批
+  当时写在活文件里的陈述——"卡片没有入库的源码"、"产物独一份"、"入库仍是待办"、硬编码
+  的测试通过数、指向错误编号的交叉引用——三门禁全绿照过。化石原文的清单以
+  `test/docs-facts.test.js` 里的 `FOSSILS` 为唯一登记处，本文件不逐字复述（复述即命中）。
+  该门禁守的是：活文件里的化石短语、裸编号交叉引用（必须带标题括注）、README 目录表与
+  `lib/`、`src/client/` 的清单一致、引用的覆盖率数字与 `package.json` 一致。它同样只是
+  地板：防的是"悄悄说谎"，防不了"写一句没用的真话"。
 - **覆盖率门槛已建立**（本条的前两版登记「没有阈值」，现已不成立）：
   `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=85
   --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 73.64 / 86.90 /

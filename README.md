@@ -51,7 +51,7 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 **这不是"没有跨平台客户端"，而是客户端已跨平台、插件尚未跟上**：Qoder 桌面版在
 macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上都有下载（[qoder.com.cn/download](https://qoder.com.cn/download)），
 但 `lib/` 只实现了 Windows 这一条解密链。缺口在四处，全部已登记在
-[docs/KNOWN_GAPS.md 第 7 条](docs/KNOWN_GAPS.md)：
+[docs/KNOWN_GAPS.md 第 6 条（跨平台凭据链未实现）](docs/KNOWN_GAPS.md)：
 
 1. **OS keystore 封装**：Windows 走 DPAPI；macOS 需 Keychain（`security`，Chromium Safe Storage
    service 名），Linux 需 libsecret（`secret-tool`）或 Chromium 在 Linux 上 `peanuts` 硬编码
@@ -172,6 +172,10 @@ dsh plugin --profile web add <本仓库路径>
 | `lib/offpeak.js` | 错峰窗口与费率算术（无 peer 依赖） |
 | `lib/single-flight.js` | 同类异步任务的并发合并：刷新在途时，后来的调用并入同一次请求（目录/用量刷新用，无 peer 依赖） |
 | `lib/claim.js` | 每日签到：当轮活动的挑选、可领状态判定与领取结果的归一化（纯函数，无 peer 依赖） |
+| `lib/errors.js` | 上游错误帧的判定：105（登录没了）与 10605（在排队）的分诊，队列提示的提取（无 peer 依赖） |
+| `lib/time.js` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
+| `lib/volatile.js` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
+| `lib/http-utils.js` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
 | `lib/index.js` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
 
 `lib/client.js` 是注入到宿主设置页的那张卡片的构建产物（`react` 由宿主提供，产物不打包它）。
@@ -180,7 +184,8 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/paths.ts` | 卡片用到的五条插件路由 |
 | `src/client/styles.ts` | 卡片样式与 `installStyles`（`dsm-*` 一套与 `dsh-connect-workbuddy` 逐字一致，原因见文件头） |
 | `src/client/settings-write.ts` | 「写入后读回校验」的浏览器半边 |
-| `src/client/copy.ts` | 卡片文案（中/英） |
+| `src/client/copy.ts` | 卡片文案聚合入口（中/英），`index.ts` 与 `card.ts` 只从这里取 |
+| `src/client/copy-row.ts` `copy-usage.ts` `copy-account.ts` | 按面板拆分的三段文案：模型行与错峰、用量与签到、账号与区域标签条 |
 | `src/client/card.ts` | 卡片的纯函数与五个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `QuotaBlock`） |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
 
@@ -206,7 +211,7 @@ npm run build           # 从 src/client 重建 lib/client.js
 
 | 步骤 | 回答什么 | 全过时的输出 |
 |---|---|---|
-| `npm test` | 卡片逻辑与宿主半边没被改坏 | `# pass 269` / `# fail 0` |
+| `npm test` | 卡片逻辑与宿主半边没被改坏 | 最后一行 `# fail 0` |
 | `build --tsdown`（不写） | `lib/client.js` **确实**由 `src/client/` 生成 | `MATCH: … byte-for-byte identical` |
 | `verify:bundle` | 重建产物与 HEAD 的行为一致 | `behaviour: IDENTICAL` |
 
