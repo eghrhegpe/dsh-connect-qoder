@@ -16,7 +16,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } fr
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { MARKERS, compareInstall, hashFile, profilesIn } from '../scripts/check-deploy-drift.mjs'
+import { MARKERS, compareInstall, hashFile, installNamesFor, installsIn, profilesIn } from '../scripts/check-deploy-drift.mjs'
 
 /** The three marker files, in the shape MARKERS describes. */
 const CLIENT = `function offPeakState(model) {
@@ -149,4 +149,58 @@ test('profilesIn reads the profile directories and tolerates a missing home', ()
 
 test('hashFile answers undefined rather than throwing for a missing file', () => {
   assert.strictEqual(hashFile(join(tmpdir(), 'definitely-not-here-42')), undefined)
+})
+
+test('installNamesFor lists both name spellings for a scoped package', () => {
+  // pnpm put the install at node_modules/<package.json name>. The scoped
+  // rename moved the live install, but copies from the bare era still sit at
+  // the old spelling — both must be found, so a stale bare-era copy cannot
+  // hide behind the rename.
+  const repo = mkdtempSync(join(tmpdir(), 'qoder-drift-names-'))
+  temporaries.push(repo)
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.2.1' }))
+  assert.deepStrictEqual(
+    installNamesFor(repo),
+    ['@eghrhegpe/dsh-connect-qoder', 'dsh-connect-qoder'],
+    'a scoped package must also probe its own bare name, where pre-rename copies live',
+  )
+})
+
+test('installNamesFor keeps one spelling for an unscoped package', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'qoder-drift-names-'))
+  temporaries.push(repo)
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'dsh-connect-qoder', version: '0.2.0' }))
+  assert.deepStrictEqual(installNamesFor(repo), ['dsh-connect-qoder'])
+})
+
+test('installsIn finds both the scoped install and a stale bare-era copy', () => {
+  // The regression the rename actually caused: a script naming only the bare
+  // path reported "not installed" while the user was running a stale copy at
+  // the scoped path. installNamesFor fixes the spelling; this pins that
+  // installsIn actually looks in both.
+  const repo = mkdtempSync(join(tmpdir(), 'qoder-drift-names-'))
+  temporaries.push(repo)
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.2.1' }))
+
+  const home = mkdtempSync(join(tmpdir(), 'qoder-drift-home-'))
+  temporaries.push(home)
+  const nm = join(home, 'profiles', 'web', 'node_modules')
+  mkdirSync(join(nm, '@eghrhegpe', 'dsh-connect-qoder'), { recursive: true })
+  mkdirSync(join(nm, 'dsh-connect-qoder'), { recursive: true })
+
+  const found = installsIn([join(home, 'profiles', 'web')], repo).sort()
+  assert.deepStrictEqual(
+    found,
+    [join(nm, '@eghrhegpe', 'dsh-connect-qoder'), join(nm, 'dsh-connect-qoder')].sort(),
+  )
+})
+
+test('installsIn returns nothing when neither spelling is installed', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'qoder-drift-names-'))
+  temporaries.push(repo)
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: '@eghrhegpe/dsh-connect-qoder', version: '0.2.1' }))
+  const home = mkdtempSync(join(tmpdir(), 'qoder-drift-home-'))
+  temporaries.push(home)
+  mkdirSync(join(home, 'profiles', 'web', 'node_modules'), { recursive: true })
+  assert.deepStrictEqual(installsIn([join(home, 'profiles', 'web')], repo), [])
 })
