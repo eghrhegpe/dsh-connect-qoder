@@ -10,7 +10,7 @@
  * no log line. Second, the bundle itself: the id it passes to
  * `__ModuleLoader__.load` must equal the name the host asks the module table
  * under, or the artifact executes, registers under a name nobody requested,
- * and the entry dies as "already executed without registering". The 0.3.0
+ * and the entry dies as "already executed without registering". The 0.3.1
  * scoped rename passed through both traps in sequence — the patch row and the
  * build script's header id were literals that the rename did not touch, and
  * each produced a silent, undiagnosable UI loss while the model channel kept

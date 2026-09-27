@@ -8,7 +8,7 @@
 # `name` and silently drops the client bundle (no error, no log) on any
 # mismatch — including bare-vs-scoped. A profile that depends on the scoped
 # package name, or a `link:` install whose directory name differs from the
-# package name, breaks the card the same way the 0.3.0 scoped rename did.
+# package name, breaks the card the same way the 0.3.1 scoped rename did.
 - insert:
     - id: llm-qoder
       name: "@eghrhegpe/dsh-connect-qoder"
