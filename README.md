@@ -45,25 +45,29 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 `QODER_PAT`（国际版），插件会用它换取 job token。
 
 **平台边界：零配置路径只在 Windows 成立。** 解密链路是 PowerShell + DPAPI（`Crypt32.dll`），
-`lib/` 里没有任何 macOS / Linux 分支——在其它平台上应用凭据永远探测不到（`loadCredential`
-返回 `undefined`，该区域不注册），只剩上面的 PAT 兜底。
+`lib/` 里没有任何 macOS / Linux 解包分支——在其它平台上应用目录**找得到**（应用数据根目录
+已按平台解析，见下），但凭据读不出来（`loadCredential` 返回 `undefined`，该区域不注册），
+只剩上面的 PAT 兜底。
 
 **这不是"没有跨平台客户端"，而是客户端已跨平台、插件尚未跟上**：Qoder 桌面版在
 macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上都有下载（[qoder.com.cn/download](https://qoder.com.cn/download)），
-但 `lib/` 只实现了 Windows 这一条解密链。缺口在四处，全部已登记在
+但 `lib/` 只实现了 Windows 这一条解密链。缺口在两处，全部登记在
 [docs/KNOWN_GAPS.md 第 6 条（跨平台凭据链未实现）](docs/KNOWN_GAPS.md)：
 
-1. **OS keystore 封装**：Windows 走 DPAPI；macOS 需 Keychain（`security`，Chromium Safe Storage
-   service 名），Linux 需 libsecret（`secret-tool`）或 Chromium 在 Linux 上 `peanuts` 硬编码
-   key 兜底。
-2. **应用 user-data 根目录**：当前代码把 `process.env.APPDATA` 当作 app 目录所在，macOS 上是
-   `~/Library/Application Support`，Linux 上是 `~/.config`（或 `XDG_CONFIG_HOME`）。
-3. **`MACHINE_OS` 在 darwin 上回落成 `x86_64_linux`**（`lib/upstream.js`）：Qoder 网关按这个
-   字段路由/校验，darwin 实机需要 `aarch64_darwin` / `x86_64_darwin` 一档。
-4. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
+1. **OS keystore 封装（含 key 派生）**：Windows 走 DPAPI；macOS 需 Keychain（`security`），
+   且 Chromium 在 macOS 上对 `encrypted_key` 还要做 PBKDF2-HMAC-SHA1 派生（"peanuts" 常量 +
+   1003 次迭代）——与 DPAPI 直解是两种算法，不是换个命令；Linux 需 libsecret（`secret-tool`）
+   或 Chromium 在 Linux 上的 `peanuts` 硬编码 key 兜底。
+2. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
    Keychain 弹窗、签名打包、`secret-tool` 的 D-Bus session 都得在实机或 runner 上验。
 
-补齐前三项是**纯工作量**，无原理障碍；第四项决定是否敢作为"正式支持"发布。在此之前，
+**已修的两项**（原缺口共四处）：应用数据根目录现在按平台解析（Windows `%APPDATA`、
+macOS `~/Library/Application Support`、Linux `$XDG_CONFIG_HOME`/`~/.config`）——此前直接读
+`process.env.APPDATA`，而该变量在 macOS 上不存在，于是探测得到空串、把"应用装着但读不出密钥"
+谎报成"您没登录"；`MACHINE_OS` 也补上了 darwin 档（本机实测过网关对
+`x86_64_darwin` / `aarch64_darwin` 一律正常应答）。
+
+剩下的是**实机工作**：service 名、PBKDF2 参数、Linux 的变体都必须实测确认，写出来就是盲代码。
 macOS / Linux 用户只能走 PAT 兜底，或自行从本仓库移植。
 
 CI 的 Ubuntu 绿灯说明**测试**在那边能跑，不等于零配置在 Linux 上存在。

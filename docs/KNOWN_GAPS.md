@@ -202,31 +202,37 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
 
 ## 6. 跨平台凭据链未实现（macOS / Linux）
 
-**位置**：`lib/credentials.js`（OS keystore 封装、app user-data 根目录）、
-`lib/account-state.js`（`appDataRoot` 注入）、`lib/upstream.js`（`MACHINE_OS` darwin 回落）
+**状态**：**第 2 项（app-data 根目录）已修**，其余三项仍缺。修了它不是为了"支持 macOS"，
+而是为了让 macOS 上的失败变得**诚实**：此前探测 `process.env.APPDATA`（该变量在 macOS 上
+不存在）→ 得到 `''` → 报告"没登录"，而用户明明登录了。现在 `appDataRootFor()` 解析到
+`~/Library/Application Support`（macOS）与 `$XDG_CONFIG_HOME`/`~/.config`（Linux），
+应用目录**找得到**了，于是面板能说"应用装在这里、但这个版本读不出它的密钥"，
+而不是谎称应用不存在。解包本身仍只有 Windows 一条链。
 
-**为什么现在没有**：Qoder 桌面版已经在 macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上有
-下载，但本插件只实现了 Windows 这一条解密链。当前状态：
+**位置**：`lib/credentials.js`（OS keystore 封装）、`lib/account-state.js`（`appDataRoot` 注入）、
+`lib/upstream.js`（`MACHINE_OS` darwin 回落）
+
+**为什么剩下的还没有**：
 
 1. **OS keystore 封装**：Windows 走 PowerShell + DPAPI（`Crypt32.dll`），macOS 需 Keychain
-   （`security`，Chromium Safe Storage service 名），Linux 需 libsecret（`secret-tool`）或
-   Chromium 在 Linux 上 `peanuts` 硬编码 key 兜底。
-2. **应用 user-data 根目录**：当前代码把 `process.env.APPDATA` 当作 app 目录所在，macOS 上
-   应是 `~/Library/Application Support`，Linux 上是 `~/.config`（或 `XDG_CONFIG_HOME`）。
-3. **`MACHINE_OS` 在 darwin 上回落成 `x86_64_linux`**（`lib/upstream.js:144-151`）：网关按
-   此字段路由/校验，darwin 实机需要 `aarch64_darwin` / `x86_64_darwin` 一档。
+   （`security`，Chromium Safe Storage service 名），Linux 需 libsecret（`secret-tool`）
+   或 Chromium 在 Linux 上 `peanuts` 硬编码 key 兜底。
+   **且 macOS 的 key 不是直接取用**：Chromium 在 macOS 上对 `encrypted_key` 还要做
+   PBKDF2-HMAC-SHA1 派生（"peanuts" 常量 + 1003 次迭代），这与 Windows 的 DPAPI 直解是
+   两种算法，不是换个命令那么简单。
+3. **`MACHINE_OS` 的 darwin 档已补**（实测网关对 `x86_64_darwin` / `aarch64_darwin` 一律 200
+   且数据一致，见 [`../../probe/machineos-probe.mjs`](../../probe/machineos-probe.mjs)）。
 4. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
    Keychain 弹窗、签名打包、`secret-tool` 的 D-Bus session 都得在实机或 runner 上验。
 
 **要补上需要**：
 
-- 前三项是**纯工作量**（三套 keystore 封装 + 平台切换 + `MACHINE_OS` 加一档），无原理障碍。
-- 第四项决定是否敢作为"正式支持"发布：提交的是"盲代码"还是"已验代码"。
-- 在此之前，macOS / Linux 用户只能走 PAT 兜底（`QODER_PAT` / `QODERCN_PAT`），或自行
-  从本仓库移植。
+- 第 1 项是**实机工作**：service 名、PBKDF2 参数、Linux 的 `v10`/`v11` 变体都必须实测确认，
+  写出来就是"盲代码"——而本仓库的规矩是量过才写（`probe/` 下两个探测脚本都是这么来的）。
+- 第 4 项决定是否敢作为"正式支持"发布。
 
 **影响面**：所有 macOS / Linux 上的 Qoder 桌面端用户，「零配置读应用凭据」的卖点在那些
-平台上不存在；README 的「平台边界」段已同步说明。
+平台上仍不存在；README 的「平台边界」段已同步说明。
 
 ---
 
@@ -250,8 +256,8 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
   地板：防的是"悄悄说谎"，防不了"写一句没用的真话"。
 - **覆盖率门槛已建立**（本条的前两版登记「没有阈值」，现已不成立）：
   `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=85
-  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 79.30 / 86.64 /
-  77.67）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
+  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 79.67 / 86.67 /
+  77.88）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
   被挡住」——那还得看本文件。
 - **`verify:bundle` 的时钟脆弱性已根治**（原登记为"待根治"）：`offPeakState` / `rateAt` /
   `withDate` / `localSecondsOf` 读墙上时钟，脚本先 `load(OLD)` 再 `load(NEW)` 逐条对拍，

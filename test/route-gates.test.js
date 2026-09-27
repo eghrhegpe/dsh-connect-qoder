@@ -27,6 +27,7 @@ import { Readable } from 'node:stream'
 
 import {
   readJsonBody,
+  readJsonBodyOr400,
   loopbackRequest,
   methodAllowed,
   originAllowed,
@@ -181,4 +182,46 @@ test('the default cap is 64 KiB', async () => {
   assert.deepStrictEqual(await readJsonBody(bodyRequest([small])), { a: 1 })
   const over = Buffer.alloc(64 * 1024 + 1, 0x20)
   await assert.rejects(() => readJsonBody(bodyRequest([over])), /exceeds 65536 bytes/)
+})
+
+// --- the guarded variant ---------------------------------------------------
+
+test('a good body comes through the guarded reader', async () => {
+  const res = fakeRes()
+  const read = await readJsonBodyOr400(bodyRequest([Buffer.from('{"region":"qoder-cn"}')]), res)
+  assert.deepStrictEqual(read, { ok: true, body: { region: 'qoder-cn' } })
+  assert.strictEqual(res.ended, false, 'nothing is written on the happy path')
+})
+
+test('a malformed body becomes a 400 with a body, not an escaped rejection', async () => {
+  // The failure this exists for: awaited bare, the rejection escaped the handler
+  // and the web server answered a BODYLESS 400, which the card can only render
+  // as "HTTP 400" — undiagnosable from the browser, and identical for a
+  // malformed request, an oversized one, and a bug in the route.
+  const res = fakeRes()
+  const read = await readJsonBodyOr400(bodyRequest([Buffer.from('{not json')]), res)
+  assert.deepStrictEqual(read, { ok: false, body: undefined })
+  assert.strictEqual(res.status, 400)
+  const body = JSON.parse(res.body)
+  assert.match(body.error, /invalid request body/)
+  assert.strictEqual(typeof body.errorName, 'string', 'the card needs a name to show')
+  assert.ok(body.detail.length > 0, 'and something to go on')
+  assert.strictEqual(res.headers.Allow, 'POST', 'a 405-shaped refusal still advertises what works')
+})
+
+test('an over-cap body is refused the same way, not thrown', async () => {
+  const res = fakeRes()
+  const read = await readJsonBodyOr400(bodyRequest([Buffer.alloc(200, 0x61)]), res, 100)
+  assert.strictEqual(read.ok, false)
+  assert.strictEqual(res.status, 400)
+  assert.match(JSON.parse(res.body).detail, /exceeds 100 bytes/)
+})
+
+test('an empty body is still a success, because the reload route accepts it', async () => {
+  // "No body" means "re-read every region" for the reload route, so it must not
+  // be turned into a 400 by the guard.
+  const res = fakeRes()
+  const read = await readJsonBodyOr400(bodyRequest([]), res)
+  assert.deepStrictEqual(read, { ok: true, body: undefined })
+  assert.strictEqual(res.ended, false)
 })

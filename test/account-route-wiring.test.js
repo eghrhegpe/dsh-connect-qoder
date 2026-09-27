@@ -44,10 +44,12 @@ function handlerFor(pathConst) {
   assert.notStrictEqual(at, -1, `lib/index.js no longer registers a route for ${pathConst}`)
   // The handler is the first `handler:` after the path, and runs to the closing
   // of its registration block. A window is enough and is safer than trying to
-  // match braces across the whole file.
+  // match braces across the whole file — but it has to be generous, because the
+  // reload handler carries the most commentary of the seven and a tight window
+  // silently truncates the very call this file is here to check.
   const start = HOST.indexOf('handler:', at)
   assert.notStrictEqual(start, -1, `${pathConst} has no handler`)
-  return HOST.slice(start, start + 2600)
+  return HOST.slice(start, start + 6000)
 }
 
 /**
@@ -62,18 +64,22 @@ function handlerFor(pathConst) {
 function payloadBuilder() {
   const at = HOST.indexOf('const accountPayload =')
   assert.notStrictEqual(at, -1, 'lib/index.js no longer builds an account payload')
-  return HOST.slice(at, at + 1200)
+  return HOST.slice(at, at + 2000)
 }
 
 test('the shared payload builder — the render path — reads the cached credential', () => {
   // The regression this file was written after: without the flag the panel
   // blocks the host event loop for up to 30 s on a machine that cannot unwrap,
   // and the panel that must explain that state is what gets frozen.
-  const read = /readAccountState\(([^)]*)\)/.exec(payloadBuilder())
-  assert.ok(read !== null, 'the account payload builder must call readAccountState')
+  //
+  // Matched with a window rather than inside the parentheses: the first argument
+  // is `appDataRootFor()`, so a lazy `[^)]*` would stop at its closing paren and
+  // report a failure that says nothing about the flags.
+  const builder = payloadBuilder()
+  assert.match(builder, /readAccountState\(/, 'the account payload builder must call readAccountState')
   assert.match(
-    read[1],
-    /cachedOnly:\s*true/,
+    builder,
+    /readAccountState\([\s\S]{0,120}?cachedOnly: true/,
     'the account payload must read with { cachedOnly: true } — a fresh unwrap here blocks every render',
   )
 })
@@ -92,29 +98,54 @@ test('the account reload re-reads for real, ignoring the failure window', () => 
   // The opposite requirement, and the one a well-meaning "let's cache that too"
   // edit would break: this route IS the user saying "read it again now". Reading
   // it from a remembered failure makes the button silently do nothing.
+  //
+  // The mode now lives in the shared payload builder rather than in the handler
+  // (issue 12, item 8 — the two bodies had drifted apart in SHAPE as well), so
+  // this asserts the route asks for the forced variant of that one builder.
   const handler = handlerFor('QODER_ACCOUNT_RELOAD_PATH')
-  const read = /readAccountState\(([^)]*)\)/.exec(handler)
-  assert.ok(read !== null, 'the reload handler must call readAccountState')
   assert.match(
-    read[1],
-    /force:\s*true/,
-    'POST /account/reload must read with { force: true } — otherwise 重读登录 is a no-op',
+    handler,
+    /accountPayload\(\{\s*force:\s*true\s*\}\)/,
+    'POST /account/reload must ask for the forced read — otherwise 重读登录 is a no-op',
   )
   assert.doesNotMatch(
-    read[1],
+    handler,
     /cachedOnly/,
     'the reload path must not be the cached one, whatever else changes',
   )
 })
 
-test('the two sites do not drift into the same mode', () => {
-  // Stated separately because the failure is symmetric: both wrong in the same
-  // direction (always cached) is just as bad as both always live. Asserting each
-  // independently already covers this, and this test names the invariant so a
-  // future refactor that unifies them has to delete a line, not just pass.
-  const get = /readAccountState\(([^)]*)\)/.exec(payloadBuilder())
-  const post = /readAccountState\(([^)]*)\)/.exec(handlerFor('QODER_ACCOUNT_RELOAD_PATH'))
-  assert.notStrictEqual(get?.[1], post?.[1], 'the render path and the re-read path must differ')
+test('the shared builder reads cached by default and forced on request', () => {
+  // One builder, two modes, and they must not be the same. `force ? { force: true }
+  // : { cachedOnly: true }` is the whole decision; collapsing it to one mode is
+  // the regression this file has been written against twice.
+  const builder = payloadBuilder()
+  // A lazy `[^)]*` cannot span the nested call now that the first argument is
+  // `appDataRootFor()` rather than `process.env.APPDATA`, so the flags are
+  // matched within a window around the call instead of inside its parentheses.
+  assert.match(
+    builder,
+    /readAccountState\([\s\S]{0,120}?force \? \{ force: true \} : \{ cachedOnly: true \}/,
+    'accountPayload must take its read mode from its argument',
+  )
+})
+
+test('the two account routes answer with the SAME shape', () => {
+  // The reload response used to be `{ regions }` while the GET answered
+  // `{ regions, enabledRegions }`, so the card had to follow every re-read with a
+  // second GET to learn the per-region switches — and the two answers could
+  // disagree in between, which is a UI showing a switch state that is not the
+  // one it just wrote.
+  assert.match(
+    handlerFor('QODER_ACCOUNT_RELOAD_PATH'),
+    /sendJson\(res, 200, accountPayload\(/,
+    'the reload route must send the shared payload, not a narrower object literal',
+  )
+  assert.doesNotMatch(
+    handlerFor('QODER_ACCOUNT_RELOAD_PATH'),
+    /sendJson\(res, 200, \{ regions \}\)/,
+    'a hand-built { regions } body is the shape drift this replaced',
+  )
 })
 
 test('a zero-region activation keeps the card routes registered', () => {

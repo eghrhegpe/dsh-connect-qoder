@@ -33,13 +33,13 @@
 | 3 503 不可达 | **早已解决**：路由注册在 `['webServer']`，handler 内判 `get('settings')` |
 | 5 缺 `Cache-Control` | **早已解决**：`sendJson` 全局带 `no-store` |
 | 9 TTL 死分支 | **早已解决**：空目录落盘后 `fetchedAt` 会前进，这个分支重新有了真实含义 |
-| 4 405 缺 `Allow` / HEAD 被 405 | **本轮已修**（见下） |
-| 6 `lastSaveError` 只写不读 | **本轮已修**（见下） |
-| 12 0 区域整块 return | **本轮已修**（见下） |
-| 2 坏 body 打进 catch-all | 未做 |
-| 7 `Object.assign` 死代码 | 未做 |
-| 8 reload 响应形状不一致 | 未做 |
-| 10 `__hide-all__` 哨兵进设置文档 | 未做（依赖 P0-3①，已完成，可另排） |
+| 4 405 缺 `Allow` / HEAD 被 405 | **已修**（见下） |
+| 6 `lastSaveError` 只写不读 | **已修**（见下） |
+| 12 0 区域整块 return | **已修**（见下） |
+| 2 坏 body 打进 catch-all | **已修**：`readJsonBodyOr400` 把解析失败变成带 `errorName` 的 400（见下） |
+| 7 `Object.assign` 死代码 | **已修**（见下） |
+| 8 reload 响应形状不一致 | **已修**（见下） |
+| 10 `__hide-all__` 哨兵进设置文档 | **有意不改**（见下） |
 | 11 Origin 只比主机名 | 未做 |
 
 ### 本轮三处的落法
@@ -57,4 +57,21 @@
   `createQoderAdapter` 按设计拒绝空区域集，所以两处构造点都要容错
   （`publishRegions` 直接答 `{ ok: true }`、初始 `adapter` 留 `undefined`）。
   测在 `test/account-route-wiring.test.js`（activate 不可 import，源码断言）。
+
+### 后续几轮的落法
+
+- **第 2 条**：`readJsonBodyOr400`（[`../../lib/routes.js`](../../lib/routes.js)）把解析失败
+  与超限都变成**带 body 的 400**（`errorName` + `detail`），裸调它的两条路由（reload、confirm）
+  改用它。空 body 仍是成功——reload 用它表达"重读所有区域"。
+- **第 7 条**：**删掉了 `Object.assign(preferences, …)`**。原注释说它让 `current()` 立即看到，
+  但 `current()` 解析的是 `{ ...snapshot, ...liveSource }`——live source 有该字段时赋值被遮蔽，
+  没有该字段时说明写入根本没落地（`applySettingsSave` 的读回校验已经拒了）。**两个方向都是死代码**，
+  且在 0.1.7 那条线上只会让 snapshot 与文档不一致。
+- **第 8 条**：`accountPayload` 现在接受 `{ force }`，两条路由共用**同一个**构造器，
+  形状统一为 `{ regions, enabledRegions }`。此前 reload 只回 `{ regions }`，卡片必须再发一次
+  GET 才能知道各版本开关状态，两次响应之间还可能不一致。
+- **第 10 条**：**有意不改**。`__hide-all__` 换成 `null` 确实更好读，但每个已有用户的设置
+  文档里存的就是 `["__hide-all__"]`，改格式会**静默把"全部隐藏"变成"全部显示"**。
+  改为把不变量变成代码性质：`HIDE_ALL_MODELS` 导出并写明理由，`modelIdFor` 在生成 id 时
+  保证真实模型**不可能**占用该字符串（改名而非丢弃——丢掉一个真实模型更糟）。
 
