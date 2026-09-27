@@ -17,9 +17,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { buildModelRowsPayload, normalizeEntry, projectModelRow } from '../lib/catalog-entry.js'
-import { offPeakActive, offPeakRemaining, rateNow } from '../lib/offpeak.js'
+import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../lib/offpeak.js'
 
-const RATES = { rateNow, offPeakActive, offPeakRemaining }
+const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakRemaining }
 const NOW = new Date('2026-09-26T23:30:00+08:00')
 
 const entryFor = (overrides = {}) =>

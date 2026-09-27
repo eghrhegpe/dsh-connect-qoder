@@ -46,8 +46,27 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 
 **平台边界：零配置路径只在 Windows 成立。** 解密链路是 PowerShell + DPAPI（`Crypt32.dll`），
 `lib/` 里没有任何 macOS / Linux 分支——在其它平台上应用凭据永远探测不到（`loadCredential`
-返回 `undefined`，该区域不注册），只剩上面的 PAT 兜底。CI 的 Ubuntu 绿灯说明**测试**在那边
-能跑，不等于零配置在 Linux 上存在。
+返回 `undefined`，该区域不注册），只剩上面的 PAT 兜底。
+
+**这不是"没有跨平台客户端"，而是客户端已跨平台、插件尚未跟上**：Qoder 桌面版在
+macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上都有下载（[qoder.com.cn/download](https://qoder.com.cn/download)），
+但 `lib/` 只实现了 Windows 这一条解密链。缺口在四处，全部已登记在
+[docs/KNOWN_GAPS.md 第 6 条（跨平台凭据链未实现）](docs/KNOWN_GAPS.md)：
+
+1. **OS keystore 封装**：Windows 走 DPAPI；macOS 需 Keychain（`security`，Chromium Safe Storage
+   service 名），Linux 需 libsecret（`secret-tool`）或 Chromium 在 Linux 上 `peanuts` 硬编码
+   key 兜底。
+2. **应用 user-data 根目录**：当前代码把 `process.env.APPDATA` 当作 app 目录所在，macOS 上是
+   `~/Library/Application Support`，Linux 上是 `~/.config`（或 `XDG_CONFIG_HOME`）。
+3. **`MACHINE_OS` 在 darwin 上回落成 `x86_64_linux`**（`lib/upstream.js`）：Qoder 网关按这个
+   字段路由/校验，darwin 实机需要 `aarch64_darwin` / `x86_64_darwin` 一档。
+4. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
+   Keychain 弹窗、签名打包、`secret-tool` 的 D-Bus session 都得在实机或 runner 上验。
+
+补齐前三项是**纯工作量**，无原理障碍；第四项决定是否敢作为"正式支持"发布。在此之前，
+macOS / Linux 用户只能走 PAT 兜底，或自行从本仓库移植。
+
+CI 的 Ubuntu 绿灯说明**测试**在那边能跑，不等于零配置在 Linux 上存在。
 
 ## 安装
 
@@ -134,6 +153,12 @@ dsh plugin --profile web add <本仓库路径>
   下的另一个 `VIEW_DETAILS` 活动同样带着 `claimStatus: "CLAIMED"` 却没有 benefit，只按状态挑会对
   它去领；而列表顶层的 `claimable` 在「已领过」和「没有活动」时都是 `false`，不能当判据。
   按钮文案落到 `addOnQuota` 旁边，是因为国内版免费层的计划额度为 0，签到攒的资源包是它唯一的额度。
+- **国际版签到行需要 umid 机器身份**：国际版 `GET /sash/api/v1/me/campaigns` 把每日
+  `CLAIM_BENEFIT` 轮次按机器身份下发——请求须携带桌面应用 umid 服务的
+  `Cosy-MachineToken/Code/Type` 头，否则只回常驻的 `VIEW_DETAILS` 横幅，签到行按
+  `active: false` 设计隐藏。插件在 OpenAPI 请求上自动附加这组头（Windows 上定位安装
+  目录的 `resources\umid\runtime-info.exe` 读取，失败静默降级为原头组；国内版与 PAT
+  不受影响；发现与验证记录在 [docs/KNOWN_GAPS.md 第 8 条（国际版 campaigns 端点按 umid 机器身份门控每日签到）](docs/KNOWN_GAPS.md)）。
 
 ## 目录
 
@@ -153,6 +178,10 @@ dsh plugin --profile web add <本仓库路径>
 | `lib/offpeak.js` | 错峰窗口与费率算术（无 peer 依赖） |
 | `lib/single-flight.js` | 同类异步任务的并发合并：刷新在途时，后来的调用并入同一次请求（目录/用量刷新用，无 peer 依赖） |
 | `lib/claim.js` | 每日签到：当轮活动的挑选、可领状态判定与领取结果的归一化（纯函数，无 peer 依赖） |
+| `lib/errors.js` | 上游错误帧的判定：105（登录没了）与 10605（在排队）的分诊，队列提示的提取（无 peer 依赖） |
+| `lib/time.js` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
+| `lib/volatile.js` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
+| `lib/http-utils.js` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
 | `lib/index.js` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
 
 `lib/client.js` 是注入到宿主设置页的那张卡片的构建产物（`react` 由宿主提供，产物不打包它）。
@@ -161,7 +190,8 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/paths.ts` | 卡片用到的五条插件路由 |
 | `src/client/styles.ts` | 卡片样式与 `installStyles`（`dsm-*` 一套与 `dsh-connect-workbuddy` 逐字一致，原因见文件头） |
 | `src/client/settings-write.ts` | 「写入后读回校验」的浏览器半边 |
-| `src/client/copy.ts` | 卡片文案（中/英） |
+| `src/client/copy.ts` | 卡片文案聚合入口（中/英），`index.ts` 与 `card.ts` 只从这里取 |
+| `src/client/copy-row.ts` `copy-usage.ts` `copy-account.ts` | 按面板拆分的三段文案：模型行与错峰、用量与签到、账号与区域标签条 |
 | `src/client/card.ts` | 卡片的纯函数与五个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `QuotaBlock`） |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
 
@@ -187,7 +217,7 @@ npm run build           # 从 src/client 重建 lib/client.js
 
 | 步骤 | 回答什么 | 全过时的输出 |
 |---|---|---|
-| `npm test` | 卡片逻辑与宿主半边没被改坏 | `# pass 269` / `# fail 0` |
+| `npm test` | 卡片逻辑与宿主半边没被改坏 | 最后一行 `# fail 0` |
 | `build --tsdown`（不写） | `lib/client.js` **确实**由 `src/client/` 生成 | `MATCH: … byte-for-byte identical` |
 | `verify:bundle` | 重建产物与 HEAD 的行为一致 | `behaviour: IDENTICAL` |
 

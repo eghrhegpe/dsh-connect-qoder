@@ -51,6 +51,44 @@ function readVersion(dir) {
   }
 }
 
+/**
+ * The directory names a profile can hold this plugin under.
+ *
+ * pnpm places an install at `node_modules/<dependency name>`, and the
+ * dependency name is this package's `name` — which the 0.3.2 rename moved
+ * from the bare spelling to the scoped one. Copies installed before that
+ * rename still sit at the bare path, so drift must be checked under BOTH
+ * spellings; a script that only knew its own era's name reports "not
+ * installed" while a stale copy keeps serving the user, which is the exact
+ * failure this script was written against.
+ */
+export function installNamesFor(repoRoot) {
+  let name
+  try {
+    name = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).name
+  } catch {
+    name = undefined
+  }
+  const names = new Set()
+  if (typeof name === 'string' && name.length > 0) names.add(name)
+  if (typeof name === 'string' && name.startsWith('@')) names.add(name.slice(name.indexOf('/') + 1))
+  if (names.size === 0) names.add('dsh-connect-qoder')
+  return [...names]
+}
+
+/** Every deployed install path under a profile, across all name spellings. */
+export function installsIn(profiles, repoRoot) {
+  const names = installNamesFor(repoRoot)
+  const out = []
+  for (const profile of profiles) {
+    for (const name of names) {
+      const install = join(profile, 'node_modules', name)
+      if (lstatSync(install, { throwIfNoEntry: false }) !== undefined) out.push(install)
+    }
+  }
+  return out
+}
+
 /** Every file under `dir`, as posix-style relative paths, sorted. */
 function listFiles(dir) {
   const out = []
@@ -208,9 +246,7 @@ function main() {
     return 0
   }
 
-  const reports = profiles
-    .map((profile) => join(profile, 'node_modules', 'dsh-connect-qoder'))
-    .filter((install) => lstatSync(install, { throwIfNoEntry: false }) !== undefined)
+  const reports = installsIn(profiles, repoRoot)
     .map((installRoot) => compareInstall({ repoRoot, installRoot }))
 
   if (reports.length === 0) {

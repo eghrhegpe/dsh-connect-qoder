@@ -24,16 +24,18 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { normalizeEntry, projectModelRow } from '../lib/catalog-entry.js'
-import { offPeakActive, offPeakRemaining, rateNow } from '../lib/offpeak.js'
+import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../lib/offpeak.js'
+
+const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakRemaining }
 
 /**
  * The card's own gate, reproduced so this test fails if the card's rule changes.
  *
  * SYNC CONSTRAINT: this is a copy of an expression that lives in the client
- * card (lib/client.js, `models.some((m) => m.promotion?.active === true)`), and
- * there is no way to import it — the card is a browser bundle built from
- * TypeScript sources that are not in this repository. So this file is
- * deliberately NOT import-clean, and it should not be read as being so.
+ * card (src/client/card.ts, `models.some((m) => m.promotion?.active === true)`).
+ * The card is a browser bundle built from TypeScript sources, so it cannot be
+ * imported directly from a Node test. This file is deliberately NOT import-clean,
+ * and it should not be read as being so.
  *
  * If the card's gate is ever rewritten, this copy has to be rewritten with it,
  * or these tests will keep passing while asserting a rule nothing implements.
@@ -65,9 +67,10 @@ function cardInstallsClock(rows) {
  *
  * This is a faithful transcription, guards and window arithmetic both, so the
  * comparison below is over the whole verdict. It is a SPECIFICATION of the
- * card's rule, not the card's code: the bundle is built from TypeScript sources
- * not in this repository, so the real function cannot be imported here at all
- * (see docs/KNOWN_GAPS.md item 3). If the card's gate is rewritten, this copy
+ * card's rule, not the card's code: the card runs in the browser and cannot be
+ * imported into a Node test, so this file pins the rule and
+ * test/client-bundle.test.js pins the shipped bundle (see docs/KNOWN_GAPS.md
+ * item 3（客户端卡片的门控表达式）). If the card's gate is rewritten, this copy
  * has to be rewritten with it.
  *
  * @returns whether the card would render an off-peak badge for this row.
@@ -148,8 +151,6 @@ const NOW = new Date('2026-09-26T23:30:00+08:00')
  * product would be visible rather than masked by a coincidentally equal
  * fallback.
  */
-const RATES = { rateNow, offPeakActive, offPeakRemaining }
-
 const ENTRY = normalizeEntry({
   key: 'GLM',
   name: 'GLM 5.3',

@@ -64,10 +64,16 @@ function apply(ctx) {
 	 * FIX 0.1.7: the plugin-manager detail page renders a bundle's config
 	 * card from the `plugins.bundle.config` slot (and a row's from
 	 * `plugins.row.config`); the legacy `settings.plugin.item` slot is no
-	 * longer rendered there. Register under all three so the card shows
-	 * on the bundle page (0.1.7), the row page, and any legacy surface.
-	 * Each registration degrades to a read-only card when no settings
-	 * surface is served, instead of throwing into the loader.
+	 * longer rendered there. The host gates the section on
+	 * `ledger.bundles.has(openPkg.name)`, and that set is read back from
+	 * these very slot registrations — a card registered under a key nobody
+	 * installs as a dependency is invisible even though `apply` ran.
+	 * The 0.3.2 scoped rename made that real: profiles may carry this
+	 * bundle as either bare `dsh-connect-qoder` (the historical name) or
+	 * scoped `@eghrhegpe/dsh-connect-qoder` (the npm name), so each key is
+	 * registered in both identities. Registration itself degrades to a
+	 * read-only card when no settings surface is served, instead of
+	 * throwing into the loader.
 	 */
 	const registerCard = (slotName, key) => {
 		try {
@@ -86,8 +92,10 @@ function apply(ctx) {
 			console.error(`[dsh-connect-qoder] card slot "${slotName}" failed to register (host provider unaffected):`, error);
 		}
 	};
-	registerCard("plugins.bundle.config", "dsh-connect-qoder");
-	registerCard("plugins.row.config", "dsh-connect-qoder#llm-qoder");
+	for (const bundle of ["@eghrhegpe/dsh-connect-qoder", "dsh-connect-qoder"]) {
+		registerCard("plugins.bundle.config", bundle);
+		registerCard("plugins.row.config", `${bundle}#llm-qoder`);
+	}
 	registerCard("settings.plugin.item", "qoder");
 	} catch (error) {
 		console.error("[dsh-connect-qoder] client card failed to load (host provider unaffected):", error);

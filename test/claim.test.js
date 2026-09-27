@@ -147,6 +147,21 @@ test('an unknown claim status is treated as claimable rather than claimed', () =
   assert.equal(campaignIsClaimed(dailyRound('READY_TO_CLAIM')), false)
 })
 
+/**
+ * A list carrying only the evergreen `VIEW_DETAILS` banner — the shape the
+ * international campaigns endpoint answers with when the request lacks the
+ * desktop app's umid machine identity (verified 2026-09-27 against the live
+ * endpoint). It reads as inactive, not as a missing round the selector
+ * failed to find: the banner reports `CLAIMED` while having no benefit, so
+ * a status-only selector would happily "claim" it and report success with
+ * nothing granted.
+ */
+test('a banner-only campaigns list reads as an inactive check-in, not a claimed one', () => {
+  const bannerOnly = payloadWith(VIEW_DETAILS_CAMPAIGN)
+  assert.equal(claimableCampaignOf(bannerOnly, INSIDE_WINDOW_MS), undefined)
+  assert.deepEqual(checkinStateFrom(bannerOnly, INSIDE_WINDOW_MS), { active: false, todayCheckedIn: false })
+})
+
 test('missing, empty and malformed campaign payloads all read as inactive', () => {
   const inert = { active: false, todayCheckedIn: false }
   assert.deepEqual(checkinStateFrom(undefined), inert)

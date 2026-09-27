@@ -12,7 +12,7 @@
  * card showing a discount nobody gets) leaves that file fully green, because the
  * copy in the test still has the line.
  *
- * The bundle cannot simply be imported: it is an esbuild output that calls
+ * The bundle cannot simply be imported: it is a browser build output that calls
  * `window.__ModuleLoader__.load` and reaches for `react` and `react/jsx-runtime`
  * at load time. So the two pure functions the gate depends on are extracted from
  * the bundle TEXT and evaluated here. They are the real shipped code, so
@@ -22,9 +22,11 @@
  * WHAT IS STILL NOT COVERED
  *
  * Everything around the gate: the JSX rendering, the clock interval, the fetch
- * of the host route, the settings write. Those need the browser, or the
- * TypeScript sources this repository does not have (docs/KNOWN_GAPS.md item 2).
- * What is covered is the one thing that computes a number the user is shown.
+ * of the host route, the settings write. Those need a browser — the TypeScript
+ * sources now exist (src/client/, restored per docs/issues/17), but there is
+ * no DOM harness here and this file deliberately tests the SHIPPED bundle, not
+ * the sources. What is covered is the one thing that computes a number the
+ * user is shown.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

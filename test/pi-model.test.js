@@ -291,3 +291,57 @@ test('the off-peak window is marked in the name', () => {
   assert.match(displayNameFor(entry, new Date('2026-09-26T23:30:00+08:00')), /错峰$/)
   assert.ok(!displayNameFor(entry, NOW).includes('错峰'), 'midday is outside the window')
 })
+
+// --- the daytime promise of the switch -------------------------------------
+
+const offPeakRates = {
+  active: true,
+  windowStart: '22:00',
+  windowEnd: '08:00',
+  timezone: 'Asia/Shanghai',
+  discountFactor: 0.4,
+  beforePromotionPriceFactor: 1.25,
+}
+
+test('outside the window the name carries the hour and the discounted rate', () => {
+  // A picker user who never opens the plugin card had no way to learn the
+  // discount exists: `x1.25` alone says nothing about 22:00. The promise
+  // spells out both numbers the card will flip to at the boundary.
+  const entry = { ...baseEntry, priceFactor: 0.5, promotion: offPeakRates }
+  assert.strictEqual(displayNameFor(entry, NOW), 'GLM 5.3 · x1.25（22点 x0.50）')
+})
+
+test('a switched-off promotion promises nothing', () => {
+  // Qoder can turn the campaign off; the rate then never flips, and a
+  // promised "22点" that stays out of reach is a lie by the name.
+  const entry = { ...baseEntry, priceFactor: 0.5, promotion: { ...offPeakRates, active: false } }
+  assert.strictEqual(displayNameFor(entry, NOW), 'GLM 5.3 · x1.25')
+})
+
+test('a discount that is not a discount promises nothing', () => {
+  // discountFactor >= 1 (or a broken NaN rate) must not paint a fake deal.
+  const flat = { ...baseEntry, priceFactor: 0.5, promotion: { ...offPeakRates, discountFactor: 1 } }
+  assert.strictEqual(displayNameFor(flat, NOW), 'GLM 5.3 · x1.25')
+  const broken = { ...baseEntry, priceFactor: 0.5, promotion: { ...offPeakRates, beforePromotionPriceFactor: 'abc' } }
+  // A broken `before` rate makes `rateNow` fall back to `priceFactor`, so the
+  // shown multiplier is the fallback — and there is nothing to promise.
+  assert.strictEqual(displayNameFor(broken, NOW), 'GLM 5.3 · x0.50')
+})
+
+test('an unparsable window hour promises no hour', () => {
+  // The name must not promise a clock the flip itself could not read.
+  const entry = { ...baseEntry, priceFactor: 0.5, promotion: { ...offPeakRates, windowStart: '22' } }
+  assert.strictEqual(displayNameFor(entry, NOW), 'GLM 5.3 · x1.25')
+})
+
+test('half-hour windows keep their minutes in the promise', () => {
+  const entry = { ...baseEntry, priceFactor: 0.5, promotion: { ...offPeakRates, windowStart: '22:30' } }
+  assert.strictEqual(displayNameFor(entry, NOW), 'GLM 5.3 · x1.25（22:30 x0.50）')
+})
+
+test('inside the window the discounted side needs no promise', () => {
+  // The 错峰 suffix already says which side this is; the old number would
+  // only suggest the discount is over.
+  const entry = { ...baseEntry, priceFactor: 0.5, promotion: offPeakRates }
+  assert.strictEqual(displayNameFor(entry, new Date('2026-09-26T23:30:00+08:00')), 'GLM 5.3 · x0.50 错峰')
+})

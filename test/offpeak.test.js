@@ -24,6 +24,7 @@ import {
   offPeakRemainingSeconds,
   rateNow,
 } from '../lib/offpeak.js'
+import { normalizePromotion } from '../lib/upstream.js'
 
 /**
  * An entry with the 22:00-08:00 window Qoder actually publishes.
@@ -69,7 +70,7 @@ function rateIs(actual, expected) {
   return Math.abs(actual - expected) < 1e-9
 }
 
-test('the aliases are the same functions, not re-implementations', () => {
+test('the re-exports are the same functions, not re-implementations', () => {
   // lib/adapter.js re-exports these under the names the rest of the plugin
   // imports. If a copy had crept in, the card and the picker could disagree.
   assert.strictEqual(rateNow, effectiveRate)
@@ -145,8 +146,9 @@ test('a model with no promotion is rated at its plain price factor', () => {
 })
 
 test('an inactive promotion never discounts', () => {
-  // `active: false` is what a model with a window Qoder has switched off looks
-  // like. Treating it as active would show a discount nobody gets.
+  // A normalized `active: false` — what `normalizePromotion` only emits when
+  // the server denied the campaign while its own window was open (or never
+  // claimed it on). Treating it as active would show a discount nobody gets.
   const inactive = { ...PROMOTED, promotion: { ...PROMOTED.promotion, active: false } }
   assert.strictEqual(isOffPeakActive(inactive, at('23:30')), false)
   assert.strictEqual(rateNow(inactive, at('23:30')), 0.025)
@@ -206,4 +208,69 @@ test('a same-day window is handled without the midnight disjunction', () => {
   assert.strictEqual(isOffPeakActive(daytime, at('21:59')), false)
   assert.ok(rateIs(rateNow(daytime, at('12:00')), 0.01))
   assert.ok(rateIs(rateNow(daytime, at('21:59')), 0.025))
+})
+
+// --- the producer: what Qoder's moment-in-time flag becomes ----------------
+//
+// `normalizePromotion` is the only writer of the `active` field every test
+// above reads, so the field's meaning is pinned here too. The upstream payload
+// is snake_case, exactly as the catalog serves it.
+
+const rawPromotion = (over = {}) => ({
+  window_start: '22:00',
+  window_end: '08:00',
+  timezone: 'Asia/Shanghai',
+  discount_factor: 0.4,
+  before_promotion_price_factor: 1.25,
+  badge: { zh: '错峰 4 折', en: 'off-peak 60% off' },
+  description: { zh: '错峰时段4折优惠（10 PM-8 AM UTC+8）' },
+  ...over,
+})
+
+test('a daytime false survives normalization as a live campaign', () => {
+  // Measured live at 14:02 UTC+8: every discounted model reported `active:false`
+  // while still carrying badge, description and window. Qoder's flag answers
+  // "is the discount applying right now", and read verbatim it silenced the
+  // whole off-peak UI for the entire day.
+  const promo = normalizePromotion(rawPromotion({ active: false }), at('12:00'))
+  assert.strictEqual(promo.active, true, 'a closed-window false is the window, not the campaign')
+})
+
+test('a false fetched inside the open window is the kill it always meant', () => {
+  // 23:30 is inside 22:00-08:00; denying the campaign while its own window is
+  // open can only mean switched off, and that reading must survive.
+  const promo = normalizePromotion(rawPromotion({ active: false }), at('23:30'))
+  assert.strictEqual(promo.active, false)
+})
+
+test('true is true at any hour; absent and malformed stay strictly off', () => {
+  assert.strictEqual(normalizePromotion(rawPromotion({ active: true }), at('12:00')).active, true)
+  assert.strictEqual(normalizePromotion(rawPromotion({ active: true }), at('23:30')).active, true)
+  const absent = rawPromotion()
+  delete absent.active
+  // Guessing campaigns into existence from a bare block is worse than the
+  // silence; the old strict read stands for anything that is not a boolean.
+  assert.strictEqual(normalizePromotion(absent, at('12:00')).active, false)
+  assert.strictEqual(normalizePromotion(rawPromotion({ active: 'true' }), at('12:00')).active, false)
+})
+
+test('a false with no window to re-read against stands as told', () => {
+  // Rates-only blocks carry no clock to interpret the flag against, so even a
+  // daytime fetch cannot promote them to live campaigns.
+  const ratesOnly = { active: false, discount_factor: 0.4, before_promotion_price_factor: 1.25 }
+  assert.strictEqual(normalizePromotion(ratesOnly, at('12:00')).active, false)
+})
+
+test('the producer feeds the shipped consumers end to end across a boundary', () => {
+  // The real join, with no second fetch: a catalog entry normalized at noon is
+  // a live campaign whose daytime rate is the full `before`, whose countdown
+  // points at 22:00, and whose rate flips to the discounted product at 23:30.
+  // `priceFactor` is 0.51 — deliberately NOT the product (1.25 × 0.4 = 0.5) —
+  // so the in-window assertion can tell the product path from the fallback.
+  const entry = { priceFactor: 0.51, promotion: normalizePromotion(rawPromotion({ active: false }), at('12:00')) }
+  assert.strictEqual(isOffPeakActive(entry, at('12:00')), false)
+  assert.ok(rateIs(rateNow(entry, at('12:00')), 1.25), 'daytime bills at the before rate')
+  assert.strictEqual(offPeakRemaining(entry, at('12:00')), 10 * 3600, 'the countdown is visible by day')
+  assert.strictEqual(isOffPeakActive(entry, at('23:30')), true)
+  assert.ok(rateIs(rateNow(entry, at('23:30')), 0.5), 'the flip uses before × discount, not the stale base')
 })
