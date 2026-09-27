@@ -95,13 +95,26 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
 
 ## 3. 客户端卡片的门控表达式
 
-**状态**：**已知的、刻意接受的镜像**，而且现在是**两个**。
+**状态**：**已知的、刻意接受的镜像**，而且现在是**两个**。两处都**必须**留在卡片，原因不是
+"抽不出来"而是**语义不同**：卡片要每秒重算，22:00 / 08:00 的翻转必须自己发生；宿主那份
+只在请求时算一次。
 
 1. `test/model-row.test.js` 的 `cardInstallsClock` 复刻了卡片 bundle 中的
    `models.some((m) => m.promotion?.active === true)`。
 2. 同文件的 `cardRendersOffPeak`（连同 `cardParseClock` / `cardLocalSecondsOf`）
    复刻了 `offPeakState` 的**完整**判定——守卫加窗口算术——用来钉住卡片的错峰
    门控与 host 端 `isOffPeakActive` 永远一致。
+
+**与第 1 点的区别（这一条是本条现在的重点）**：上面这两处是**规格**，不是门禁——
+手抄的副本在原实现被改坏时依然会绿。真正的门禁在 `test/client-bundle.test.js`：
+它从**产物文本**里提取 `offPeakState` 及其依赖并执行，所以卡片侧改坏会当场变红。
+也就是说这里已经不存在"只能靠人工纪律维持"的镜像了。
+
+**本轮还去掉了唯一一处真分歧**（issue 09）：`windowLabelOf` 曾与宿主的
+`contextWindowIsReal` 在"`contextOptions` 非空但 `defaultContextWindow === 0`"上给出不同答案，
+卡片显示 `200K` 而选择器不显示。卡片现在读宿主算好的 `contextWindowLabel`，
+只保留宿主无法表达的"逐行切到最宽窗口"；`test/card-host-parity.test.js` 逐状态对拍，
+并断言产物里不再有第二份窗口算术。
 
 **为什么无法 import**：卡片是浏览器 bundle——开头就取 `window.__ModuleLoader__` 与
 `react`，Node 测试里没有 DOM 宿主能装载它。源码如今**已经**入库
