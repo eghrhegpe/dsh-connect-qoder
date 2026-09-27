@@ -1,0 +1,27 @@
+# Git Attributes for CI
+
+# Pin the end-of-line form of every file in the repository so that the
+# on-disk working tree and the committed blob are byte-identical under any
+# client `core.autocrlf` setting. The CI matrix spans ubuntu-latest and
+# windows-latest; Windows checkouts default to `core.autocrlf=true` and
+# otherwise rewrite LF -> CRLF on disk. That rewrite silently breaks the
+# prose gate in test/docs-facts.test.js, which keys on `## heading\n` and
+# `^## N.` with a literal LF; a CRLF checkout makes both patterns fail and
+# the suite goes red on Windows only (CI runs 36299141909 / 36299141870).
+#
+# `text eol=lf` forces LF on both checkout and commit for every text file,
+# so a Windows client that has `core.autocrlf=true` globally still receives
+# LF bytes on disk. This is the standard "repository declares LF" pattern.
+#
+# This file itself is text: it round-trips through the same rule, so adding
+# or removing it cannot reintroduce the CRLF checkout it guards against.
+
+# Everything is normalised to LF; no source file in this repository is
+# committed with CRLF, so the blanket rule is safe and future-proof.
+* text eol=lf
+
+# The two binary families that do NOT survive a line-ending rewrite.
+*.png binary
+*.ico binary
+*.exe binary
+*.wasm binary

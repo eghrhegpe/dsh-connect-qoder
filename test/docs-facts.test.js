@@ -88,8 +88,11 @@ for (const rel of LIVE_FILES) {
 /** Parse KNOWN_GAPS.md's `## N. Title` list into { number → heading }. */
 function gapsSections() {
   const map = new Map()
-  for (const line of read('docs/KNOWN_GAPS.md').split('\n')) {
-    const m = /^## (\d+)\.\s*(.+)$/.exec(line)
+  // `\r?\n` tolerates both LF and CRLF checkouts: the CI matrix spans ubuntu
+  // (LF) and windows-latest, where the runner's `core.autocrlf=true` can
+  // hand the test a CRLF working tree unless .gitattributes pins `eol=lf`.
+  for (const line of read('docs/KNOWN_GAPS.md').split(/\r?\n/)) {
+    const m = /^## (\d+)\.\s*(.+?)\r?$/.exec(line)
     if (m !== null) map.set(Number(m[1]), m[2].trim())
   }
   return map
@@ -124,7 +127,10 @@ test('every topic-qualified gap reference anywhere in a live file names a real s
 
 /** The README 目录 section, up to the next `## ` heading. */
 function readmeCatalog() {
-  const section = /## 目录\n([\s\S]*?)(?=\n## )/.exec(read('README.md'))
+  // `\r?\n` and `(?=\r?\n## )` keep the gate valid on a CRLF checkout;
+  // .gitattributes pins the committed bytes to LF, so the test is correct
+  // on both matrix platforms either way.
+  const section = /## 目录\r?\n([\s\S]*?)(?=\r?\n## )/.exec(read('README.md'))
   assert.ok(section !== null, 'README 目录 section not found — the gate keys on that heading')
   return section[1]
 }
