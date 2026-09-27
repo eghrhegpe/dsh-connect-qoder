@@ -127,10 +127,21 @@ const SHIM = [
 const HEADER =
   '/** Generated from src/client by scripts/build-client.mjs — edit the sources, not this file. */'
 
+/**
+ * The loader id is the package name, read from package.json — never a literal.
+ * The host keys the client bundle on exactly the dependency name the profile
+ * carries, and a bundle that registers itself under any other id executes and
+ * vanishes: "already executed without registering <name>; loaded without
+ * registering <name> via __ModuleLoader__.load". The 0.2.1 scoped rename
+ * turned the old literal into that failure; deriving the id makes a future
+ * rename a one-line change in package.json.
+ */
+const LOADER_ID = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name
+
 const bundle = [
   HEADER,
   'window.__ModuleLoader__.load({',
-  '\tid: "dsh-connect-qoder",',
+  `\tid: ${JSON.stringify(LOADER_ID)},`,
   '\tfactory: (require) => {',
   SHIM,
   body
