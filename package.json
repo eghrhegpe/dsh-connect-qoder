@@ -1,13 +1,13 @@
 {
-  "name": "dsh-connect-qoder",
+  "name": "@eghrhegpe/dsh-connect-qoder",
   "displayName": "DSH Connect Qoder",
   "description": "将本机已登录的 Qoder（国内版 Qoder CN / 国际版 Qoder）模型接入 DeepSeek Harness —— bring locally signed-in Qoder models into DeepSeek Harness with zero configuration.",
-  "version": "0.2.0",
-  "author": "hdhgsysh",
-  "homepage": "https://github.com/hdhgsysh/dsh-connect-qoder",
+  "version": "0.2.1",
+  "author": "eghrhegpe",
+  "homepage": "https://github.com/eghrhegpe/dsh-connect-qoder",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hdhgsysh/dsh-connect-qoder.git"
+    "url": "git+https://github.com/eghrhegpe/dsh-connect-qoder.git"
   },
   "bugs": {
     "url": "https://github.com/hdhgsysh/dsh-connect-qoder/issues"
@@ -48,6 +48,10 @@
   ],
   "devDependencies": {
     "tsdown": "^0.23.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "license": "MIT",
   "dsh": {

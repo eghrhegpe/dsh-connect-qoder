@@ -115,7 +115,7 @@
 
 **证据**：[client-bundle.test.js:49-96](../test/client-bundle.test.js#L49-L96)（正则 + `new Function` 提取，
 外加一句 `source.includes('promo.active !== true')`）；`package.json` 无 `build` 脚本；
-`test/KNOWN_GAPS.md:76-99` 自己把"src 入库"列为价值最高的待办。
+`docs/KNOWN_GAPS.md:76-99` 自己把"src 入库"列为价值最高的待办。
 
 **修法（两步，别合并）**
 1. **今天就能做 S**：把产物 sha256 与"关键符号必须存在"写进测试——现有 `promo.active !== true`，

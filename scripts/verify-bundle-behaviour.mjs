@@ -22,7 +22,7 @@
  * Rendering. The bundle is executed with stub `react` and `react/jsx-runtime`,
  * which is enough to define the components but not to mount them — JSX comes
  * back as `null`. Everything that is a pure function of its arguments is
- * covered; anything that needs a DOM needs a browser (test/KNOWN_GAPS.md).
+ * covered; anything that needs a DOM needs a browser (docs/KNOWN_GAPS.md).
  */
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'

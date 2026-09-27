@@ -23,7 +23,7 @@
  * false, so leaving a stale value in that slot produces the same observable
  * behaviour — the next resolve re-reads either way. Removing the line was
  * measured to leave this file green, and the two paths are not distinguishable
- * from outside. See test/KNOWN_GAPS.md.
+ * from outside. See docs/KNOWN_GAPS.md.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

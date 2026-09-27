@@ -107,7 +107,7 @@ function parseClock(text) {
  * SYNC CONSTRAINT: this mirrors lib/offpeak.js, which the test suite
  * guards. The card is a browser bundle built from TypeScript sources not in
  * this repository, so that rule cannot be imported here — see
- * test/KNOWN_GAPS.md item 3.
+ * docs/KNOWN_GAPS.md item 3.
  *
  * @returns `{ active, remainingSeconds }`, or undefined when the model
  *   carries no usable window or its promotion is not active.

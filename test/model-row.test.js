@@ -67,7 +67,7 @@ function cardInstallsClock(rows) {
  * comparison below is over the whole verdict. It is a SPECIFICATION of the
  * card's rule, not the card's code: the bundle is built from TypeScript sources
  * not in this repository, so the real function cannot be imported here at all
- * (see test/KNOWN_GAPS.md item 3). If the card's gate is rewritten, this copy
+ * (see docs/KNOWN_GAPS.md item 3). If the card's gate is rewritten, this copy
  * has to be rewritten with it.
  *
  * @returns whether the card would render an off-peak badge for this row.

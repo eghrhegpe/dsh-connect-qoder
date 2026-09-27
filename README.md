@@ -51,7 +51,13 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 
 ## 安装
 
-### 从 DSH 市场安装（推荐给 DSH 桌面用户）
+### 从 npm 安装（推荐）
+
+```
+dsh plugin --profile web add @eghrhegpe/dsh-connect-qoder
+```
+
+### 从 DSH 市场安装（DSH 桌面用户）
 
 > 本仓库是 [hdhgsysh/dsh-connect-qoder](https://github.com/hdhgsysh/dsh-connect-qoder) 的 fork。
 
@@ -60,7 +66,8 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 ```
 github:eghrhegpe/dsh-connect-qoder
 ```
-> npm 上的 `dsh-connect-qoder` 由上游发布，**用包名装到的是上游那份**；
+> 注意：npm 上不带 scope 的 `dsh-connect-qoder` 由上游发布，**装到的是上游那份**；
+本 fork 自己发的是 scoped 包 `@eghrhegpe/dsh-connect-qoder`（上面那条），二者不是同一个包。
 
 
 或本地开发模式：
@@ -158,7 +165,7 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/card.ts` | 卡片的纯函数与五个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `QuotaBlock`） |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
 
-**这些源码不是原始手稿，是还原出来的**：2026-09 用 `scripts/restore-client-src.mjs` 把当时的
+**这些源码不是原始手稿，是还原出来的**：2026-09 用 `docs/history/restore-client-src.mjs` 把当时的
 产物按 `//#region` 标记机械切分而成，模块边界来自产物，`card.ts` 那一段在产物里没有标记、
 是按引用关系推断的。还原后做过一次对拍——13 个纯函数 × 420 组输入共 5460 次调用，新旧产物的
 返回值与抛错逐条一致（方法记录在 `docs/issues/17-client-source-restore.md`）。
@@ -255,7 +262,7 @@ PowerShell，这些在别的平台上行为不同。
 - `test/upstream-messages.test.js` —— 消息与工具调用翻译，注释里自称
   「最重要的一件事」，此前零覆盖。
 
-尚未覆盖的部分集中登记在 `test/KNOWN_GAPS.md`，不在各文件里重复叙述——
+尚未覆盖的部分集中登记在 `docs/KNOWN_GAPS.md`，不在各文件里重复叙述——
 重复三处正是「手抄副本」那类问题的文档版。
 
 ## 免责声明

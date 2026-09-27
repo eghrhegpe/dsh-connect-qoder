@@ -31,7 +31,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import {
   closeSync,
   existsSync,
@@ -39,6 +39,8 @@ import {
   openSync,
   readFileSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -47,8 +49,13 @@ import { join } from 'node:path'
 
 import { sweepStaleOscryptDirs, setCredentialDiagnosticSink } from '../lib/credentials.js'
 
-/** A fixed, obviously-fake key body — the point is the file, not the secret. */
-const KEY_BODY = 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5'
+/** A fixed, obviously-fake 32-byte key body, base64'd — the sweep's content
+ *  check demands exactly a master key's size, so a wrong-length body would be
+ *  skipped as foreign rather than reclaimed. */
+const KEY_BODY = Buffer.alloc(32, 0x41).toString('base64')
+/** The identity marker the production unwrap writes; the sweep only reclaims
+ *  directories carrying it, so every "ours" fixture must too. */
+const MARKER = '.dsh-oscrypt'
 
 /** Older than any sweep guard used here, so the sweep treats it as orphaned. */
 const STALE_MS = 10 * 60 * 1000
@@ -56,15 +63,19 @@ const STALE_MS = 10 * 60 * 1000
 /**
  * A scratch `qoder-oscrypt-*` directory holding an aged key file.
  *
- * Named to match the prefix the sweep looks for, so the sweep is exercised
- * against the real naming rather than a directory it would skip. The directory
- * is aged AFTER the file is written: writing it touches the parent's mtime,
- * and the sweep's guard is the directory's own clock.
+ * Named to match the prefix the sweep looks for AND carries the identity
+ * marker the production unwrap writes, so the sweep is exercised against the
+ * real shape of our own residue rather than a directory it must now refuse to
+ * touch. The directory is aged AFTER the files are written: writing them
+ * touches the parent's mtime, and the sweep's guard is the directory's own
+ * clock. Pass `marker: false` to build the foreign-look-alike case.
  */
-function makeKeyDir(ageMs = STALE_MS) {
+function makeKeyDir(ageMs = STALE_MS, { marker = true, body = KEY_BODY, files } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'qoder-oscrypt-'))
   const file = join(dir, 'key.b64')
-  writeFileSync(file, KEY_BODY, 'utf8')
+  writeFileSync(file, body, 'utf8')
+  if (marker) writeFileSync(join(dir, MARKER), '')
+  for (const [name, content] of Object.entries(files ?? {})) writeFileSync(join(dir, name), content)
   const old = new Date(Date.now() - ageMs)
   utimesSync(dir, old, old)
   return { dir, file }
@@ -231,6 +242,146 @@ function canOpenReadWrite(file) {
     return false
   }
 }
+
+/**
+ * Point `linkPath` at `targetDir` in the way the OS reports to Node's `lstat`
+ * as a symbolic link: a junction on Windows (creatable without admin), a plain
+ * symlink elsewhere. Both are the shape the sweep must refuse to follow.
+ */
+function makeDirLink(linkPath, targetDir) {
+  if (process.platform === 'win32') {
+    execFileSync('cmd.exe', ['/c', 'mklink', '/J', linkPath, targetDir], { stdio: 'ignore' })
+  } else {
+    symlinkSync(targetDir, linkPath, 'dir')
+  }
+}
+
+test(
+  'a junction wearing our name is refused and its victim is left byte-for-byte intact',
+  () => {
+    // This is issue 01's exact repro: `%TEMP%\qoder-oscrypt-*` linked to a
+    // directory we do not own. The old sweep followed the link with `statSync`
+    // and NUL-filled the target. Now `lstat` reports a symbolic link, we
+    // report the collision, and touch nothing past it.
+    const victim = mkdtempSync(join(tmpdir(), 'dsh-victim-'))
+    const victimFile = join(victim, 'victim.txt')
+    writeFileSync(victimFile, 'do not destroy me')
+    const before = readFileSync(victimFile)
+    const linkDir = join(tmpdir(), 'qoder-oscrypt-planted')
+    rmSync(linkDir, { recursive: true, force: true })
+    const messages = captureDiagnostics()
+    try {
+      makeDirLink(linkDir, victim)
+      const reclaimed = sweepStaleOscryptDirs(0)
+      assert.equal(reclaimed, 0, 'a planted link is never counted as reclaimed')
+      assert.equal(
+        Buffer.compare(readFileSync(victimFile), before),
+        0,
+        'the victim directory’s files must be byte-for-byte unchanged',
+      )
+      assert.ok(existsSync(linkDir), 'the link itself must survive (not followed, not removed)')
+      assert.ok(
+        messages.some((m) => /symbolic link|not a credential temp dir/.test(m)),
+        `the link collision must be reported; got ${JSON.stringify(messages)}`,
+      )
+    } finally {
+      // Remove the link without following, then the victim it pointed at.
+      try {
+        if (process.platform === 'win32') {
+          rmSync(linkDir, { force: true })
+        } else {
+          unlinkSync(linkDir)
+        }
+      } catch {
+        /* best effort */
+      }
+      rmSync(victim, { recursive: true, force: true })
+      setCredentialDiagnosticSink(undefined)
+    }
+  },
+)
+
+test('a prefix collision WITHOUT our marker is a foreign directory: skipped silently', () => {
+  // Another tool leaves `%TEMP%\qoder-oscrypt-junk\whatever`. Right name, not
+  // ours. The sweep must not zero it, not delete it, and not warn about it —
+  // a plugin that never owned it gets no claim and raises no alarm.
+  const { dir, file } = makeKeyDir(STALE_MS, { marker: false })
+  const messages = captureDiagnostics()
+  try {
+    const reclaimed = sweepStaleOscryptDirs(0)
+    assert.equal(reclaimed, 0)
+    assert.equal(existsSync(file), true, 'the foreign key file must survive untouched')
+    assert.equal(readFileSync(file, 'utf8'), KEY_BODY, 'and must be unchanged')
+    assert.deepEqual(messages, [], 'a foreign look-alike earns no warning')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    setCredentialDiagnosticSink(undefined)
+  }
+})
+
+test('our marker plus a foreign extra file is reported and left alone, not zeroed', () => {
+  // A directory that IS ours (has the marker) but whose contents are not the
+  // exact `key.b64` + marker shape — something wrote beside our residue. The
+  // safe move is to freeze it and say so, never to sweep "everything in the
+  // dir" the way the old code did.
+  const dir = mkdtempSync(join(tmpdir(), 'qoder-oscrypt-'))
+  const stranger = join(dir, 'someone-elses-data.bin')
+  writeFileSync(join(dir, 'key.b64'), KEY_BODY, 'utf8')
+  writeFileSync(join(dir, MARKER), '')
+  writeFileSync(stranger, 'important foreign bytes')
+  const before = readFileSync(stranger)
+  const old = new Date(Date.now() - STALE_MS)
+  utimesSync(dir, old, old)
+  const messages = captureDiagnostics()
+  try {
+    const reclaimed = sweepStaleOscryptDirs(0)
+    assert.equal(reclaimed, 0, 'a directory with unexpected contents is not reclaimed')
+    assert.equal(Buffer.compare(readFileSync(stranger), before), 0, 'the foreign file is not zeroed')
+    assert.ok(existsSync(stranger), 'nor is it deleted')
+    assert.ok(
+      messages.some((m) => /carries our marker but its contents/.test(m)),
+      `the anomaly is reported; got ${JSON.stringify(messages)}`,
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    setCredentialDiagnosticSink(undefined)
+  }
+})
+
+test('our marker with a non-32-byte key file is reported and left alone', () => {
+  // Readable content that does not decode to a real master key is foreign-by-
+  // size: refuse to delete it even though it carries our name and marker.
+  const { dir, file } = makeKeyDir(STALE_MS, { body: 'bm90LWEta2V5' /* short */ })
+  const messages = captureDiagnostics()
+  try {
+    const reclaimed = sweepStaleOscryptDirs(0)
+    assert.equal(reclaimed, 0)
+    assert.equal(existsSync(file), true, 'a wrong-size key file is not reclaimed')
+    assert.ok(
+      messages.some((m) => /not a 32-byte master key/.test(m)),
+      `the size mismatch is reported; got ${JSON.stringify(messages)}`,
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    setCredentialDiagnosticSink(undefined)
+  }
+})
+
+test('a well-formed stale dir with marker and 32-byte key is reclaimed', () => {
+  // The positive control after the guards: exactly `key.b64` + marker, aged,
+  // right size — reclaimed, silently, and counted.
+  const { dir, file } = makeKeyDir(STALE_MS)
+  const messages = captureDiagnostics()
+  try {
+    const reclaimed = sweepStaleOscryptDirs(0)
+    assert.ok(reclaimed >= 1)
+    assert.equal(existsSync(file), false)
+    assert.deepEqual(messages, [], 'an ordinary reclaim is silent')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+    setCredentialDiagnosticSink(undefined)
+  }
+})
 
 test('the sweep is inert when the temp root cannot be read', () => {
   // A failing readdirSync must return 0, not throw — the plugin entry calls

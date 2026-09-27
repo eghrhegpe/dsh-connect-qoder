@@ -18,7 +18,7 @@
  * them was measured to leave this file green, because `Array.isArray` and the
  * mode whitelist reject the prototype's values anyway. They are kept because the
  * guarantee should not depend on what `Object.prototype` happens to hold — see
- * test/KNOWN_GAPS.md.
+ * docs/KNOWN_GAPS.md.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -29,8 +29,8 @@ import {
   preferMaximumContext,
   regionEnabledFor,
   resolvePreferences,
-  unwrapReference,
 } from '../lib/preferences.js'
+import { unwrapVolatile } from '../lib/volatile.js'
 
 /** A 0.1.7 volatile field: a `{ get() }` shell rather than a value. */
 const ref = (value) => ({ get: () => value })
@@ -38,24 +38,24 @@ const ref = (value) => ({ get: () => value })
 // --- unwrapping ----------------------------------------------------------
 
 test('a volatile reference is unwrapped and everything else passes through', () => {
-  assert.deepStrictEqual(unwrapReference(ref({ a: 1 })), { a: 1 })
-  assert.strictEqual(unwrapReference(ref(true)), true)
-  assert.strictEqual(unwrapReference(ref(false)), false)
-  assert.strictEqual(unwrapReference(ref(0)), 0)
-  assert.strictEqual(unwrapReference(ref('')), '')
-  assert.strictEqual(unwrapReference(ref(null)), null)
+  assert.deepStrictEqual(unwrapVolatile(ref({ a: 1 })), { a: 1 })
+  assert.strictEqual(unwrapVolatile(ref(true)), true)
+  assert.strictEqual(unwrapVolatile(ref(false)), false)
+  assert.strictEqual(unwrapVolatile(ref(0)), 0)
+  assert.strictEqual(unwrapVolatile(ref('')), '')
+  assert.strictEqual(unwrapVolatile(ref(null)), null)
   // Non-references.
-  assert.strictEqual(unwrapReference(undefined), undefined)
-  assert.strictEqual(unwrapReference(null), null)
-  assert.strictEqual(unwrapReference(false), false)
-  assert.strictEqual(unwrapReference(0), 0)
+  assert.strictEqual(unwrapVolatile(undefined), undefined)
+  assert.strictEqual(unwrapVolatile(null), null)
+  assert.strictEqual(unwrapVolatile(false), false)
+  assert.strictEqual(unwrapVolatile(0), 0)
   const plain = { a: 1 }
-  assert.strictEqual(unwrapReference(plain), plain, 'a plain object is returned as-is')
+  assert.strictEqual(unwrapVolatile(plain), plain, 'a plain object is returned as-is')
   // An object with a non-callable `get` is not a reference.
-  assert.deepStrictEqual(unwrapReference({ get: 1 }), { get: 1 })
+  assert.deepStrictEqual(unwrapVolatile({ get: 1 }), { get: 1 })
   // A function has no `get`, so it is not treated as one.
   const fn = () => {}
-  assert.strictEqual(unwrapReference(fn), fn)
+  assert.strictEqual(unwrapVolatile(fn), fn)
 })
 
 // --- source resolution ---------------------------------------------------

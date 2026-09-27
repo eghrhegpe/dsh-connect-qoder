@@ -23,7 +23,7 @@
  *
  * Everything around the gate: the JSX rendering, the clock interval, the fetch
  * of the host route, the settings write. Those need the browser, or the
- * TypeScript sources this repository does not have (test/KNOWN_GAPS.md item 2).
+ * TypeScript sources this repository does not have (docs/KNOWN_GAPS.md item 2).
  * What is covered is the one thing that computes a number the user is shown.
  */
 import { test } from 'node:test'
