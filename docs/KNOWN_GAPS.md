@@ -8,6 +8,12 @@
 **最近一次复核**：已解决 5 条（凭据缓存链路、目录落盘、设置读回校验、CLI 入口、
 `toPiModel` 抽离），仍存在 3 条，其中 2 条是原理上不可测而非尚未动手。
 
+**凭据 sweep 的身份守卫（issue 01）**：`sweepStaleOscryptDirs` 现在要求
+`lstat` 判真目录 + `.dsh-oscrypt` 标记文件 + `key.b64` 恰好解出 32 字节，
+三道闸全部由 `test/credential-cleanup.test.js` 的新用例守着，且两道守卫各自
+独立经手工变异验证承重（改回 `statSync` → junction 用例红；删 marker 检查 →
+4 条红）。sweep 与 `zeroOutFile` 里剩下的手工"实测全绿"条目不变。
+
 **第 3 条已部分解决**：客户端门控此前只由手抄副本守着，实测**抓不住任何东西**——
 从 `lib/client.js` 删掉那行 `promo.active !== true`（正是阻止卡片显示拿不到的折扣价
 的那一行），`model-row.test.js` 依然 9 pass / 0 fail。现已增加
@@ -168,6 +174,13 @@
   的条目（5a–5c）仍是手工的。
 - **覆盖率门槛已建立**（本条的前两版登记「没有阈值」，现已不成立）：
   `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=85
-  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 71.17 / 87.38 /
-  69.51）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
+  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 73.64 / 86.90 /
+  72.63）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
   被挡住」——那还得看本文件。
+- **`verify:bundle` 有一处已知的时钟脆弱性**（本次改凭据 sweep 时撞上并定位，非本次
+  引入）：`offPeakState` / `rateAt` / `withDate` 读墙上时钟，脚本先 `load(OLD)` 再
+  `load(NEW)` 逐条对拍，两次指纹相隔毫秒；若其间跨过错峰窗口边界（POOL 里两个固定
+  `Date` 与当前时刻的比较），同一份未改动的 `lib/client.js` 也会偶发报「N differing
+  call(s)」而 FAIL。实测同码连跑 5 次皆 IDENTICAL，偶发一次 2-diff。判据：先跑
+  `git diff --stat -- lib/client.js`——若产物未改动而门禁红，即为该 flake，重跑即绿，
+  不是回归。根治需把探针时间冻结（注入固定 `now`），属 issue 12/15 一档的小口子。
