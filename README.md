@@ -125,6 +125,10 @@ dsh plugin --profile web add <本仓库路径>
   两个按钮各管一件事：「重读登录」
   让宿主丢弃凭据缓存、重读应用存储，并把启动时未能上线的区域**现在就上线**（重建并重新
   注册 adapter，失败时回滚到原注册，不影响已在服务的区域）——重新登录后不必再重启 DSH；
+  **面板每次渲染只读已缓存的密钥，不会同步起 PowerShell**（那会阻塞整个 DSH 进程，最坏 30 s），
+  所以解不开的机器也能立刻看到"读不到"和原因；「重读登录」是您主动点的，那一次是真读，
+  不受缓存与失败窗口限制。密钥缓存与 `Local State` 文件绑定，Qoder 重装换掉主密钥后
+  插件会立刻重新解包，**不必重启 DSH**；
   「在线确认」是账号流程里唯一的联网调用（`fetchUserInfo`），回答「上游现在还认不认
   这个登录」，失败按 `classifyUpstreamError` 分档（`sign-in-expired` / 其他）。
 - **每一版的模型可以单独关掉**（`enabledRegions`，版本条上的「模型」开关，对齐
@@ -174,7 +178,7 @@ dsh plugin --profile web add <本仓库路径>
 
 | 文件 | 作用 |
 | --- | --- |
-| `lib/credentials.js` | 从 Qoder 应用读取并解密登录凭据 |
+| `lib/credentials.js` | 从 Qoder 应用读取并解密登录凭据（密钥缓存与 `Local State` 绑定、失败窗口 60 s、只读缓存的变体） |
 | `lib/upstream.js` | COSY 签名、请求体编码、目录与对话流 |
 | `lib/shim.js` | 面向 pi-ai 的 OpenAI 兼容回环端点 |
 | `lib/adapter.js` | pi-ai provider 与 `PiAiAdapter` profile（被关的 provider 以零模型组呈现，由 DSH 自行隐藏） |
@@ -182,7 +186,7 @@ dsh plugin --profile web add <本仓库路径>
 | `lib/catalog-store.js` | 目录的磁盘缓存与原子落盘（无 peer 依赖） |
 | `lib/catalog-refresh.js` | 一次目录刷新的结果如何落地：**空目录也是结果**（照实清空并推进 `fetchedAt`），只有失败才保留上一份，且失败按 `credential` / `no-credential` / `fetch` / `protocol-shape-changed` 分档（无 peer 依赖） |
 | `lib/credential-cache.js` | 凭据缓存与「登录失效后重读」规则（无 peer 依赖） |
-| `lib/account-state.js` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖） |
+| `lib/account-state.js` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖）；三种读取模式（默认 / `cachedOnly` 不解包 / `force` 忽略失败窗口） |
 | `lib/settings-save.js` | 设置命名空间的解析（0.1.7 由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
 | `lib/pi-model.js` | pi-ai 模型描述符的构造（纯函数，无 peer 依赖） |
 | `lib/preferences.js` | 四个设置项的读取与 volatile 解包（`enabledRegions` 区域开关：缺失/非对象一律读作开启，只有显式 `false` 才关） |
