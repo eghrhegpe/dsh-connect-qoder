@@ -70,6 +70,9 @@ jobs:
         run: git diff --exit-code -- lib/client.js
 
       # Byte equality is not reachable (docs/issues/17), so the artefact is
-      # judged on behaviour: 5460 probed calls against the committed bundle.
+      # judged on behaviour: every pure function in the card is called with the
+      # whole argument pool and the results are compared against the committed
+      # bundle. The script prints the probe and call counts, so a count here
+      # would only be a number to let rot.
       - name: The rebuild behaves like the committed bundle
         run: npm run verify:bundle

@@ -5,12 +5,22 @@
 
 新增测试时请顺手更新本文件；删掉一条时请在提交信息里说明它为什么不再成立。
 
-**最近一次复核**（0.3.2 发版 + 国际版 umid 门控修复落地之后）：第 1、2 条是接线缺口，等
+**最近一次复核**（`f8ca26f`：空目录落盘 + 真实抓取时间 + 协议漂移分诊之后）：第 1、2 条是接线缺口，等
 `--experimental-test-module-mocks`；第 3 条的根治已落地（见下），镜像本身是刻意
 接受的；第 4 条原理不可测；第 5 条是写了也测不到的等价路径；第 6 条是功能未实现
 （跨平台凭据链），不是测试缺口；第 7 条登记仓库级缺失，其中**文档漂移**一项已由
 `test/docs-facts.test.js` 建立门禁；第 8 条登记国际版 campaigns 端点的 umid 机器身份门控
 （2026-09-27 实测 + 修复已落地，见下）。
+
+**本轮新增的两处镜像**（跟着 issue 04/05/10 一起进来，是刻意接受而非遗漏）：
+`test/model-route.test.js` 直接 import `buildModelRowsPayload`，断言的是**真实的**实现，
+不是副本；`test/protocol-shape-card.test.js` 则从**产物文本里提取** `refreshNoticeKey` 并执行，
+所以它守的是发货的那份代码（手法与 `test/client-bundle.test.js` 相同）。两者都不需要"改一处
+必须同步改另一处"的人工纪律——这是与第 3 条那两处镜像的本质区别。
+
+**仍未分诊的上游端点**：协议形状分诊目前只做在 `fetchModels` 上（issue 10 的残留缺口）。
+`fetchUsage` / `readCampaigns` / `fetchUserInfo` 各自只取自己那几个字段，形状变化对它们
+表现为"字段读不到"而非漂移告警；chat 端点是最常打的一个，先分诊它。
 
 **凭据 sweep 的身份守卫（issue 01）**：`sweepStaleOscryptDirs` 现在要求
 `lstat` 判真目录 + `.dsh-oscrypt` 标记文件 + `key.b64` 恰好解出 32 字节，
@@ -218,16 +228,19 @@
   地板：防的是"悄悄说谎"，防不了"写一句没用的真话"。
 - **覆盖率门槛已建立**（本条的前两版登记「没有阈值」，现已不成立）：
   `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=85
-  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 73.64 / 86.90 /
-  72.63）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
+  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 76.71 / 85.88 /
+  74.74）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
   被挡住」——那还得看本文件。
-- **`verify:bundle` 有一处已知的时钟脆弱性**（本次改凭据 sweep 时撞上并定位，非本次
-  引入）：`offPeakState` / `rateAt` / `withDate` 读墙上时钟，脚本先 `load(OLD)` 再
-  `load(NEW)` 逐条对拍，两次指纹相隔毫秒；若其间跨过错峰窗口边界（POOL 里两个固定
-  `Date` 与当前时刻的比较），同一份未改动的 `lib/client.js` 也会偶发报「N differing
-  call(s)」而 FAIL。实测同码连跑 5 次皆 IDENTICAL，偶发一次 2-diff。判据：先跑
-  `git diff --stat -- lib/client.js`——若产物未改动而门禁红，即为该 flake，重跑即绿，
-  不是回归。根治需把探针时间冻结（注入固定 `now`），属 issue 12/15 一档的小口子。
+- **`verify:bundle` 的时钟脆弱性已根治**（原登记为"待根治"）：`offPeakState` / `rateAt` /
+  `withDate` / `localSecondsOf` 读墙上时钟，脚本先 `load(OLD)` 再 `load(NEW)` 逐条对拍，
+  两次指纹相隔毫秒；POOL 里带着 `undefined`，于是这些函数各读一次真实时钟，同一份未改动的
+  `lib/client.js` 会偶发报「N differing call(s)」而 FAIL。实测复现频率约 1/5。
+  修法是 `withFrozenClock()` 把两侧指纹固定在同一个时刻（只包住对拍，不包 `load`）。
+  **踩到的一个坑值得记下来**：只替换 `Date` 不够——卡片把参数直接交给
+  `Intl.DateTimeFormat.formatToParts(date)`，而按 ECMA-402，非 Date 参数经 `ToNumber`
+  后 `NaN` 会取 `%CurrentDateTime%`，即引擎内部槽，任何 `Date` 覆盖都够不着；且卡片用的
+  是 `formatToParts` 而非 `format`，只改后者等于没改（第一次尝试就是这样白跑的）。
+  现在连跑 15 次全绿。
 
 ---
 

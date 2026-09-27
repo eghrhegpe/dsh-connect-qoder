@@ -49,6 +49,89 @@ const PROBES = [
   'refreshNoticeKey',
 ]
 
+/**
+ * A fixed instant, used while both bundles are fingerprinted.
+ *
+ * WHY: the probe pool deliberately contains `undefined`, and the card's
+ * `localSecondsOf(undefined)` / `offPeakState(x, undefined)` fall back to the
+ * wall clock. The two bundles are loaded milliseconds apart, so those calls
+ * legitimately returned different seconds and the script reported "N differing
+ * call(s)" for an artefact that had not changed — a flake that made this gate
+ * untrustworthy exactly when it mattered. It was registered in
+ * docs/KNOWN_GAPS.md（仍未建立的东西）as "freeze the probe clock"; this is that
+ * fix.
+ *
+ * Patching `Date` alone was NOT enough, and the reason is worth recording:
+ * `localSecondsOf` hands its argument straight to
+ * `Intl.DateTimeFormat.format(date)`, and per ECMA-402 a non-Date argument is
+ * converted to a Date via `ToNumber` — for `undefined` that is `NaN`, and the
+ * result is `%CurrentDateTime%`: the *engine's* clock, read through an internal
+ * slot that no `Date` override can reach. So the clock is frozen at the source
+ * by replacing `Intl.DateTimeFormat` as well, which is the only handle a
+ * bundled card actually reads time through.
+ *
+ * Applied only around the fingerprinting: `load()` itself runs real code that
+ * must see the real clock.
+ */
+const FROZEN_NOW = Date.parse('2026-09-26T23:30:30+08:00')
+
+/**
+ * The instant a formatter should use for one argument.
+ *
+ * Only the no-instant forms are rewritten. A real `Date`, and every other value
+ * (a string, a number, `null` handling aside), is the caller's intent and is
+ * passed through — this patches the clock, not the card's parsing.
+ */
+function frozenInstantOf(date) {
+  if (date === undefined || date === null) return FROZEN_NOW
+  return date
+}
+
+function withFrozenClock(task) {
+  const RealDate = globalThis.Date
+  const RealIntl = globalThis.Intl
+  class FrozenDate extends RealDate {
+    constructor(...args) {
+      // `new Date()` with no argument is the only form that reads the clock; any
+      // explicit argument (including `undefined` passed through) is the caller's
+      // real intent and must not be rewritten.
+      if (args.length === 0) super(FROZEN_NOW)
+      else super(...args)
+    }
+    static now() {
+      return FROZEN_NOW
+    }
+  }
+  globalThis.Date = FrozenDate
+  // `Intl.DateTimeFormat` is what the card actually reads the clock through, and
+  // the one that `Date`-patching cannot reach. A subclass keeps the real
+  // implementation for every case except the one that matters here: a formatter
+  // asked to format a non-Date (the probe's `undefined`) is given the frozen
+  // instant instead of `%CurrentDateTime%`. `resolveOptions` and everything else
+  // are inherited untouched, so the card's own logic — timezone handling, the
+  // h23 wrap, the NaN guards — is what is still being compared.
+  class FrozenDateTimeFormat extends RealIntl.DateTimeFormat {
+    // Both entry points are covered because the card uses `formatToParts`, not
+    // `format` — patching only the latter would have left the flake in place,
+    // which is exactly what the first attempt did.
+    format(date) {
+      return super.format(frozenInstantOf(date))
+    }
+    formatToParts(date) {
+      return super.formatToParts(frozenInstantOf(date))
+    }
+  }
+  const FrozenIntl = Object.create(RealIntl)
+  FrozenIntl.DateTimeFormat = FrozenDateTimeFormat
+  globalThis.Intl = FrozenIntl
+  try {
+    return task()
+  } finally {
+    globalThis.Date = RealDate
+    globalThis.Intl = RealIntl
+  }
+}
+
 /** Serialise anything, including `undefined`, functions and Dates. */
 function show(value, depth = 0) {
   if (depth > 4) return '…'
@@ -164,8 +247,8 @@ function fingerprint(scope) {
   return { lines, missing }
 }
 
-const oldFingerprint = fingerprint(load(OLD))
-const newFingerprint = fingerprint(load(NEW))
+const oldFingerprint = withFrozenClock(() => fingerprint(load(OLD)))
+const newFingerprint = withFrozenClock(() => fingerprint(load(NEW)))
 const oldPrint = oldFingerprint.lines
 const newPrint = newFingerprint.lines
 
