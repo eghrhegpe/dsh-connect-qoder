@@ -29,6 +29,7 @@ import {
   readJsonBody,
   readJsonBodyOr400,
   loopbackRequest,
+  isLoopbackAuthority,
   methodAllowed,
   originAllowed,
 } from '../lib/routes.js'
@@ -52,10 +53,18 @@ function fakeRes() {
   }
 }
 
-const request = (method, origin) => ({
-  method,
-  headers: origin === undefined ? {} : { origin },
-})
+/**
+ * A request with the headers the origin gate reads.
+ *
+ * `host` is what the client dialled — the same-origin comparison needs it, and
+ * leaving it undefined exercises the "no Host header" path.
+ */
+const request = (method, origin, host) => {
+  const headers = {}
+  if (origin !== undefined) headers.origin = origin
+  if (host !== undefined) headers.host = host
+  return { method, headers }
+}
 
 // --- the origin gate -------------------------------------------------------
 
@@ -68,17 +77,55 @@ test('a request with no Origin is allowed — same-origin GET is the normal case
   assert.strictEqual(res.ended, false, 'nothing may be written on the happy path')
 })
 
-test('loopback origins are allowed, on any port', () => {
-  // The port is deliberately not compared. This is the documented rule, and
-  // the DSH web UI's port is chosen at runtime, so pinning it here would be
-  // pinning a value this code does not know.
-  for (const origin of [
-    'http://127.0.0.1:19387',
-    'http://localhost:8080',
-    'http://[::1]:3000',
-    'https://localhost',
-  ]) {
-    assert.strictEqual(loopbackRequest(request('GET', origin)), true, origin)
+test('a same-origin request is allowed, on the port the client dialled', () => {
+  // This is the rule that replaced "any loopback port will do", and the reason
+  // it can be written without knowing DSH's port in advance: `Host` IS what the
+  // client dialled, so an Origin that matches it is same-origin by definition.
+  const host = '127.0.0.1:19387'
+  for (const origin of [`http://${host}`, `https://${host}`]) {
+    assert.strictEqual(loopbackRequest(request('GET', origin, host)), true, origin)
+  }
+  // The names that mean "this machine" all work, each with its own Host.
+  for (const authority of ['localhost:19387', '127.0.0.1:19387', '[::1]:19387', '127.0.0.2:19387']) {
+    assert.strictEqual(
+      loopbackRequest(request('GET', `http://${authority}`, authority)),
+      true,
+      authority,
+    )
+  }
+})
+
+test('a page on ANOTHER loopback port cannot drive the write routes', () => {
+  // The hole this closes (docs/issues/12, item 11). Any HTTP server the user
+  // visits could have its JavaScript call /checkin — a real account mutation —
+  // or /save. The browser blocks reading the RESPONSE cross-origin, but the side
+  // effect has already happened by then, so the only place to stop it is here.
+  const res = fakeRes()
+  const request = { method: 'POST', headers: { origin: 'http://127.0.0.1:9999', host: '127.0.0.1:19387' } }
+  assert.strictEqual(loopbackRequest(request), false, 'a different loopback port is not this origin')
+  assert.strictEqual(originAllowed(request, res), false)
+  assert.strictEqual(res.status, 403)
+})
+
+test('the same name on a different port, and the same port on another name, are both refused', () => {
+  // Both directions, because the two are different mistakes: a proxy rewriting
+  // Host, and a page reached by a name that resolves here.
+  const cases = [
+    ['http://127.0.0.1:9999', '127.0.0.1:19387'],
+    ['http://localhost:9999', 'localhost:19387'],
+    // Same port, different name: not the same origin, and the browser's own
+    // same-origin policy would refuse to share a response either.
+    ['http://127.0.0.1:19387', 'localhost:19387'],
+    ['http://localhost:19387', '127.0.0.1:19387'],
+    // IPv6 must be compared as a bracketed authority, not as a bare host.
+    ['http://[::1]:9999', '[::1]:19387'],
+  ]
+  for (const [origin, host] of cases) {
+    assert.strictEqual(
+      loopbackRequest({ method: 'GET', headers: { origin, host } }),
+      false,
+      `${origin} vs Host ${host}`,
+    )
   }
 })
 
@@ -91,19 +138,52 @@ test('a non-loopback origin is refused with 403', () => {
     'not a url at all',
     'http://192.168.1.10:19387',
   ]) {
-    assert.strictEqual(loopbackRequest(request('GET', origin)), false, origin)
+    assert.strictEqual(loopbackRequest(request('GET', origin, '127.0.0.1:19387')), false, origin)
     const res = fakeRes()
-    assert.strictEqual(originAllowed(request('GET', origin), res), false, origin)
+    assert.strictEqual(originAllowed(request('GET', origin, '127.0.0.1:19387'), res), false, origin)
     assert.strictEqual(res.status, 403, origin)
     assert.deepStrictEqual(JSON.parse(res.body), { error: 'origin-not-trusted' })
   }
+})
+
+test('a request with no Host header falls back to the loopback test alone', () => {
+  // HTTP/1.0 and some test doubles omit it. The loopback check has already run
+  // at that point, so the most this can do is not make things stricter than the
+  // rule intends — and a request that did not name a host cannot be shown to
+  // have come from a different one.
+  assert.strictEqual(
+    loopbackRequest({ method: 'GET', headers: { origin: 'http://127.0.0.1:19387' } }),
+    true,
+  )
+  // …but a non-loopback Origin is still refused even with no Host.
+  assert.strictEqual(
+    loopbackRequest({ method: 'GET', headers: { origin: 'http://example.com' } }),
+    false,
+  )
 })
 
 test('a non-string Origin header is refused, not coerced', () => {
   // `req.headers.origin` is typed as a string by Node, but a test double or an
   // unusual server can produce anything; the guard is `typeof`, not truthiness.
   for (const origin of [123, {}, [], true]) {
-    assert.strictEqual(loopbackRequest({ method: 'GET', headers: { origin } }), false, String(origin))
+    assert.strictEqual(
+      loopbackRequest({ method: 'GET', headers: { origin, host: '127.0.0.1:19387' } }),
+      false,
+      String(origin),
+    )
+  }
+})
+
+test('the loopback set treats the whole 127/8 range as this machine', () => {
+  // `127.0.0.2` is loopback by definition, and a host can legitimately answer
+  // on it; treating it as "somebody else" would be a rule that breaks on a
+  // correct configuration rather than on an attack.
+  for (const authority of ['127.0.0.1:1', '127.0.0.2:1', '127.1.2.3:1', '127.255.255.254:1']) {
+    assert.strictEqual(isLoopbackAuthority(authority), true, authority)
+  }
+  // And the near-misses are not.
+  for (const authority of ['128.0.0.1:1', '12.0.0.1:1', '10.0.0.1:1', '192.168.1.1:1', 'example.com:1', 'notlocalhost:1']) {
+    assert.strictEqual(isLoopbackAuthority(authority), false, authority)
   }
 })
 

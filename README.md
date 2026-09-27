@@ -151,6 +151,12 @@ dsh plugin --profile web add <本仓库路径>
     卡片直接说"请更新插件（重新登录没有用）"，且**不**显示时间戳——它不会被当成"排队"慢慢重试。
     判别边界取自实测（`probe/model-shape.mjs`，两端真实账号）：空分组用 `[]` 表达，
     所以"0 个模型"是可信结果、必须落盘，而"分组键缺失/类型变了"才是格式变化。
+- **卡片接口只接受同源请求**（安全）：七条路由里三条是 POST 且能改状态——「签到领积分」
+  （真实账号变更）、「保存模型勾选与图像模式」、「重读登录」。这些接口此前只按"来源主机名是不是
+  本机"判断，因此**本机任意端口上的任意 HTTP 服务**都能让它的网页代为调用（浏览器会挡跨域
+  读响应，但操作已经发生）。现在要求来源的**地址与端口**与请求实际拨到的地址一致
+  （比对请求自己的 `Host` 头，所以不写死端口、DSH 换端口也不用改），且必须是回环地址。
+  判定在 [`lib/routes.js`](lib/routes.js) 的 `loopbackRequest`，由 `test/route-gates.test.js` 覆盖。
 - 依赖 Qoder 客户端接口（非官方开放 API），Qoder 更新后插件可能需要随之调整。
 - **设置命名空间由宿主决定，不能自选**（0.1.7 起）：`describe()` 用 Loader 条目
   id 作为 `ns`（本 bundle 是 `llm-qoder`，不是 `dsh-connect-qoder`），而「设置 → 模型」
@@ -205,7 +211,7 @@ dsh plugin --profile web add <本仓库路径>
 | `lib/time.js` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
 | `lib/volatile.js` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
 | `lib/http-utils.js` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
-| `lib/routes.js` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与回环来源检查（403），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
+| `lib/routes.js` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
 | `lib/index.js` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
 
 `lib/client.js` 是注入到宿主设置页的那张卡片的构建产物（`react` 由宿主提供，产物不打包它）。
