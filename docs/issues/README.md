@@ -26,7 +26,7 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [10-protocol-drift-probe.md](10-protocol-drift-probe.md) | ~~P1~~ **已修**（分诊落地；6 小时周期探测仍未做） | 上游协议漂移与"没登录"不可区分 |
 | [11-coverage-denominator.md](11-coverage-denominator.md) | ~~P2~~ **大部分已修**（module mocks 实测不可行，改走抽纯模块） | 44.7% 的 lib 代码不在覆盖率分母里 |
 | [12-small-fixes-batch.md](12-small-fixes-batch.md) | P2 | 12 处小时级小口子（含注释与代码相反） |
-| [13-lifecycle-dispose.md](13-lifecycle-dispose.md) | P2 | dispose 两条尾巴（在途刷新、路由未注销） |
+| [13-lifecycle-dispose.md](13-lifecycle-dispose.md) | ~~P2~~ **已修**（宿主语义无法确认，按两种都对的方式处理） | dispose 两条尾巴（在途刷新、路由未注销） |
 | [14-namespace-convergence.md](14-namespace-convergence.md) | P2 | 设置命名空间四套说法 |
 | [15-delivery-docs-curation.md](15-delivery-docs-curation.md) | P3 | 交付漂移、文档与事实不符、默认不策展 |
 | [16-silent-failure-policy.md](16-silent-failure-policy.md) | P2 | 门禁：新代码不得再新增静默失败分支 |

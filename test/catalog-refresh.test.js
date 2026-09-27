@@ -23,8 +23,11 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 
-import { applyCatalogOutcome, REFRESH_FAILURE_REASONS } from '../lib/catalog-refresh.js'
+import { applyCatalogOutcome, REFRESH_FAILURE_REASONS, isRefreshObsolete } from '../lib/catalog-refresh.js'
 import { normalizeEntry } from '../lib/catalog-entry.js'
 import { ProtocolShapeChangedError, isProtocolShapeChangedError } from '../lib/errors.js'
 
@@ -178,4 +181,71 @@ test('the applier reports which previous failure it displaced', () => {
   assert.strictEqual(second.previousFailure.reason, 'fetch')
   const recovered = applyCatalogOutcome(runtime, { ok: true, entries: [] })
   assert.strictEqual(recovered.previousFailure.reason, 'fetch', 'the caller can now see it cleared')
+})
+
+// --- the dispose race (issue 13) --------------------------------------------
+
+test('a refresh that lands after a dispose is obsolete and must be dropped', () => {
+  // The runtime's timer install already consulted `disposed`; the REFRESH did
+  // not, so a fetch in flight when the fiber tore down would still write the
+  // catalog to disk and emit `llm/adapters-updated` on a dead fiber. Both are
+  // invisible, which is why the check exists and why it is pinned here.
+  assert.strictEqual(isRefreshObsolete({ disposed: true }), true)
+  assert.strictEqual(isRefreshObsolete({ disposed: false }), false)
+  // A runtime without the flag at all (an older shape) is not obsolete.
+  assert.strictEqual(isRefreshObsolete({}), false)
+  assert.strictEqual(isRefreshObsolete(undefined), false)
+  assert.strictEqual(isRefreshObsolete(null), false)
+})
+
+test('a drop after dispose is total: nothing is written and nothing is re-advertised', () => {
+  // The two halves of what a post-dispose refresh used to do. Both are asserted
+  // together because the bug was that the early return existed on neither.
+  const runtime = makeRuntime({ entries: [ENTRY] })
+  runtime.disposed = true
+  if (isRefreshObsolete(runtime)) {
+    // the early-return path: no replace, no invalidate
+  } else {
+    applyCatalogOutcome(runtime, { ok: true, entries: [] })
+  }
+  assert.deepStrictEqual(runtime.catalog.entries, [ENTRY], 'nothing may be written after dispose')
+  assert.strictEqual(runtime.invalidations, 0, 'and nothing may be re-advertised')
+})
+
+test('the refresh consults dispose on BOTH the success and the failure path', () => {
+  // `doRefreshCatalog` is not importable, so this is a source assertion — the
+  // same trade test/account-route-wiring.test.js makes, and KNOWN_GAPS item 2
+  // （RegionRuntime 本身与 activate 的 Cordis 接线）records.
+  //
+  // Checking one path is the likely partial fix: an abort arriving on the
+  // success path (a response that had already been read) writes the catalog to
+  // disk, while one on the failure path logs a warning about a region that no
+  // longer exists. Both halves are pinned, and so is the controller, because a
+  // dispose that only sets a flag leaves the upstream socket open.
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'index.js'),
+    'utf8',
+  )
+  const body = /async doRefreshCatalog\(force\) \{[\s\S]*?\n  \}/.exec(source)
+  assert.ok(body !== null, 'lib/index.js no longer has a doRefreshCatalog of that shape')
+  const refresh = body[0]
+  const checks = refresh.match(/isRefreshObsolete\(this\)/g) ?? []
+  assert.ok(
+    checks.length >= 2,
+    `expected the dispose check on both the success and the failure path, found ${checks.length}`,
+  )
+  assert.match(refresh, /new AbortController\(\)/, 'the in-flight fetch must be abortable')
+  assert.match(
+    refresh,
+    /fetchModels\(this\.region, credential, signal\)/,
+    'the controller must actually reach the fetch — an unused one aborts nothing',
+  )
+  // And dispose itself must fire it.
+  const dispose = /ctx\.effect\(\(\) => async \(\) => \{[\s\S]*?\n  \}\)/.exec(source)
+  assert.ok(dispose !== null, 'lib/index.js no longer has the fiber effect cleanup')
+  assert.match(
+    dispose[0],
+    /refreshAbort\?\.abort\(\)/,
+    'dispose must abort the in-flight catalog fetch, not only mark the runtime dead',
+  )
 })
