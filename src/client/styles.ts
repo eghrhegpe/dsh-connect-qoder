@@ -61,7 +61,15 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-usage-when{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap}",
 	".dsm-qoder-bar{height:6px;border-radius:999px;background:var(--dsw-alias-bg-layer-3,#202126);overflow:hidden}",
 	".dsm-qoder-bar-fill{height:100%;border-radius:999px;background:var(--dsw-alias-state-success-primary,#12b76a);transition:width .3s ease}",
-	".dsm-qoder-bar-warn{background:var(--dsw-alias-state-warning-primary,#f79009)}",
+	// The host's design token is the ABBREVIATED `--dsw-alias-state-warn-primary`
+	// (confirmed against the shipped 0.1.7 frontend CSS: the long `warning` form
+	// is never defined, only referenced with a fallback by two of the host's own
+	// packages). A misspelled custom property never blanks the rule — `var()`
+	// falls through to the fallback — so the wrong name is invisible: no error,
+	// no warning, no visual anomaly, and the host token is never consulted.
+	// The fallback must therefore be the token's real value, `--dsw-static-amber-500`
+	// = rgb(245,158,11) = #f59e0b, which is what the host resolves it to.
+	".dsm-qoder-bar-warn{background:var(--dsw-alias-state-warn-primary,#f59e0b)}",
 	".dsm-qoder-bar-full{background:var(--dsw-alias-state-error-primary,#d92d20)}",
 	".dsm-qoder-usage-figures{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12px;color:var(--dsw-alias-label-primary,#1a1a1a)}",
 	".dsm-qoder-usage-figures strong{color:inherit;font-weight:500}",
@@ -134,7 +142,7 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-region-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--dsw-alias-label-tertiary,#999)}",
 	".dsm-qoder-region-dot-ok{background:var(--dsw-alias-state-success-primary,#12b76a)}",
 	".dsm-qoder-region-dot-expired{background:var(--dsw-alias-state-error-primary,#d92d20)}",
-	".dsm-qoder-region-dot-needs{background:var(--dsw-alias-state-warning-primary,#f79009)}",
+	".dsm-qoder-region-dot-needs{background:var(--dsw-alias-state-warn-primary,#f59e0b)}",
 	".dsm-qoder-region-name{font-size:13px;font-weight:500;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}",
 ].join("");
 /** Inject the card stylesheet once per page. */
