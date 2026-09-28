@@ -243,6 +243,11 @@ dsh plugin --profile web add <本仓库路径>
 产物是构建输出：**改源码重建，不要手改产物**。`test/client-bundle.test.js` 从产物里**提取并
 执行**卡片的纯函数，所以产物一改那里的断言就得跟着看一眼。
 
+`probe/` 下是一次性只读探针，每个文件头写明 WHY 与 Run，不参与构建、也不被测试收集。
+其中 `probe/host-compat.mjs` 回答的是「本机装的 DSH 是什么版本、本仓库的 peer 声明它还认不认」——
+宿主把代码打在 `app.asar` 里，这件事从仓库内部看不出来。手法与三个会浪费时间的坑记在
+[`docs/howto/host-version-probe.md`](docs/howto/host-version-probe.md)。
+
 ## 测试
 
 ```sh
