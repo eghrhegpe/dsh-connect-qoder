@@ -232,7 +232,16 @@ test('an unrecognised image mode degrades to auto, never to off', () => {
 
 test('a reasoning model gets a thinking map with only the levels it offers', () => {
   const map = thinkingLevelMapFor(baseEntry)
-  assert.strictEqual(map.off, 'off', 'it can be switched off')
+  // `off` is the level that decides what the DEFAULT (no effort selected)
+  // dispatches: pi-ai's openai-completions builder sends `reasoning_effort`
+  // for the unselected case ONLY when the map's `off` holds a string. An
+  // absent key means "supported, send nothing" — so the default reaches the
+  // shim without an effort and the shim's model-aware fallback applies (a
+  // reasoning model thinks at the gateway's default, like WorkBuddy's and
+  // Trae's unselected defaults do). Spelling `off` out as `'off'` (the old
+  // shape) made the default send an explicit `reasoning_effort: 'off'`,
+  // which is why a bare selection used to read as "thinking disabled".
+  assert.ok(!('off' in map), 'a disableable model offers off as "send nothing", not as the wire value \'off\'')
   assert.strictEqual(map.low, 'low')
   assert.strictEqual(map.high, 'high')
   assert.strictEqual(map.xhigh, null, 'a level the catalog does not list is null, not invented')
@@ -246,6 +255,17 @@ test('a model that always thinks reports off as unsupported', () => {
   const map = thinkingLevelMapFor({ ...baseEntry, alwaysThinking: true })
   assert.strictEqual(map.off, null, 'a model that always thinks must not offer "off"')
   assert.strictEqual(map.high, 'high', 'but the other levels still work')
+})
+
+test('an explicit off selection still disables thinking on the wire', () => {
+  // What the picker "Off" entry actually sends is the generic openai
+  // dispatch: `thinkingLevelMap?.['off'] ?? 'off'`. Because the map's `off`
+  // key is absent (not null) for a disableable model, that expression falls
+  // through to the level's own name — so selecting off still reaches the
+  // shim as `reasoning_effort: 'off'` and the shim turns thinking off. The
+  // case that changed is the unselected one, which no longer sends a value.
+  const map = thinkingLevelMapFor(baseEntry)
+  assert.strictEqual(map.off ?? 'off', 'off', 'explicit off still dispatches the wire value')
 })
 
 test('a non-reasoning model gets no thinking map at all', () => {

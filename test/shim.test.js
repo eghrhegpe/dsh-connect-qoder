@@ -47,9 +47,10 @@ function rawRequest(port, requestText) {
 
 /** A catalog with three models, used to exercise the filter. */
 const CATALOG = [
-  { id: 'ModelA', key: 'a', alwaysThinking: false },
-  { id: 'ModelB', key: 'b', alwaysThinking: false },
-  { id: 'ModelC', key: 'c', alwaysThinking: true },
+  { id: 'ModelA', key: 'a', alwaysThinking: false, isReasoning: true },
+  { id: 'ModelB', key: 'b', alwaysThinking: false, isReasoning: true },
+  { id: 'ModelC', key: 'c', alwaysThinking: true, isReasoning: true },
+  { id: 'ModelD', key: 'd', alwaysThinking: false, isReasoning: false },
 ]
 
 /**
@@ -61,24 +62,31 @@ const CATALOG = [
  *   distinction is carried by a separate flag, because a destructuring default
  *   cannot tell "omitted" from "explicitly undefined".
  */
-async function startShim({ stream, enabledIds = [], credential, signedOut = false, runChat } = {}) {
+async function startShim({ stream, enabledIds = [], credential, signedOut = false, runChat, resolveModels, resolveAlwaysThinking } = {}) {
   const seen = { requests: [], invalidations: 0, models: [] }
   // `signedOut` is a separate flag because a destructuring default cannot tell
   // "omitted" from "explicitly undefined", and both mean something different
   // here: the first is a signed-in stub, the second is a missing credential.
   const resolved = signedOut ? credential : { token: 't' }
+  const models = resolveModels ?? (() => CATALOG)
+  const alwaysThinking = resolveAlwaysThinking ?? ((id) => CATALOG.find((m) => m.id === id)?.alwaysThinking === true)
   const shim = createQoderShim({
     region: REGION,
     resolveCredential: async () => resolved,
-    resolveModels: () => CATALOG,
+    resolveModels: models,
     resolveEnabledIds: () => enabledIds,
     resolveUpstreamKey: (id) => CATALOG.find((m) => m.id === id)?.key,
-    resolveAlwaysThinking: (id) => CATALOG.find((m) => m.id === id)?.alwaysThinking === true,
+    resolveAlwaysThinking: alwaysThinking,
     invalidateCredential: () => {
       seen.invalidations += 1
     },
     logger: { warn() {} },
-    ...(runChat === undefined ? {} : { runChat }),
+    ...(runChat === undefined
+      ? {}
+      : { runChat: (region, credential, request) => {
+          seen.lastRequest = request
+          return runChat(region, credential, request)
+        } }),
   })
   await shim.ready
   seen.shim = shim
@@ -407,5 +415,115 @@ test('a hard upstream failure is a 502 and advertises no retry delay', async () 
     assert.strictEqual(headers['retry-after'], undefined)
   } finally {
     await broken.shim.close()
+  }
+})
+
+// --- thinking defaults ------------------------------------------------------
+//
+// The default-thinking behaviour the picker's "Default" resolves to. DSH's
+// unselected dispatch sends NO `reasoning_effort` (the thinking map no longer
+// spells `off` out, so there is no value for the default to send), and the
+// shim decides from the model's own reasoning nature what that means.
+
+/** A runChat stub that records the request and yields one complete message. */
+function recordRequests() {
+  const requests = []
+  const runChat = async function* (region, credential, request) {
+    requests.push(request)
+    yield {
+      id: 'x',
+      object: 'chat.completion.chunk',
+      created: 0,
+      model: request.model,
+      choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: null }],
+    }
+    yield {
+      id: 'x',
+      object: 'chat.completion.chunk',
+      created: 0,
+      model: request.model,
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    }
+  }
+  return { requests, runChat }
+}
+
+/** POST one chat completion and return the request the upstream saw last. */
+async function lastUpstreamRequest(instance, body) {
+  const { status } = await call(instance.base, '/v1/chat/completions', {
+    method: 'POST',
+    token: instance.token,
+    body: JSON.stringify({ model: 'ModelA', messages: [{ role: 'user', content: 'hi' }], ...body }),
+  })
+  assert.strictEqual(status, 200, 'the recorded request must be a valid one')
+  return instance.lastRequest
+}
+
+test('an unselected effort (no reasoning_effort at all) thinks for a reasoning model', async () => {
+  // The DSH picker's "Default": no effort reached the wire. Before this
+  // behaviour the shim answered such a request with `enableThinking: false` —
+  // so a bare model selection read as "thinking disabled", while the sibling
+  // connectors (WorkBuddy, Trae) let the gateway default apply and thought.
+  // The catalog entry here has NO effortLevels on purpose: it is the off-only
+  // shape (Qwen 3.7 family) that cannot advertise a level, and the fix must
+  // still default to thinking for it.
+  const { runChat } = recordRequests()
+  const instance = await startShim({
+    resolveModels: () => [{ id: 'ModelA', key: 'a', alwaysThinking: false, isReasoning: true }],
+    resolveAlwaysThinking: () => false,
+    runChat,
+  })
+  try {
+    const request = await lastUpstreamRequest(instance, {})
+    assert.strictEqual(request.enableThinking, true, 'no effort at all must read as "think at the gateway default"')
+    assert.strictEqual(request.reasoningEffort, undefined, 'the default must not invent a level')
+  } finally {
+    await instance.shim.close()
+  }
+})
+
+test('an unselected effort on a non-reasoning model still sends enable_thinking off', async () => {
+  const { runChat } = recordRequests()
+  const instance = await startShim({
+    resolveModels: () => [
+      { id: 'ModelA', key: 'a', alwaysThinking: false, isReasoning: false },
+      { id: 'ModelB', key: 'b', alwaysThinking: false, isReasoning: true },
+      { id: 'ModelC', key: 'c', alwaysThinking: true, isReasoning: true },
+      { id: 'ModelD', key: 'd', alwaysThinking: false, isReasoning: false },
+    ],
+    resolveAlwaysThinking: (id) => CATALOG.find((m) => m.id === id)?.alwaysThinking === true,
+    runChat,
+  })
+  try {
+    const request = await lastUpstreamRequest(instance, {})
+    assert.strictEqual(request.enableThinking, false, 'a model that cannot think must not be told to')
+  } finally {
+    await instance.shim.close()
+  }
+})
+// The two explicit dispatches are unchanged by the default: `off`/`none`
+// must still turn thinking off (that is the picker's "Off" entry working),
+// and a concrete level must both enable thinking and ride through to the
+// upstream `reasoning_effort`.
+test('an explicit off still disables thinking, and an explicit level still enables it', async () => {
+  const { runChat } = recordRequests()
+  const instance = await startShim({
+    resolveModels: () => [
+      { id: 'ModelA', key: 'a', alwaysThinking: false, isReasoning: true },
+      { id: 'ModelB', key: 'b', alwaysThinking: false, isReasoning: true },
+      { id: 'ModelC', key: 'c', alwaysThinking: true, isReasoning: true },
+      { id: 'ModelD', key: 'd', alwaysThinking: false, isReasoning: false },
+    ],
+    resolveAlwaysThinking: (id) => CATALOG.find((m) => m.id === id)?.alwaysThinking === true,
+    runChat,
+  })
+  try {
+    const off = await lastUpstreamRequest(instance, { reasoning_effort: 'off' })
+    assert.strictEqual(off.enableThinking, false, 'an explicit off must still be honoured')
+    const high = await lastUpstreamRequest(instance, { reasoning_effort: 'high' })
+    assert.strictEqual(high.enableThinking, true)
+    assert.strictEqual(high.reasoningEffort, 'high', 'the chosen level must reach the upstream call')
+  } finally {
+    await instance.shim.close()
   }
 })
