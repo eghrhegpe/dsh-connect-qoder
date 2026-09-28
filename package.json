@@ -2,7 +2,7 @@
   "name": "@eghrhegpe/dsh-connect-qoder",
   "displayName": "DSH Connect Qoder",
   "description": "将本机已登录的 Qoder（国内版 Qoder CN / 国际版 Qoder）模型接入 DeepSeek Harness —— bring locally signed-in Qoder models into DeepSeek Harness with zero configuration.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "author": "eghrhegpe",
   "homepage": "https://github.com/eghrhegpe/dsh-connect-qoder",
   "repository": {
