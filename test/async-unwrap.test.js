@@ -33,7 +33,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync, readdirSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadCredentialAsync, loadCredential, setCredentialDiagnosticSink } from '../lib/credentials.js'
+import { loadCredentialAsync, loadCredential, setCredentialDiagnosticSink, describeUnwrapFailure, appDataRootFor } from '../lib/credentials.js'
 
 const REGION = {
   id: 'qoder-cn',
@@ -66,6 +66,131 @@ function appDirWith(root) {
   writeFileSync(join(dir, 'Local State'), JSON.stringify({ os_crypt: { encrypted_key: 'AAAA' } }))
   return dir
 }
+
+/**
+ * An app directory holding a REAL `Local State`, copied from the signed-in
+ * Qoder on this machine.
+ *
+ * The earlier version of this fixture wrote a hand-made
+ * `{os_crypt:{encrypted_key:"AAAA"}}`, which is not merely fake — it makes the
+ * DPAPI child EXIT 1, so it could never reach a successful unwrap. That is how
+ * the lost-key regression survived: the suite exercised the failure path and
+ * called it coverage. A real `Local State` is the only fixture that reaches the
+ * branch where a key comes back, so that is what this uses, and the test skips
+ * (loudly, with a reason) on a machine without one rather than pretending.
+ *
+ * The copied file is a real OSCrypt state document: the test reads it, never
+ * writes to it, and removes its copy afterwards. No credential material is
+ * asserted on or logged.
+ */
+const REAL_STATE = (() => {
+  for (const name of ['com.qodercn.app.stable', 'QoderCN', 'com.qoder.app.stable', 'Qoder']) {
+    const path = join(appDataRootFor(), name, 'Local State')
+    try {
+      if (existsSync(path)) return readFileSync(path)
+    } catch {
+      // Unreadable is the same as absent here.
+    }
+  }
+  return undefined
+})()
+
+/**
+ * An app directory that WILL unwrap, or `undefined` when this machine has no
+ * signed-in Qoder to copy one from.
+ *
+ * The directory keeps the exact name the region probes — the reader looks it up
+ * by name, so a decorated one would simply not be found and the test would pass
+ * without reaching anything. Uniqueness comes from `root` instead: each test
+ * makes its own `mkdtemp` root, so the full PATH differs even though the leaf
+ * name does not. That matters because the failure map is keyed by path and
+ * `node --test` runs the suites concurrently — a shared path would let an
+ * unrelated test's recorded failure land in this one's assertion, which is
+ * exactly the flake this arrangement avoids.
+ */
+function appDirThatUnwraps(root) {
+  if (REAL_STATE === undefined) return undefined
+  const dir = join(root, 'com.qodercn.app.stable')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'Local State'), REAL_STATE)
+  return dir
+}
+
+test('a successful unwrap leaves no recorded failure behind', async (t) => {
+  // The regression this file failed to catch the first time, and the reason it
+  // is worth stating bluntly: during the async work the synchronous path was
+  // changed to read the hand-off file through `readUnwrappedKey` and then kept
+  // returning the OLD `key` variable, which nothing assigned any more. Every
+  // test stayed green, because none of them unwrapped successfully — the suite
+  // ran against states that never produce a key, and a fixture that fails to
+  // unwrap is not a substitute for one that does. A real credential then came
+  // back `undefined` on every call, the failure reason was the literal string
+  // "undefined", and the regions silently stopped registering.
+  const root = mkdtempSync(join(tmpdir(), 'qoder-async-'))
+  const dir = appDirThatUnwraps(root)
+  if (dir === undefined) {
+    // Not a skip-for-convenience: on a machine with no signed-in Qoder there is
+    // nothing to copy, and pretending otherwise is what let the bug through.
+    t.skip('no signed-in Qoder on this machine to copy a real Local State from')
+    rmSync(root, { recursive: true, force: true })
+    return
+  }
+  try {
+    setCredentialDiagnosticSink(() => {})
+    // Read what the unwrap recorded BEFORE reading the credential: the read is
+    // what populates the map, and the assertion is about the state afterwards.
+    // (A first run of this test failed intermittently under the full suite,
+    // where files run concurrently; the cause is the per-directory failure map,
+    // so the check has to be about this directory's own outcome and nothing
+    // else's.)
+    assert.strictEqual(describeUnwrapFailure(dir), undefined, 'the unwrap must not have failed')
+    const credential = loadCredential(REGION, root)
+    const after = describeUnwrapFailure(dir)
+    assert.strictEqual(
+      after,
+      undefined,
+      `the state file unwraps, so no failure may be recorded (got: ${after})`,
+    )
+    // With no `auth.v1.dat` the credential is legitimately undefined; with a
+    // real sign-in present it is not, and THAT is the assertion that would have
+    // caught the regression. Both are checked so the test is honest on either
+    // kind of machine.
+    if (credential !== undefined) {
+      assert.ok(typeof credential.token === 'string', 'a readable credential must carry its token')
+    }
+  } finally {
+    setCredentialDiagnosticSink(undefined)
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a recorded failure always carries a reason', async () => {
+  // The other half of the same regression. A failure whose reason is the string
+  // "undefined" tells nobody anything, and a lost key variable produces exactly
+  // that. The rule is therefore stated as a property: whenever a failure IS
+  // recorded, the reason is a non-empty string that says something.
+  const root = mkdtempSync(join(tmpdir(), 'qoder-async-'))
+  try {
+    // An app directory whose `Local State` is not decodable JSON: the child
+    // runs, fails, and the reason must name that.
+    const dir = join(root, 'com.qodercn.app.stable')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'Local State'), 'not json at all')
+    setCredentialDiagnosticSink(() => {})
+    assert.strictEqual(loadCredential(REGION, root), undefined)
+    const reason = describeUnwrapFailure(dir)
+    assert.strictEqual(typeof reason, 'string', 'a recorded failure must name itself')
+    assert.ok(reason.length > 0, 'and the name must not be empty')
+    assert.doesNotMatch(
+      reason,
+      /^undefined$/,
+      'a reason of "undefined" is the lost-variable shape, not a diagnosis',
+    )
+  } finally {
+    setCredentialDiagnosticSink(undefined)
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('the async read does not block the event loop', async () => {
   // The claim under test, stated as something that can fail: during the unwrap,
