@@ -21,7 +21,7 @@ import { test, after, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { connect } from 'node:net'
 
-import { createQoderShim } from '../lib/shim.js'
+import { createQoderShim, defaultEffortFor } from '../lib/shim.js'
 
 const REGION = { id: 'qoder-cn', displayName: 'Qoder CN' }
 
@@ -465,8 +465,8 @@ test('an unselected effort (no reasoning_effort at all) thinks for a reasoning m
   // so a bare model selection read as "thinking disabled", while the sibling
   // connectors (WorkBuddy, Trae) let the gateway default apply and thought.
   // The catalog entry here has NO effortLevels on purpose: it is the off-only
-  // shape (Qwen 3.7 family) that cannot advertise a level, and the fix must
-  // still default to thinking for it.
+  // shape (Qwen 3.7 family) that cannot advertise a level. Even so, the default
+  // must enable thinking — it just cannot pin a level the catalog never offered.
   const { runChat } = recordRequests()
   const instance = await startShim({
     resolveModels: () => [{ id: 'ModelA', key: 'a', alwaysThinking: false, isReasoning: true }],
@@ -475,11 +475,61 @@ test('an unselected effort (no reasoning_effort at all) thinks for a reasoning m
   })
   try {
     const request = await lastUpstreamRequest(instance, {})
-    assert.strictEqual(request.enableThinking, true, 'no effort at all must read as "think at the gateway default"')
-    assert.strictEqual(request.reasoningEffort, undefined, 'the default must not invent a level')
+    assert.strictEqual(request.enableThinking, true, 'no effort at all must still enable thinking')
+    assert.strictEqual(request.reasoningEffort, undefined, 'a level must never be invented for a model that advertises none')
   } finally {
     await instance.shim.close()
   }
+})
+
+// The default is not "let the gateway decide" — the gateway's no-effort state
+// is thinking-OFF for the Qwen 3.8 family, which is exactly what the unselected
+// selection must not mean. So a reasoning model that advertises levels gets a
+// concrete level pinned; the pin is always one its catalog offers.
+
+test('an unselected effort on a model that offers levels pins the default to a concrete level', async () => {
+  const { runChat } = recordRequests()
+  const instance = await startShim({
+    resolveModels: () => [
+      { id: 'ModelA', key: 'a', alwaysThinking: false, isReasoning: true, effortLevels: ['low', 'medium', 'xhigh'] },
+    ],
+    resolveAlwaysThinking: () => false,
+    runChat,
+  })
+  try {
+    const request = await lastUpstreamRequest(instance, {})
+    assert.strictEqual(request.enableThinking, true)
+    assert.strictEqual(request.reasoningEffort, 'low', 'the pinned default must reach the upstream call')
+  } finally {
+    await instance.shim.close()
+  }
+})
+
+test('an explicit level wins over the pinned default', async () => {
+  const { runChat } = recordRequests()
+  const instance = await startShim({
+    resolveModels: () => [
+      { id: 'ModelA', key: 'a', alwaysThinking: false, isReasoning: true, effortLevels: ['low', 'medium', 'xhigh'] },
+    ],
+    resolveAlwaysThinking: () => false,
+    runChat,
+  })
+  try {
+    const request = await lastUpstreamRequest(instance, { reasoning_effort: 'xhigh' })
+    assert.strictEqual(request.enableThinking, true)
+    assert.strictEqual(request.reasoningEffort, 'xhigh', 'an explicit picker choice must not be overridden by the pin')
+  } finally {
+    await instance.shim.close()
+  }
+})
+
+test('the pin chooses per the model own advertised levels, never one it lacks', () => {
+  assert.strictEqual(defaultEffortFor({ effortLevels: ['low', 'medium', 'xhigh'] }, false), 'low', 'the target when the model offers it')
+  assert.strictEqual(defaultEffortFor({ effortLevels: ['high', 'max'] }, false), 'high', 'the cheapest offered when the target is not among them')
+  assert.strictEqual(defaultEffortFor({ effortLevels: ['xhigh'] }, false), 'xhigh', 'even a lone costly level beats the gateway off-state')
+  assert.strictEqual(defaultEffortFor({ effortLevels: [] }, false), undefined, 'no advertised level: nothing to pin')
+  assert.strictEqual(defaultEffortFor({}, false), undefined, 'an unknown model gets no invented level')
+  assert.strictEqual(defaultEffortFor({ effortLevels: ['low', 'high'] }, true), undefined, 'always-thinking models stay positive-only')
 })
 
 test('an unselected effort on a non-reasoning model still sends enable_thinking off', async () => {
