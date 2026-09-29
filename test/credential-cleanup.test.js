@@ -29,7 +29,7 @@
  * probe compared a file the holder never touched and drew the opposite
  * conclusion. Both are recorded here so neither is re-derived by feel.)
  */
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import {
@@ -70,6 +70,75 @@ const STALE_MS = 10 * 60 * 1000
  * touches the parent's mtime, and the sweep's guard is the directory's own
  * clock. Pass `marker: false` to build the foreign-look-alike case.
  */
+/**
+ * Run `task` with a PRIVATE temp root, so a sweep in this file can only ever
+ * see directories this file created.
+ *
+ * The isolation is the fix for a measured flake, not tidiness. `node --test`
+ * runs files concurrently, this suite installs a process-wide diagnostic sink,
+ * and `sweepStaleOscryptDirs` reads `os.tmpdir()` — so a sibling file (the
+ * credential and account-state suites both create `qoder-oscrypt-*` directories
+ * under the real temp root) had its cleanup reported into this file's capture
+ * array, and the "an ordinary reclaim is silent" assertion failed roughly one
+ * run in five. Green on the next run, which is exactly why it had to be fixed
+ * rather than re-run.
+ *
+ * The environment has to be redirected for the whole task, not just around the
+ * fixture: `tmpdir()` is read INSIDE `sweepStaleOscryptDirs`, so a root that is
+ * only in place while the directory is created is not the root the sweep looks
+ * in. All three names are set because `os.tmpdir()` consults `TMPDIR`, then
+ * `TMP`, then `TEMP` on POSIX, and `TEMP` then `TMP` on Windows.
+ *
+ * @param task - receives the private root, and its return value is passed on.
+ * @returns whatever `task` returned.
+ */
+function withTempRoot(task) {
+  const root = mkdtempSync(join(tmpdir(), 'qoder-sweep-root-'))
+  const saved = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP }
+  process.env.TMPDIR = root
+  process.env.TEMP = root
+  process.env.TMP = root
+  const restore = () => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+  let result
+  try {
+    result = task(root)
+  } catch (error) {
+    restore()
+    throw error
+  }
+  // An async task keeps the redirected environment until it settles — the sweep
+  // runs inside it, and a PowerShell lock is awaited — so the restore has to
+  // happen after, not in a `finally` that would run at the first await.
+  if (result !== undefined && typeof result?.then === 'function') {
+    return result.then(
+      (value) => {
+        restore()
+        return value
+      },
+      (error) => {
+        restore()
+        throw error
+      },
+    )
+  }
+  restore()
+  return result
+}
+
+/**
+ * A scratch `qoder-oscrypt-*` directory holding an aged key file, created INSIDE
+ * the private root `withTempRoot` has installed.
+ *
+ * The directory is aged AFTER the files are written: writing them touches the
+ * parent's mtime, and the sweep's guard is the directory's own clock. Pass
+ * `marker: false` to build the foreign-look-alike case.
+ */
 function makeKeyDir(ageMs = STALE_MS, { marker = true, body = KEY_BODY, files } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'qoder-oscrypt-'))
   const file = join(dir, 'key.b64')
@@ -89,34 +158,38 @@ function captureDiagnostics() {
 }
 
 test('a stale key directory is reclaimed', () => {
-  const { dir, file } = makeKeyDir()
-  const messages = captureDiagnostics()
-  try {
-    const reclaimed = sweepStaleOscryptDirs(0)
-    assert.ok(reclaimed >= 1, 'the aged directory must be reclaimed')
-    assert.equal(existsSync(file), false, 'the key file must not survive the sweep')
-    assert.deepEqual(messages, [], 'an ordinary reclaim is not a problem to report')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-    setCredentialDiagnosticSink(undefined)
-  }
+  withTempRoot(() => {
+    const { dir, file } = makeKeyDir()
+    const messages = captureDiagnostics()
+    try {
+      const reclaimed = sweepStaleOscryptDirs(0)
+      assert.ok(reclaimed >= 1, 'the aged directory must be reclaimed')
+      assert.equal(existsSync(file), false, 'the key file must not survive the sweep')
+      assert.deepEqual(messages, [], 'an ordinary reclaim is not a problem to report')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      setCredentialDiagnosticSink(undefined)
+    }
+  })
 })
 
 test('a fresh directory is left alone, because another instance may be using it', () => {
   // The sweep's age guard is what makes it safe to call while a concurrent DSH
   // is unwrapping. Removing it would let one process delete a key file out from
   // under another that is still reading it.
-  const { dir, file } = makeKeyDir(0)
-  const messages = captureDiagnostics()
-  try {
-    const reclaimed = sweepStaleOscryptDirs(5 * 60 * 1000)
-    assert.equal(reclaimed, 0, 'a directory younger than the guard must not be touched')
-    assert.deepEqual(messages, [], 'and it must not be reported as a problem')
-    assert.equal(readFileSync(file, 'utf8'), KEY_BODY, 'its key file must still be intact')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-    setCredentialDiagnosticSink(undefined)
-  }
+  withTempRoot(() => {
+    const { dir, file } = makeKeyDir(0)
+    const messages = captureDiagnostics()
+    try {
+      const reclaimed = sweepStaleOscryptDirs(5 * 60 * 1000)
+      assert.equal(reclaimed, 0, 'a directory younger than the guard must not be touched')
+      assert.deepEqual(messages, [], 'and it must not be reported as a problem')
+      assert.equal(readFileSync(file, 'utf8'), KEY_BODY, 'its key file must still be intact')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      setCredentialDiagnosticSink(undefined)
+    }
+  })
 })
 
 /**
@@ -200,6 +273,11 @@ test(
     // of everything below and the same wall `zeroOutFile` is about to hit.
     assert.equal(canOpenReadWrite(locked.file), false, 'the handle must block Node opens before the sweep runs')
 
+    // No `withTempRoot` here, and the asymmetry is deliberate: this test's
+    // fixtures are created OUTSIDE the real temp root's namespace, and a sibling
+    // file's directory being swept alongside it would only ADD to `messages` —
+    // which this test asserts are non-empty. The tests that assert silence are
+    // the ones that need the isolation, and they have it.
     const reclaimed = sweepStaleOscryptDirs(0)
 
     assert.ok(
@@ -305,18 +383,20 @@ test('a prefix collision WITHOUT our marker is a foreign directory: skipped sile
   // Another tool leaves `%TEMP%\qoder-oscrypt-junk\whatever`. Right name, not
   // ours. The sweep must not zero it, not delete it, and not warn about it —
   // a plugin that never owned it gets no claim and raises no alarm.
-  const { dir, file } = makeKeyDir(STALE_MS, { marker: false })
-  const messages = captureDiagnostics()
-  try {
-    const reclaimed = sweepStaleOscryptDirs(0)
-    assert.equal(reclaimed, 0)
-    assert.equal(existsSync(file), true, 'the foreign key file must survive untouched')
-    assert.equal(readFileSync(file, 'utf8'), KEY_BODY, 'and must be unchanged')
-    assert.deepEqual(messages, [], 'a foreign look-alike earns no warning')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-    setCredentialDiagnosticSink(undefined)
-  }
+  withTempRoot(() => {
+    const { dir, file } = makeKeyDir(STALE_MS, { marker: false })
+    const messages = captureDiagnostics()
+    try {
+      const reclaimed = sweepStaleOscryptDirs(0)
+      assert.equal(reclaimed, 0)
+      assert.equal(existsSync(file), true, 'the foreign key file must survive untouched')
+      assert.equal(readFileSync(file, 'utf8'), KEY_BODY, 'and must be unchanged')
+      assert.deepEqual(messages, [], 'a foreign look-alike earns no warning')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      setCredentialDiagnosticSink(undefined)
+    }
+  })
 })
 
 test('our marker plus a foreign extra file is reported and left alone, not zeroed', () => {
@@ -351,36 +431,40 @@ test('our marker plus a foreign extra file is reported and left alone, not zeroe
 test('our marker with a non-32-byte key file is reported and left alone', () => {
   // Readable content that does not decode to a real master key is foreign-by-
   // size: refuse to delete it even though it carries our name and marker.
-  const { dir, file } = makeKeyDir(STALE_MS, { body: 'bm90LWEta2V5' /* short */ })
-  const messages = captureDiagnostics()
-  try {
-    const reclaimed = sweepStaleOscryptDirs(0)
-    assert.equal(reclaimed, 0)
-    assert.equal(existsSync(file), true, 'a wrong-size key file is not reclaimed')
-    assert.ok(
-      messages.some((m) => /not a 32-byte master key/.test(m)),
-      `the size mismatch is reported; got ${JSON.stringify(messages)}`,
-    )
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-    setCredentialDiagnosticSink(undefined)
-  }
+  withTempRoot(() => {
+    const { dir, file } = makeKeyDir(STALE_MS, { body: 'bm90LWEta2V5' /* short */ })
+    const messages = captureDiagnostics()
+    try {
+      const reclaimed = sweepStaleOscryptDirs(0)
+      assert.equal(reclaimed, 0)
+      assert.equal(existsSync(file), true, 'a wrong-size key file is not reclaimed')
+      assert.ok(
+        messages.some((m) => /not a 32-byte master key/.test(m)),
+        `the size mismatch is reported; got ${JSON.stringify(messages)}`,
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      setCredentialDiagnosticSink(undefined)
+    }
+  })
 })
 
 test('a well-formed stale dir with marker and 32-byte key is reclaimed', () => {
   // The positive control after the guards: exactly `key.b64` + marker, aged,
   // right size — reclaimed, silently, and counted.
-  const { dir, file } = makeKeyDir(STALE_MS)
-  const messages = captureDiagnostics()
-  try {
-    const reclaimed = sweepStaleOscryptDirs(0)
-    assert.ok(reclaimed >= 1)
-    assert.equal(existsSync(file), false)
-    assert.deepEqual(messages, [], 'an ordinary reclaim is silent')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-    setCredentialDiagnosticSink(undefined)
-  }
+  withTempRoot(() => {
+    const { dir, file } = makeKeyDir(STALE_MS)
+    const messages = captureDiagnostics()
+    try {
+      const reclaimed = sweepStaleOscryptDirs(0)
+      assert.ok(reclaimed >= 1)
+      assert.equal(existsSync(file), false)
+      assert.deepEqual(messages, [], 'an ordinary reclaim is silent')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+      setCredentialDiagnosticSink(undefined)
+    }
+  })
 })
 
 test('the sweep is inert when the temp root cannot be read', () => {

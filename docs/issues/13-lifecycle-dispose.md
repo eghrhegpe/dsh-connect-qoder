@@ -27,5 +27,39 @@ dispose 之后再 POST `account/reload` 会**再起一个 shim + 一个 interval
 
 ## 验收标准
 
-- [ ] 新用例：dispose 后调用在途刷新 → `catalog.replace` 与 `emit` 都不再发生
-- [ ] 宿主语义有明确结论，并写进 `lib/index.js` 的注释（"随 fiber 自动注销，无需显式"或反过来）
+- [x] 新用例：dispose 后调用在途刷新 → `catalog.replace` 与 `emit` 都不再发生
+- [x] 宿主语义有明确结论，并写进 `lib/index.js` 的注释（"随 fiber 自动注销，无需显式"或反过来）
+
+## 实现（两条都落地；第二条采取"不猜"）
+
+### （a）在途刷新
+
+`doRefreshCatalog` 现在为每次抓取建一个 `AbortController`，dispose 时 `abort()`——
+不只是"事后不认这个结果"，而是**真的掐断上游连接**。两层都要，因为二者会竞态：
+abort 可能输给一个已经读到的响应。
+
+`isRefreshObsolete`（[`../../lib/catalog-refresh.js`](../../lib/catalog-refresh.js)）是纯函数，
+**成功路径和失败路径都要查**：只查一条是最容易犯的"改一半"——成功路径不查会往磁盘写目录并向
+已释放的 fiber `emit`；失败路径不查会在每次禁用/热重载的日志里留下一条无主的警告。
+测试用源码断言数检查点个数（`lib/index.js` 不可 import），变异验证删掉失败路径那条即红。
+
+### （b）路由注销：**宿主语义无法确认，故不猜**
+
+原方案第 2 条说"花 1 小时从包源码确认 `register` 是否随 fiber 注销"。**做不到**：
+`@deepseek-ai/dsh-host-webserver` 打在宿主的 `app.asar` 里，插件 checkout 读不到。
+本机实测过四条路：asar 未解包、profile 的 `node_modules/.pnpm` store 为空（只有 lock.yaml）、
+`app.asar.unpacked` 里没有该包、`@deepseek-ai` 下只有 `cosmokit` 与 `schemastery`。
+
+于是改成一个**两种宿主语义下都正确**的写法：把 `register()` 的返回值收集起来，
+**只有当它是可调用的**才在 dispose 时调用（[`../../lib/lifecycle.js`](../../lib/lifecycle.js)）。
+随 fiber 回收的宿主会忽略这次多余调用；不随 fiber 回收的宿主则拿到了它原本缺失的注销。
+
+这样处理的关键是**不对看不见的契约下断言**。若宿主将来改变返回值的形状，退化结果是
+"不注销"——也就是今天的行为——而不是在 dispose 期间抛异常。
+
+**为什么值得做**：一旦漏了，路由会把 handler 连同整个 runtime 留在可达状态；插件被禁用后
+一次 POST 就会新起一个 shim 和一个刷新定时器，而**再也不会有人清理它们**。
+
+**七处 `register` 全部包装**（原 issue 记的是 6 处，现已 7 处），并由
+`test/lifecycle.test.js` 逐处断言——新增路由漏包装会当场变红（变异验证过）。释放时单个抛错
+不影响其余（那些才持有端口），且 dispose 永不抛异常。

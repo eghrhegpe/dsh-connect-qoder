@@ -20,6 +20,24 @@
 
 ## 验收标准
 
-- [ ] 新用例：改掉 `Local State` 的 mtime/内容后，下一次读取重新调用 PowerShell
-- [ ] 新用例：文件不变时命中缓存，不再调用
-- [ ] 注释里写清缓存的失效条件（当前注释只解释"为什么失败不缓存"）
+- [x] 新用例：改掉 `Local State` 的 mtime/内容后，下一次读取重新调用 PowerShell
+- [x] 新用例：文件不变时命中缓存，不再调用
+- [x] 注释里写清缓存的失效条件（当前注释只解释"为什么失败不缓存"）
+
+## 实现（已修，宿主端与 07 一起落地）
+
+缓存项从"裸 Buffer"变成 `{ key, identity }`，`identity` 是 `Local State` 的
+`"<mtimeMs>:<size>"`；`cachedKeyFor(cached, identity)` 是判定函数，两侧都必须**存在**且相等
+才算命中。
+
+**为什么用 stat 而不是哈希**：`Local State` 几十 KB，每次解析凭据都读一遍全文件换哈希不划算；
+它由 Chromium 原子替换写入，内容一变必然带新 mtime。唯一看不见的是"同一毫秒内改写且大小相同"，
+而那种情况下旧 key 恰好仍然正确。
+
+**为什么两侧都要"存在"**：`{ key }`（无 identity）对上"文件不存在"时 `undefined === undefined`
+成立，会把一把**来历不明**的 key 交出去。这条是测试逼出来的——先写了实现，测试立刻报红。
+
+验收标准第 1 条（"重新调用 PowerShell"）由 `cachedKeyFor` 的纯函数断言承担，而不是真的拉一个
+PowerShell 子进程：拉进程需要活的 Windows 应用与 DPAPI，在 CI 上要么被跳过、要么慢到不会常跑，
+而原来那个无界缓存正是这样活下来的（见 [`../../test/keycache-invalidation.test.js`](../../test/keycache-invalidation.test.js)）。
+

@@ -147,19 +147,35 @@ function formatContextWindowForUi(tokens) {
 }
 
 /**
- * The window label for one model row: the raw ingredients the host
- * publishes (`contextOptions` / `defaultContextWindow`) resolved
- * against the card's live `maxWindow` toggle, not the server-computed
- * label (which only reflects the last load). A model with no
- * selectable windows shows nothing — its fallback number is a local
- * degradation, not a window Qoder offers.
+ * The window label for one model row.
+ *
+ * The host already computes this — `contextWindowLabel` on every row it serves
+ * — and this used to recompute it from `contextOptions` /
+ * `defaultContextWindow`. The two copies had drifted: the host shows a label
+ * only when upstream published BOTH a non-empty `contextOptions` and a
+ * positive `defaultContextWindow`, while this one showed a label for any
+ * non-empty `contextOptions` and fell back to the widest offered window. For a
+ * model whose `context_config` lists windows but marks none as default, the
+ * card showed a size and the picker showed none (test/card-host-parity.test.js
+ * pins that state).
+ *
+ * So this reads the host's answer. The remaining local work is one thing the
+ * host cannot do: the per-row toggle, which flips between the default and the
+ * widest at click time, before any refresh has happened. Both choices are
+ * therefore derived from the shipped `contextOptions` — and the guard is
+ * deliberately the HOST's rule (a default must exist), not the old
+ * options-only one, so the two screens cannot diverge again.
  */
 function windowLabelOf(model, preferMax) {
+	const hostLabel = model.contextWindowLabel;
 	const options = Array.isArray(model.contextOptions) ? model.contextOptions.filter((n) => Number(n) > 0) : [];
-	if (options.length === 0) return "";
-	const widest = Math.max(...options);
-	const tokens = preferMax ? widest : (Number(model.defaultContextWindow) > 0 ? Number(model.defaultContextWindow) : widest);
-	return formatContextWindowForUi(tokens);
+	// Nothing offered, or nothing marked as the default: no label, which is the
+	// host's `contextWindowIsReal` rule.
+	if (options.length === 0 || !(Number(model.defaultContextWindow) > 0)) return "";
+	// The toggled state, which no host field can express, is the widest offered
+	// window; otherwise the host's own label already says it.
+	if (preferMax) return formatContextWindowForUi(Math.max(...options));
+	return typeof hostLabel === "string" ? hostLabel : formatContextWindowForUi(Number(model.defaultContextWindow));
 }
 
 /**
@@ -183,6 +199,35 @@ function rateAt(model, now) {
 	}
 	if (Number.isFinite(before)) return before;
 	return Number.isFinite(base) ? base : undefined;
+}
+
+/**
+ * The one refresh verdict this card should show, from the host's report.
+ *
+ * A pure function of `value` so the decision can be tested against the shipped
+ * bundle (see test/protocol-shape-card.test.js) rather than only by reading JSX.
+ *
+ * The host sends `{ refreshedAt, refreshFailures }`. Three outcomes, kept apart
+ * on purpose — collapsing them is the bug this replaces:
+ *
+ * - **no failure** → `null`: the rows shown are the last upstream answer, and
+ *   the "已更新（time）" stamp is honest.
+ * - **a transient failure** (`fetch` / `credential` / `no-credential`) → the
+ *   stamp still shows, marked stale, because the rows on screen are real, just
+ *   old. The user's next move is to retry.
+ * - **`protocol-shape-changed`** → the envelope moved and the plugin is out of
+ *   date. This is the case that used to be indistinguishable from a queue: the
+ *   user was told to re-sign, or waited out a retry ladder that could not
+ *   possibly help. Neither appears here — the copy points at a plugin update.
+ *
+ * The protocol verdict wins over a transient one in the same payload, since it
+ * is the one that cannot resolve on its own.
+ */
+function refreshNoticeKey(value) {
+	const failures = Array.isArray(value?.refreshFailures) ? value.refreshFailures : [];
+	if (failures.length === 0) return null;
+	if (failures.some((f) => f?.reason === "protocol-shape-changed")) return "protocol-shape-changed";
+	return "transient";
 }
 
 /**
@@ -987,6 +1032,12 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 	const [notice, setNotice] = (0, react.useState)(undefined);
 	const [refreshing, setRefreshing] = (0, react.useState)(false);
 	const [refreshedAt, setRefreshedAt] = (0, react.useState)(undefined);
+	// The host's own verdict about the last refresh, folded to one of
+	// `null` / "transient" / "protocol-shape-changed" by refreshNoticeKey.
+	// Kept apart from `notice` (which is the save/discard banner) so an
+	// upstream problem never borrows the save banner's styling, and from
+	// `status` (which is about whether the ROUTE answered at all).
+	const [refreshFailure, setRefreshFailure] = (0, react.useState)(null);
 	// Bumped when the account panel's re-read lands; the usage panel
 	// treats a non-zero value as "force a fresh quota pull".
 	const [usageBump, setUsageBump] = (0, react.useState)(0);
@@ -1073,7 +1124,14 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 				setEnabledIds(savedEnabled);
 				setSavedEnabledIds(savedEnabled);
 			}
-			setRefreshedAt(typeof value.refreshedAt === "number" ? value.refreshedAt : Date.now());
+			// The host sends when the rows were FETCHED, not when this response
+			// was rendered. The old `else Date.now()` fallback was the browser
+			// half of issue 05: a route that answered while every refresh was
+			// failing still stamped a brand-new time, so the card claimed a
+			// successful update it had no evidence for. Without a number there is
+			// nothing honest to show, so nothing is shown.
+			setRefreshedAt(typeof value.refreshedAt === "number" ? value.refreshedAt : undefined);
+			setRefreshFailure(refreshNoticeKey(value));
 			setStatus("ready");
 		} catch (error) {
 			if (!mounted.current || signal?.aborted === true) return;
@@ -1466,7 +1524,22 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 							children: t(regionAllTicked ? "row.disableAll" : "row.enableAll")
 						}), refreshedAt !== undefined && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
 							className: "dsm-qoder-state",
-							children: t("row.refreshed", { time: new Date(refreshedAt).toLocaleTimeString() })
+							// Three shapes, one slot. A protocol change replaces the
+							// timestamp entirely rather than decorating it: the time
+							// of a last successful fetch is not useful next to "your
+							// plugin is out of date", and offering a time there
+							// invites the user to believe the rows are current.
+							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : t(refreshFailure === "transient" ? "row.refreshStale" : "row.refreshed", { time: new Date(refreshedAt).toLocaleTimeString() })
+						}) : refreshFailure !== null && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
+							// No fetch has ever succeeded for this profile, so there is
+							// no time to show — but the failure is still true and still
+							// needs to be visible. This is the state a fresh install
+							// with a broken protocol lands in, so swallowing it here
+							// would restore the original "everything looks fine"
+							// reading for exactly the case that matters.
+							className: "dsm-qoder-state",
+							title: refreshFailure === "protocol-shape-changed" ? undefined : t("row.refreshFailed", { reason: refreshFailure }),
+							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : t("row.refreshFailed", { reason: refreshFailure })
 						}) : null]
 					}),
 					(0, react_jsx_runtime.jsxs)("div", {

@@ -45,25 +45,29 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 `QODER_PAT`（国际版），插件会用它换取 job token。
 
 **平台边界：零配置路径只在 Windows 成立。** 解密链路是 PowerShell + DPAPI（`Crypt32.dll`），
-`lib/` 里没有任何 macOS / Linux 分支——在其它平台上应用凭据永远探测不到（`loadCredential`
-返回 `undefined`，该区域不注册），只剩上面的 PAT 兜底。
+`lib/` 里没有任何 macOS / Linux 解包分支——在其它平台上应用目录**找得到**（应用数据根目录
+已按平台解析，见下），但凭据读不出来（`loadCredential` 返回 `undefined`，该区域不注册），
+只剩上面的 PAT 兜底。
 
 **这不是"没有跨平台客户端"，而是客户端已跨平台、插件尚未跟上**：Qoder 桌面版在
 macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上都有下载（[qoder.com.cn/download](https://qoder.com.cn/download)），
-但 `lib/` 只实现了 Windows 这一条解密链。缺口在四处，全部已登记在
+但 `lib/` 只实现了 Windows 这一条解密链。缺口在两处，全部登记在
 [docs/KNOWN_GAPS.md 第 6 条（跨平台凭据链未实现）](docs/KNOWN_GAPS.md)：
 
-1. **OS keystore 封装**：Windows 走 DPAPI；macOS 需 Keychain（`security`，Chromium Safe Storage
-   service 名），Linux 需 libsecret（`secret-tool`）或 Chromium 在 Linux 上 `peanuts` 硬编码
-   key 兜底。
-2. **应用 user-data 根目录**：当前代码把 `process.env.APPDATA` 当作 app 目录所在，macOS 上是
-   `~/Library/Application Support`，Linux 上是 `~/.config`（或 `XDG_CONFIG_HOME`）。
-3. **`MACHINE_OS` 在 darwin 上回落成 `x86_64_linux`**（`lib/upstream.js`）：Qoder 网关按这个
-   字段路由/校验，darwin 实机需要 `aarch64_darwin` / `x86_64_darwin` 一档。
-4. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
+1. **OS keystore 封装（含 key 派生）**：Windows 走 DPAPI；macOS 需 Keychain（`security`），
+   且 Chromium 在 macOS 上对 `encrypted_key` 还要做 PBKDF2-HMAC-SHA1 派生（"peanuts" 常量 +
+   1003 次迭代）——与 DPAPI 直解是两种算法，不是换个命令；Linux 需 libsecret（`secret-tool`）
+   或 Chromium 在 Linux 上的 `peanuts` 硬编码 key 兜底。
+2. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
    Keychain 弹窗、签名打包、`secret-tool` 的 D-Bus session 都得在实机或 runner 上验。
 
-补齐前三项是**纯工作量**，无原理障碍；第四项决定是否敢作为"正式支持"发布。在此之前，
+**已修的两项**（原缺口共四处）：应用数据根目录现在按平台解析（Windows `%APPDATA`、
+macOS `~/Library/Application Support`、Linux `$XDG_CONFIG_HOME`/`~/.config`）——此前直接读
+`process.env.APPDATA`，而该变量在 macOS 上不存在，于是探测得到空串、把"应用装着但读不出密钥"
+谎报成"您没登录"；`MACHINE_OS` 也补上了 darwin 档（本机实测过网关对
+`x86_64_darwin` / `aarch64_darwin` 一律正常应答）。
+
+剩下的是**实机工作**：service 名、PBKDF2 参数、Linux 的变体都必须实测确认，写出来就是盲代码。
 macOS / Linux 用户只能走 PAT 兜底，或自行从本仓库移植。
 
 CI 的 Ubuntu 绿灯说明**测试**在那边能跑，不等于零配置在 Linux 上存在。
@@ -114,6 +118,14 @@ dsh plugin --profile web add <本仓库路径>
   识别这类模型并**完全省略**该字段，让模型使用自己的默认档位。
 - **上游错误可见**：上游失败时返回的是普通 200 帧里的错误对象，而不是 chunk。插件把它翻译成
   一条可读的错误，而不是让用户看到一个空的助手回合。
+- **今日请求次数用完**（不是"排队"）：Qoder 每天有请求次数上限，用满后上游会带一个**以小时计**的
+  重试提示（约两小时）把它伪装成排队。此前插件照单全收，显示成"重试延迟：7350 毫秒"，
+  而这个等待**怎么等都没用**——次数要到日期切换才重置，不是排队排空的。现在它是一个独立状态：
+  不重试、不显示误导性的延迟，明确告知约几小时后重置，并指出仍然有效的两条路：
+  **22:00-08:00 的错峰价**（折后价，通常不计入或少计日次数）与**每日签到**。
+  状态码也从此前的 502（"Qoder 坏了"）改为 429（"今天用完了"）。判别点在
+  [lib/errors.js](lib/errors.js) 的 classifyUpstreamError：**先认 110、再认队列标记**——
+  顺序是承重的，因为这个报文本身带着全部队列标记，由 test/daily-limit.test.js 钉住。
 - **国际版额度**：国际版的试用额度可能已用尽（`isQuotaExceeded`），此时目录请求会返回
   403 `Login expired`，该区域就不会显示模型；国内版不受影响。
 - **账号状态四档与卡片重读**：插件入口读不出登录凭据的区域不注册 provider（启动日志会说
@@ -125,6 +137,11 @@ dsh plugin --profile web add <本仓库路径>
   两个按钮各管一件事：「重读登录」
   让宿主丢弃凭据缓存、重读应用存储，并把启动时未能上线的区域**现在就上线**（重建并重新
   注册 adapter，失败时回滚到原注册，不影响已在服务的区域）——重新登录后不必再重启 DSH；
+  **面板每次渲染只读已缓存的密钥，不会同步起 PowerShell**（那会阻塞整个 DSH 进程，最坏 30 s），
+  所以解不开的机器也能立刻看到"读不到"和原因；即便真的需要解包（点「重读登录」时）也是
+  **异步等待**——本机实测调用 29 ms 就返回、等待期间 DSH 照常响应别的请求，而同步版本会冻结
+  490 ms；「重读登录」是您主动点的，那一次是真读，不受缓存与失败窗口限制。
+  密钥缓存与 `Local State` 文件绑定，Qoder 重装换掉主密钥后插件会立刻重新解包，**不必重启 DSH**；
   「在线确认」是账号流程里唯一的联网调用（`fetchUserInfo`），回答「上游现在还认不认
   这个登录」，失败按 `classifyUpstreamError` 分档（`sign-in-expired` / 其他）。
 - **每一版的模型可以单独关掉**（`enabledRegions`，版本条上的「模型」开关，对齐
@@ -132,6 +149,22 @@ dsh plugin --profile web add <本仓库路径>
   模型组按「空目录即隐藏」的同一条规则从选择器消失，但登录、用量与模型筛选全部
   保留，重新勾选即恢复，无需重启 DSH；卡片模型列表与选择器用同一个
   `regionEnabledFor` 谓词过滤，两个界面不会打架。
+- **刷新失败会说出来，而不是留着旧数据装作没事**：
+  - **上游当前没有模型**（账号被收窄 / 模型全部下线）是**结果**不是故障——插件会照实把目录清空，
+    并把该版本的模型组从选择器撤下。此前这两种情况走同一条静默路径，于是旧名单永远留着，
+    点"刷新计费"也不可能有任何变化。
+  - **抓取失败**（网络、凭据、上游 5xx）保留上一份好数据，并把卡片上的时间标成
+    「上次更新：X（刷新失败）」，而不是给一个全新的时间假装刚更新过。
+  - **Qoder 改了接口格式**（HTTP 200 但返回的信封不认识，例如分组改名）是一档独立状态，
+    卡片直接说"请更新插件（重新登录没有用）"，且**不**显示时间戳——它不会被当成"排队"慢慢重试。
+    判别边界取自实测（`probe/model-shape.mjs`，两端真实账号）：空分组用 `[]` 表达，
+    所以"0 个模型"是可信结果、必须落盘，而"分组键缺失/类型变了"才是格式变化。
+- **卡片接口只接受同源请求**（安全）：七条路由里三条是 POST 且能改状态——「签到领积分」
+  （真实账号变更）、「保存模型勾选与图像模式」、「重读登录」。这些接口此前只按"来源主机名是不是
+  本机"判断，因此**本机任意端口上的任意 HTTP 服务**都能让它的网页代为调用（浏览器会挡跨域
+  读响应，但操作已经发生）。现在要求来源的**地址与端口**与请求实际拨到的地址一致
+  （比对请求自己的 `Host` 头，所以不写死端口、DSH 换端口也不用改），且必须是回环地址。
+  判定在 [`lib/routes.js`](lib/routes.js) 的 `loopbackRequest`，由 `test/route-gates.test.js` 覆盖。
 - 依赖 Qoder 客户端接口（非官方开放 API），Qoder 更新后插件可能需要随之调整。
 - **设置命名空间由宿主决定，不能自选**（0.1.7 起）：`describe()` 用 Loader 条目
   id 作为 `ns`（本 bundle 是 `llm-qoder`，不是 `dsh-connect-qoder`），而「设置 → 模型」
@@ -164,24 +197,30 @@ dsh plugin --profile web add <本仓库路径>
 
 | 文件 | 作用 |
 | --- | --- |
-| `lib/credentials.js` | 从 Qoder 应用读取并解密登录凭据 |
+| `lib/credentials.js` | 从 Qoder 应用读取并解密登录凭据（密钥缓存与 `Local State` 绑定、失败窗口 60 s、只读缓存的变体、**不阻塞的异步解包**） |
 | `lib/upstream.js` | COSY 签名、请求体编码、目录与对话流 |
 | `lib/shim.js` | 面向 pi-ai 的 OpenAI 兼容回环端点 |
 | `lib/adapter.js` | pi-ai provider 与 `PiAiAdapter` profile（被关的 provider 以零模型组呈现，由 DSH 自行隐藏） |
 | `lib/catalog-entry.js` | 目录条目的归一化、模型过滤（含按区域开关）与卡片行投影（无 peer 依赖） |
 | `lib/catalog-store.js` | 目录的磁盘缓存与原子落盘（无 peer 依赖） |
+| `lib/catalog-refresh.js` | 一次目录刷新的结果如何落地：**空目录也是结果**（照实清空并推进 `fetchedAt`），只有失败才保留上一份，且失败按 `credential` / `no-credential` / `fetch` / `protocol-shape-changed` 分档（无 peer 依赖） |
 | `lib/credential-cache.js` | 凭据缓存与「登录失效后重读」规则（无 peer 依赖） |
-| `lib/account-state.js` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖） |
+| `lib/account-payload.js` | 账号面板三条路由共用的那份应答：逐区域状态 + 开关映射，以及「渲染读缓存 / 重读登录读真」这一个开关（从 `index.js` 抽出以便直测，无 peer 依赖） |
+| `lib/account-state.js` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖）；三种读取模式（默认 / `cachedOnly` 不解包 / `force` 忽略失败窗口） |
 | `lib/settings-save.js` | 设置命名空间的解析（0.1.7 由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
 | `lib/pi-model.js` | pi-ai 模型描述符的构造（纯函数，无 peer 依赖） |
+| `lib/adapter-models.js` | 单个区域向 DSH 提供的模型列表：区域开关（只认显式 `true`）、勾选过滤、最大上下文开关、逐模型图像模式（从 `adapter.js` 抽出以便直测，无 peer 依赖） |
+| `lib/region-gate.js` | 一个区域能否作为 provider 上线：三档拒绝（无登录 / 已过期 / 读不到）各自的判定与日志级别（从 `index.js` 抽出以便直测，无 peer 依赖） |
+| `lib/lifecycle.js` | 插件 fiber 退出时要撤销的东西：路由注册的注销句柄收集与释放（宿主是否随 fiber 回收无法从插件侧确认，故两种语义都正确；无 peer 依赖） |
 | `lib/preferences.js` | 四个设置项的读取与 volatile 解包（`enabledRegions` 区域开关：缺失/非对象一律读作开启，只有显式 `false` 才关） |
 | `lib/offpeak.js` | 错峰窗口与费率算术（无 peer 依赖） |
 | `lib/single-flight.js` | 同类异步任务的并发合并：刷新在途时，后来的调用并入同一次请求（目录/用量刷新用，无 peer 依赖） |
 | `lib/claim.js` | 每日签到：当轮活动的挑选、可领状态判定与领取结果的归一化（纯函数，无 peer 依赖） |
-| `lib/errors.js` | 上游错误帧的判定：105（登录没了）与 10605（在排队）的分诊，队列提示的提取（无 peer 依赖） |
+| `lib/errors.js` | 上游错误帧的判定：105（登录没了）与 10605（在排队）的分诊，队列提示的提取，以及**协议形状变化**这一档（`ProtocolShapeChangedError`，`retryable: false` 所以它不会被当成"排队"慢慢等）（无 peer 依赖） |
 | `lib/time.js` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
 | `lib/volatile.js` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
 | `lib/http-utils.js` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
+| `lib/routes.js` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
 | `lib/index.js` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
 
 `lib/client.js` 是注入到宿主设置页的那张卡片的构建产物（`react` 由宿主提供，产物不打包它）。
@@ -197,11 +236,17 @@ dsh plugin --profile web add <本仓库路径>
 
 **这些源码不是原始手稿，是还原出来的**：2026-09 用 `docs/history/restore-client-src.mjs` 把当时的
 产物按 `//#region` 标记机械切分而成，模块边界来自产物，`card.ts` 那一段在产物里没有标记、
-是按引用关系推断的。还原后做过一次对拍——13 个纯函数 × 420 组输入共 5460 次调用，新旧产物的
-返回值与抛错逐条一致（方法记录在 `docs/issues/17-client-source-restore.md`）。
+是按引用关系推断的。还原后做过一次对拍——把卡片里每个纯函数用同一组输入各调一遍，新旧产物的
+返回值与抛错逐条一致（方法记录在 `docs/issues/17-client-source-restore.md`；现在的探针清单与
+调用数以 `npm run verify:bundle` 的输出为准，不再在文档里写死数字）。
 
 产物是构建输出：**改源码重建，不要手改产物**。`test/client-bundle.test.js` 从产物里**提取并
 执行**卡片的纯函数，所以产物一改那里的断言就得跟着看一眼。
+
+`probe/` 下是一次性只读探针，每个文件头写明 WHY 与 Run，不参与构建、也不被测试收集。
+其中 `probe/host-compat.mjs` 回答的是「本机装的 DSH 是什么版本、本仓库的 peer 声明它还认不认」——
+宿主把代码打在 `app.asar` 里，这件事从仓库内部看不出来。手法与三个会浪费时间的坑记在
+[`docs/howto/host-version-probe.md`](docs/howto/host-version-probe.md)。
 
 ## 测试
 

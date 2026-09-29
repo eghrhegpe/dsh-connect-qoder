@@ -22,6 +22,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { normalizeEntry } from '../lib/catalog-entry.js'
+import { HIDE_ALL_MODELS } from '../lib/preferences.js'
 
 // A raw catalog row as `fetchModels` pushes it into `models[]`
 // (lib/upstream.js), with the `promotion` block already shaped by
@@ -108,4 +109,27 @@ test('normalizeEntry passes the promotion block through by reference, unfiltered
     Object.keys(PROMOTION).sort(),
     'normalizeEntry must carry every promotion field through verbatim',
   )
+})
+
+test('no model can ever be minted with the id that means "hide all"', () => {
+  // The `__hide-all__` sentinel in a region's allow-list means "show nothing",
+  // and the whole mechanism rests on no real model id equalling it. Today that
+  // holds because Qoder's display names are things like "GLM 5.3", but it was an
+  // ASSUMPTION about the catalog rather than a property of the code — and a
+  // collision would be silent in the worst way: one model's row would behave as
+  // "hide all", and un-ticking it would drop the marker and show every model.
+  //
+  // The guard therefore sits where ids are minted, and it renames rather than
+  // drops: hiding a real model would be worse than giving it an id the user
+  // never sees (the picker shows the display name).
+  const hostile = normalizeEntry({ key: 'X', name: '__hide-all__', priceFactor: 0.01 })
+  assert.notStrictEqual(
+    hostile.id,
+    HIDE_ALL_MODELS,
+    'a model whose display name is the sentinel must be renamed, not collide',
+  )
+  assert.strictEqual(hostile.name, '__hide-all__', 'and it must still be a usable model')
+  // The ordinary path is untouched — a suffix on every id would break every
+  // allow-list users have already saved.
+  assert.strictEqual(normalizeEntry({ key: 'A', name: 'GLM 5.3' }).id, 'GLM5.3')
 })

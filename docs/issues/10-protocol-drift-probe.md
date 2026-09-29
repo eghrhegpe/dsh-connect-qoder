@@ -26,6 +26,42 @@
 
 ## 验收标准
 
-- [ ] 新用例：模拟"HTTP 200 但信封结构不符合已知形状" → 分类为 `protocol-shape-changed`，不进队列重试
-- [ ] 新用例：`darwin` 分支有明确断言
-- [ ] 卡片在 `protocol-shape-changed` 时给出的下一步动作 ≠ "重新登录"
+- [x] 新用例：模拟"HTTP 200 但信封结构不符合已知形状" → 分类为 `protocol-shape-changed`，不进队列重试
+- [x] 新用例：`darwin` 分支有明确断言
+- [x] 卡片在 `protocol-shape-changed` 时给出的下一步动作 ≠ "重新登录"
+
+## 实现（分诊已修 `f8ca26f`；6 小时周期探测仍未做）
+
+三档分诊落地，**周期探测没做**：现在每一次目录请求都在分诊（30 分钟的 TTL 刷新本身就是"每 30 分钟
+一次"），所以"启动 + 每 6 小时另做一次廉价探测"这个额外机制目前没有独立价值——它原本要防的正是
+"请求失败时什么都不说"，而这已由刷新失败标志覆盖。要不要额外保留一条独立心跳（用于上游长期静默
+不可达时也留痕）留待以后。
+
+**判别式写在 [`../../lib/upstream.js`](../../lib/upstream.js) 的 `readModelCatalogShape`**，
+界线取自 [`../../probe/model-shape.mjs`](../../probe/model-shape.mjs) 的**实测**（两端真实账号）：
+
+| 收到 | 判定 | 理由（实测事实） |
+|---|---|---|
+| `chat: []` | 空目录（issue 04 落盘） | 空分组用 `[]` 表达（`byok_teams` 长度 0） |
+| 缺 `chat`、有别的分组 | `protocol-shape-changed` | 分组被改名或重组 |
+| `chat` 非数组 / 顶层非对象 | `protocol-shape-changed` | 新包装层 |
+| 缺某个兄弟分组 | **正常** | 国际版实测就没有 `developer` |
+
+最后一行是关键：把形状钉在"我在 CN 上见过的全部分组"上，会把国际版的每一次例行响应都判成漂移。
+
+**不进队列**靠 `ProtocolShapeChangedError` 上的 `retryable = false`（[`../../lib/errors.js`](../../lib/errors.js)），
+`queueWaitFor` 因此立即返回 `undefined`——这正是"插件坏了"被当成"在排队"耗掉两分钟预算的那一处。
+反方向也有断言：真实队列拒绝仍然照常等待。
+
+**`MACHINE_OS` 补 darwin 之前先量了网关是否认**
+（[`../../probe/machineos-probe.mjs`](../../probe/machineos-probe.mjs)：四个 linux/darwin 取值、两端区域、
+各 200 且 `chat` 行数完全一致），所以补分支是安全的。**推论也写进了注释**：网关不按这个字段分流，
+因此它不能用来检测"平台填错"，它只是一句关于本机的事实。
+
+**验收标准第 3 条的落法**：`refreshNoticeKey` 把 `refreshFailures` 折叠成一个判定，卡片据此显示
+"请更新插件（重新登录没有用）"，且**不**显示时间戳——时间戳摆在"你的插件过时了"旁边会让人以为
+屏幕上的模型还是当前的。文案本身被断言（不许以"请重新登录"收尾），见 `test/protocol-shape-card.test.js`。
+
+**残留缺口**：`fetchModels` 之外的上游端点（usage / campaigns / userinfo）**没有**做信封形状分诊——
+它们各自只取自己那几个字段，形状变化的表现会是"字段读不到"而非漂移告警。chat 端点是最常打的一个，
+先分诊它。
