@@ -5,6 +5,8 @@
 
 国内版 **Qoder CN** 与国际版 **Qoder** 是两个并行的 provider（`qoder-cn` / `qoder`），
 装哪个就出现哪一组模型，两个都装就两组并存，各自使用自己的账号与额度。
+<img width="1527" height="1254" alt="image" src="https://github.com/user-attachments/assets/73a691b5-0633-4090-a193-0459bbf655ae" />
+
 
 ## 工作原理
 
