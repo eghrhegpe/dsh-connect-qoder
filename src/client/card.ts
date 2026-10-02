@@ -4,6 +4,10 @@ import * as react_jsx_runtime from "react/jsx-runtime"
 import { QODER_MODELS_PATH, QODER_USAGE_PATH, QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH, QODER_CHECKIN_PATH } from "./paths.ts"
 import { writeSettingsField } from "./settings-write.ts"
 import type { SettingsScope } from "./settings-write.ts"
+// The editable-state machine. `imageModeOf`, `enabledIdsFor`, `IMAGE_MODES` and
+// the sentinel are imported rather than re-declared, so the rules the JSX reads
+// and the rules the tests assert are literally the same functions.
+import { QoderCardController, imageModeOf, enabledIdsFor, initialEditableState, persistViaScope, IMAGE_MODES } from "./controller.ts"
 
 /**
  * The client half's type vocabulary.
@@ -137,29 +141,6 @@ interface ValueEvent {
 
 /** A browser event handler, as the JSX shim's `jsx()` sees it. */
 type EventHandler = (event: unknown) => void
-
-/** The three per-model image choices this card writes. */
-const IMAGE_MODES = ["auto", "on", "off"];
-
-/**
- * Sentinel stored in a region's allow-list to mean "hide every model".
- *
- * The host convention is `[] = no filter = show all` (a fresh install
- * must still see every model), so "hide all" has no value of its own in
- * that scheme. A non-empty list that matches no real model id collapses
- * to "show nothing" in `filterByEnabled` (the allow-list branch keeps
- * the ids, matches none, returns `[]`), so a marker that no model id can
- * ever equal expresses "hide all" without touching that convention.
- * Unticking any one model drops the marker (it is not in the region's
- * roster) and the list becomes a plain allow-list again.
- */
-const HIDE_ALL_MODELS = "__hide-all__";
-
-/** Normalise whatever the saved map holds into one of {@link IMAGE_MODES}. */
-function imageModeOf(overrides: unknown, modelId: string): string {
-	const saved = overrides === null || typeof overrides !== "object" ? undefined : (overrides as Record<string, unknown>)[modelId];
-	return typeof saved === "string" && IMAGE_MODES.includes(saved) ? saved : "auto";
-}
 
 /**
  * A readable description of a thrown value, for the two `catch` blocks in this
@@ -388,19 +369,6 @@ function refreshNoticeKey(value: unknown): string | null {
 	if (failures.length === 0) return null;
 	if (failures.some((f) => (f as { reason?: string } | null | undefined)?.reason === "protocol-shape-changed")) return "protocol-shape-changed";
 	return "transient";
-}
-
-/**
- * The set of model ids currently ticked, given what the host reported.
- *
- * The host stores an empty list as "no filter" (every model shows), so the
- * card presents that same state as "everything ticked" — otherwise a fresh
- * install would render every box empty while every model was visible.
- */
-function enabledIdsFor(models: CardModelRow[], saved: unknown): Set<string> {
-	const list = Array.isArray(saved) ? saved.filter((id): id is string => typeof id === "string") : [];
-	if (list.length === 0) return new Set(models.map((model) => model.id));
-	return new Set(list);
 }
 
 /** Props for {@link QuotaBlock}. */
@@ -1303,23 +1271,32 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	if (t === void 0) throw new Error("Qoder settings card requires its translation function");
 	const [open, setOpen] = (0, react.useState)(() => initialOpenForView(view));
 	const [models, setModels] = react.useState<CardModelRow[]>([]);
-	const [imageOverrides, setImageOverrides] = react.useState<Record<string, string>>({});
-	const [savedOverrides, setSavedOverrides] = react.useState<Record<string, string>>({});
-	const [maxWindow, setMaxWindow] = (0, react.useState)(false);
-	const [savedMaxWindow, setSavedMaxWindow] = (0, react.useState)(false);
-	// Picker visibility, per region. The host stores an empty list as "no
-	// filter", so the card keeps the same shape and renders that state as
-	// "everything ticked".
-	const [enabledIds, setEnabledIds] = react.useState<Record<string, string[]>>({});
-	const [savedEnabledIds, setSavedEnabledIds] = react.useState<Record<string, string[]>>({});
+	// The editable-state machine (staged/saved fields, `dirty`, `save`,
+	// `discard`, and the derived roster view) lives in `controller.ts`, not in
+	// React. It is the one layer a user depends on and the one a DOM test
+	// cannot easily reach; pulling it out means the rules are unit-testable
+	// without a browser. The JSX below reads one snapshot per render and calls
+	// methods — no `useState` in the rules, only around what React must own.
+	//
+	// Created once, via the initializer form, so a re-render never resets it.
+	const [controller] = (0, react.useState)(() => new QoderCardController<CardModelRow>({ imageOverrides: {}, maxWindow: false, enabledIds: {} }));
+	// Keep the roster the fetch returned in sync with the controller, so the
+	// derived `regionModels` / `visibleModels` / `regionAllTicked` are current.
+	// The roster is live catalog state, never persisted, so feeding it here is
+	// not a write.
+	(0, react.useEffect)(() => {
+		controller.setModels(models);
+	}, [controller, models]);
+	// Subscribe to the controller. `getSnapshot` is referentially stable until
+	// a mutation, so this does not loop.
+	const snap = (0, react.useSyncExternalStore)(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
 	const [status, setStatus] = (0, react.useState)("loading");
-	const [saving, setSaving] = (0, react.useState)(false);
 	const [notice, setNotice] = react.useState<string | undefined>(undefined);
 	const [refreshing, setRefreshing] = (0, react.useState)(false);
 	const [refreshedAt, setRefreshedAt] = react.useState<number | undefined>(undefined);
 	// The host's own verdict about the last refresh, folded to one of
 	// `null` / "transient" / "protocol-shape-changed" by refreshNoticeKey.
-	// Kept apart from `notice` (which is the save/discard banner) so an
+	// Kept apart from `notice` (which is the load-failure banner) so an
 	// upstream problem never borrows the save banner's styling, and from
 	// `status` (which is about whether the ROUTE answered at all).
 	// Written explicitly because `useState(null)` infers the state as exactly
@@ -1330,16 +1307,6 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	// Bumped when the account panel's re-read lands; the usage panel
 	// treats a non-zero value as "force a fresh quota pull".
 	const [usageBump, setUsageBump] = (0, react.useState)(0);
-	// View-only filter state. It narrows which rows RENDER, never which
-	// rows are SAVED: filtering the list cannot change `enabledModelIds`,
-	// so it is deliberately kept out of `dirty` and out of `save()`.
-	const [query, setQuery] = (0, react.useState)("");
-	// The selected region, shared with the account panel's region strip
-	// (the convergence point). The usage panel and the model list are
-	// both scoped to it, so the region name appears once — on the
-	// strip — instead of on every model row. The model row badges and
-	// the model section's own region tabs are gone for the same reason.
-	const [activeRegion, setActiveRegion] = (0, react.useState)("qoder-cn");
 	// The model id whose row should flash, set by the last in-place edit
 	// (checkbox tick or image-mode pick). A timeout clears it, so the CSS
 	// animation plays once and the row settles back.
@@ -1407,16 +1374,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 			if (!response.ok || value === void 0) throw new Error(`HTTP ${response.status}`);
 			if (!mounted.current) return;
 			setModels(Array.isArray(value.models) ? value.models : []);
-			if (!refresh) {
-				const overrides = value.imageOverrides !== null && typeof value.imageOverrides === "object" ? value.imageOverrides : {};
-				const savedEnabled = value.enabledModelIds !== null && typeof value.enabledModelIds === "object" ? value.enabledModelIds : {};
-				setImageOverrides(overrides);
-				setSavedOverrides(overrides);
-				setMaxWindow(value.useMaximumContextWindow === true);
-				setSavedMaxWindow(value.useMaximumContextWindow === true);
-				setEnabledIds(savedEnabled);
-				setSavedEnabledIds(savedEnabled);
-			}
+			if (!refresh) controller.seedSaved(initialEditableState(value));
 			// The host sends when the rows were FETCHED, not when this response
 			// was rendered. The old `else Date.now()` fallback was the browser
 			// half of issue 05: a route that answered while every refresh was
@@ -1448,24 +1406,13 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 		void load(true);
 		setUsageBump((n) => n + 1);
 	}, [load]);
-	// Every editable field participates in "has unsaved changes": the
-	// per-model image modes, the picker roster, and the context-window switch.
-	const dirty = (0, react.useMemo)(() => JSON.stringify(imageOverrides) !== JSON.stringify(savedOverrides) || JSON.stringify(enabledIds) !== JSON.stringify(savedEnabledIds) || maxWindow !== savedMaxWindow, [imageOverrides, savedOverrides, enabledIds, savedEnabledIds, maxWindow, savedMaxWindow]);
+	// An in-place edit and the row flash that acknowledges it. The flash is a
+	// rendering concern (a one-shot CSS animation), so it stays here; the edit
+	// itself is a controller mutation.
 	const setMode = (0, react.useCallback)((modelId: string, mode: string) => {
-		setImageOverrides((current) => {
-			const next: Record<string, string> = { ...current };
-			// "auto" is the absence of an override, so an auto row never
-			// writes a key — the saved document stays minimal and a future
-			// catalog change is picked up again.
-			if (mode === "auto") delete next[modelId];
-			else next[modelId] = mode;
-			return next;
-		});
-		// Flash the row so the pick gives feedback where it happened;
-		// without it the only signal is the banner at the bottom.
+		controller.setMode(modelId, mode);
 		setPulse(modelId);
-		setNotice(undefined);
-	}, []);
+	}, [controller]);
 	/**
 	 * Tick or untick one model for the picker.
 	 *
@@ -1475,22 +1422,9 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	 * region stay curated when the catalog later grows.
 	 */
 	const toggleModel = (0, react.useCallback)((regionId: string, modelId: string) => {
-		setEnabledIds((current) => {
-			const roster = models.filter((m) => m.region === regionId).map((m) => m.id);
-			const active = enabledIdsFor(models, current[regionId]);
-			const next = new Set(active);
-			if (!next.delete(modelId)) next.add(modelId);
-			// A full selection is stored as the empty list, which is the
-			// "no filter" state — so re-ticking everything returns the region
-			// to following the catalog automatically.
-			const list = roster.filter((id) => next.has(id));
-			return { ...current, [regionId]: list.length === roster.length ? [] : list };
-		});
-		// Same in-place flash as the image-mode pick: the tick visibly
-		// lands even though nothing is saved yet.
+		controller.toggleModel(regionId, modelId);
 		setPulse(modelId);
-		setNotice(undefined);
-	}, [models]);
+	}, [controller]);
 	/**
 	 * Bulk-set the ACTIVE region's roster to one of two extremes.
 	 *
@@ -1503,66 +1437,50 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	 * like a per-model tick.
 	 */
 	const setRegionAll = (0, react.useCallback)((regionId: string, allOn: boolean) => {
-		setEnabledIds((current) => ({ ...current, [regionId]: allOn ? [HIDE_ALL_MODELS] : [] }));
-		setNotice(undefined);
-	}, []);
+		controller.setRegionAll(regionId, allOn);
+	}, [controller]);
 	/**
 	 * Persist the card's three settings fields.
 	 *
-	 * Each write is verified (read-back against what was posted) and the
-	 * per-region allow-list goes through the Host merge, so a save
-	 * either lands or raises — the "已保存" banner only appears for
-	 * values that actually persisted.
+	 * The controller writes through `persistViaScope`, which verifies each write
+	 * (read-back against what was posted) and merges the per-region allow-list,
+	 * so a save either lands or raises — the "已保存" banner only appears for
+	 * values that actually persisted. The banner text is derived from the
+	 * controller's `lastSave` in the JSX, not set here.
 	 */
-	const save = (0, react.useCallback)(async () => {
-		if (settingsScope === undefined) return;
-		setSaving(true);
-		try {
-			await writeSettingsField(settingsScope, "enabledModelIds", enabledIds);
-			await writeSettingsField(settingsScope, "imageOverrides", imageOverrides);
-			// The other fields are siblings of the same namespace, so they are
-			// written in the same save action.
-			await writeSettingsField(settingsScope, "useMaximumContextWindow", maxWindow);
-			setSavedOverrides(imageOverrides);
-			setSavedMaxWindow(maxWindow);
-			setSavedEnabledIds(enabledIds);
-			setNotice(t("row.saved"));
-		} catch (error) {
-			setNotice(`${t("row.failed")}: ${error instanceof Error ? error.message : String(error)}`);
-		} finally {
-			if (mounted.current) setSaving(false);
-		}
-	}, [settingsScope, imageOverrides, maxWindow, enabledIds, t]);
+	const save = (0, react.useCallback)(() => {
+		if (settingsScope === undefined) return Promise.resolve();
+		return controller.save(persistViaScope(settingsScope));
+	}, [controller, settingsScope]);
 	const discard = (0, react.useCallback)(() => {
-		setImageOverrides(savedOverrides);
-		setMaxWindow(savedMaxWindow);
-		setEnabledIds(savedEnabledIds);
-		setNotice(undefined);
-	}, [savedOverrides, savedMaxWindow, savedEnabledIds]);
-	// The card is scoped to the selected region, so the bulk button
-	// names the ACTIVE region's roster: "show all" is its no-filter
-	// state (`[]`), "hide all" the sentinel list that matches nothing.
-	// `[]` counts as every model ticked, like a fresh install.
-	const regionModels = models.filter((model) => model.region === activeRegion);
-	const regionAllTicked = regionModels.length > 0 && regionModels.every((model) => enabledIdsFor(models, enabledIds[activeRegion]).has(model.id));
-	const needle = query.trim().toLowerCase();
-	// What actually renders: the active region's roster through the name
-	// filter. The filter only narrows the VIEW — `save()` still writes
-	// the full per-region allow-list, so hiding rows while a filter is
-	// active can never silently uncheck a model the user never saw.
-	const visibleModels = regionModels.filter((model) => {
-		if (needle === "") return true;
-		return String(model.name ?? model.id).toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle);
-	});
-	// Visible + ticked, for the counter beside the filter. Counted over
-	// `visibleModels` so the number matches the rows on screen.
-	//
-	// A row with no region has no key in `enabledIds`, and reading one with an
-	// `undefined` index is the bug this used to hide: the lookup answered
-	// "nothing saved", which `enabledIdsFor` reads as "no filter" and resolves
-	// to EVERY model ticked. Skipping the lookup is both the checked spelling
-	// and the truthful one — an unaddressable row cannot be counted as ticked.
-	const visibleTicked = visibleModels.filter((model) => model.region !== undefined && enabledIdsFor(models, enabledIds[model.region]).has(model.id)).length;
+		controller.discard();
+	}, [controller]);
+	// View-only setters. The name filter narrows the VIEW, never the saved
+	// document, and the selected region is a rendering concern too — so both
+	// are controller state but neither feeds `dirty` or `save()`.
+	const setQuery = (0, react.useCallback)((value: string) => {
+		controller.setQuery(value);
+	}, [controller]);
+	const setActiveRegion = (0, react.useCallback)((regionId: string) => {
+		controller.setActiveRegion(regionId);
+	}, [controller]);
+	const setMaxWindow = (0, react.useCallback)((on: boolean) => {
+		controller.setMaxWindow(on);
+	}, [controller]);
+	// The derived roster view (the active region's models, the filtered
+	// subset, the ticked counter) is computed by the controller, not here.
+	// `snap` below is the one object the JSX reads.
+	const regionModels = snap.regionModels;
+	const regionAllTicked = snap.regionAllTicked;
+	const visibleModels = snap.visibleModels;
+	const visibleTicked = snap.visibleTicked;
+	const dirty = snap.dirty;
+	const saving = snap.saving;
+	const query = snap.query;
+	const imageOverrides = snap.imageOverrides;
+	const maxWindow = snap.maxWindow;
+	const enabledIds = snap.enabledIds;
+	const activeRegion = snap.activeRegion;
 	return (0, react_jsx_runtime.jsxs)("li", {
 		className: `dsm-plugin-card${open ? " dsm-plugin-card-open" : ""}`,
 		// Escape leaves the card in two steps: inside the search box it first
@@ -1865,14 +1783,17 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 							disabled: saving || !dirty,
 							onClick: discard,
 							children: t("row.discard")
-						}), notice !== undefined ? (0, react_jsx_runtime.jsx)("span", {
+						}), snap.lastSave !== undefined ? (0, react_jsx_runtime.jsx)("span", {
 							className: "dsm-qoder-state",
 							// A save just completed (success banner or failure
-							// reason). The failure banner is the one that has to
-							// be visible: it is the card's only proof that the
-							// value did not persist, so it outranks the generic
-							// "unsaved" marker while it is up.
-							children: notice
+							// reason), as decided by the controller. The failure
+							// banner is the one that has to be visible: it is the
+							// card's only proof that the value did not persist, so
+							// it outranks the generic "unsaved" marker while it is
+							// up. A load failure is a different banner (it lives
+							// in `notice`, on the error panel) — a failed fetch
+							// must not overwrite "已保存" here.
+							children: snap.lastSave.ok === true ? t("row.saved") : `${t("row.failed")}: ${snap.lastSave.reason}`
 						}) : dirty ? (0, react_jsx_runtime.jsx)("span", {
 							className: "dsm-qoder-state",
 							children: t("row.unsaved")

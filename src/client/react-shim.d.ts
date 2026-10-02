@@ -76,6 +76,21 @@ declare module 'react' {
     deps?: readonly unknown[],
   ): T
 
+  /**
+   * 订阅一个外部 store 并读其快照。`subscribe` 与 `getSnapshot` 都以裸函数
+   * 传入，所以 `controller.ts` 里这两个方法是箭头属性（而非原型方法），否则
+   * `this` 会丢；`getSnapshot` 必须返回引用稳定（直到下一次变更才换）的对象，
+   * 否则 React 会拿旧值反复比较、死循环。
+   *
+   * 第三个参数 `getServerSnapshot` 可选：本卡片没有 SSR 场景，但 `react` 的
+   * 真实签名里有，声明成可选能兼容 `useSyncExternalStore(a, b)` 两参写法。
+   */
+  export function useSyncExternalStore<T>(
+    subscribe: (onStoreChange: () => void) => () => void,
+    getSnapshot: () => T,
+    getServerSnapshot?: () => T,
+  ): T
+
   /** 只有一个成员，但 `react.Fragment` 是按值读的（不是类型位）。 */
   export const Fragment: unknown
 }

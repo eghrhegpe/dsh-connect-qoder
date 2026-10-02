@@ -231,9 +231,10 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/paths.ts` | 卡片用到的五条插件路由 |
 | `src/client/styles.ts` | 卡片样式与 `installStyles`（`dsm-*` 一套与 `dsh-connect-workbuddy` 逐字一致，原因见文件头） |
 | `src/client/settings-write.ts` | 「写入后读回校验」的浏览器半边 |
+| `src/client/controller.ts` | 卡片可编辑状态机（staged/saved 三字段、`dirty`、`save`、`discard` 与派生的模型视图）——无 React、无 DOM，可被 `node:test` 直接测 |
 | `src/client/copy.ts` | 卡片文案聚合入口（中/英），`index.ts` 与 `card.ts` 只从这里取 |
 | `src/client/copy-row.ts` `copy-usage.ts` `copy-account.ts` | 按面板拆分的三段文案：模型行与错峰、用量与签到、账号与区域标签条 |
-| `src/client/card.ts` | 卡片的纯函数与五个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `QuotaBlock`） |
+| `src/client/card.ts` | 卡片的纯函数与五个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `QuotaBlock`）——组件本身只做渲染接线，可编辑状态委托给 `controller.ts` |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
 | `src/client/react-shim.d.ts` | 最小 React 类型垫片（只管类型检查，不参与构建、不随包发布） |
 
