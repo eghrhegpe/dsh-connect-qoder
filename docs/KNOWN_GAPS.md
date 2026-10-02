@@ -150,6 +150,17 @@ React 装配层，模块**无 React、无 DOM、无 fetch**——这正是向 `d
 这与本仓库其他测试曾犯的错是同一类（手抄副本），区别是现在这一类镜像只剩 `cardInstallsClock`
 一处，且 `offPeakState` / `windowLabelOf` 的覆盖对象已是可 import 的真函数，漂移在结构上不再可能。
 
+**容器拆分与位置门禁（本轮新增）**：`card.tsx` 已从单一 ~1800 行的容器拆成 sensenova
+风格的「装配层 + 小容器 + fetch 收口」三层——`card.tsx` 只留 `QoderPluginCard` 装配件与三个
+无 hook 纯展示件（`RegionUsage` / `CheckinCard` / `QuotaBlock`）；`QoderUsagePanel` 搬入
+`usage-panel.tsx`、`QoderAccountPanel` 搬入 `account-panel.tsx`，各自持有自己的 fetch 与
+effect；六道 `fetch` 全部收口到 `http.ts` 的 `getJson` / `postJson`（失败统一带宿主 `error`
+字段，避免「假 undefined 失败」）。拆分后行为零回退由两道**位置门禁**守：`test/card-position.test.js`
+对 `lib/client.js` 实渲染、断言卡片主体按「账号条 → 用量面板 → 模型列表」固定顺序自上而下（区域条
+是整段 body 的表头，顺序错即语义错）；`test/registration-consistency.test.js` 断言 README 目录表
+列出的 `src/client` 文件集合与磁盘**完全一致**（双向，既不漏列也不残留已删文件的行）。两道门禁都
+读真实产物/真实目录，不依赖手抄副本。
+
 ---
 
 ## 4. 协议层的两个原理盲区

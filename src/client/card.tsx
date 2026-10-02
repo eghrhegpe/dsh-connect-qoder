@@ -1,8 +1,13 @@
 
 import * as react from "react"
-import { QODER_MODELS_PATH, QODER_USAGE_PATH, QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH, QODER_CHECKIN_PATH } from "./paths.ts"
-import { writeSettingsField } from "./settings-write.ts"
+import { QODER_MODELS_PATH } from "./paths.ts"
 import type { SettingsScope } from "./settings-write.ts"
+// The two fetch-bearing containers. Split out of this file so the card-assembly
+// module stays a thin wiring layer (the sensenova `panel-page.ts` shape): each
+// container owns its own network + effects, and only the model list stays here
+// because its editable state already lives in `controller.ts`.
+import { QoderUsagePanel } from "./usage-panel.tsx"
+import { QoderAccountPanel } from "./account-panel.tsx"
 // The editable-state machine. `imageModeOf`, `enabledIdsFor`, `IMAGE_MODES` and
 // the sentinel are imported rather than re-declared, so the rules the JSX reads
 // and the rules the tests assert are literally the same functions.
@@ -16,7 +21,6 @@ import {
 	type CardUsageRegion,
 	type CardQuota,
 	type CardCheckin,
-	type CardAccountEntry,
 	type TranslateFn,
 	type CheckboxEvent,
 	type ValueEvent,
@@ -50,7 +54,7 @@ import {
  * generated `lib/client.js`. The duplication is two lines of narrowing against
  * a stable language rule; the coupling is not worth that price.
  */
-function describeThrown(error: unknown): string {
+export function describeThrown(error: unknown): string {
 	const message = (error as { message?: unknown } | null | undefined)?.message;
 	if (typeof message === "string" && message !== "") return message;
 	if (typeof error === "string") return error;
@@ -67,6 +71,11 @@ interface QuotaBlockProps {
 	badge?: string
 }
 
+/**
+ * One quota row: label, optional badges, an optional date, a bar, and the
+ * used/total figures. Shared by the plan quota, the add-on package and the
+ * per-model dedicated packages, which differ only in their wording.
+ */
 /**
  * One quota row: label, optional badges, an optional date, a bar, and the
  * used/total figures. Shared by the plan quota, the add-on package and the
@@ -145,7 +154,7 @@ interface CheckinCardProps {
  * worth. The card holds no arithmetic of its own — the amount is the host's
  * `checkin.amount`, the same value the panel already printed as "今日可领".
  */
-function CheckinCard({ t, checkin, busy, notice, onClaim }: CheckinCardProps) {
+export function CheckinCard({ t, checkin, busy, notice, onClaim }: CheckinCardProps) {
 	const claimed = checkin.todayCheckedIn === true;
 	const amount = typeof checkin.amount === "number" ? checkin.amount : undefined;
 	return (
@@ -192,7 +201,7 @@ interface RegionUsageProps {
  * beside the whole panel, because a check-in row inside this stack spent a
  * full-width line on two short strings.
  */
-function RegionUsage({ t, entry }: RegionUsageProps) {
+export function RegionUsage({ t, entry }: RegionUsageProps) {
 	if (entry.available !== true) {
 		return (
 			<div className="dsm-qoder-usage-block">
@@ -256,623 +265,11 @@ function RegionUsage({ t, entry }: RegionUsageProps) {
 	);
 }
 
-/**
- * The usage section: a refresh control plus one block per region.
- *
- * The panel owns its own fetch rather than riding the model read, because
- * quota changes with every turn and must be refreshable on demand.
- *
- * `refreshToken` is the card's "the world changed, re-read" signal: when
- * the account panel's re-read lands, the card bumps it, and this panel
- * forces a fresh quota pull for what the host can now serve.
- */
-/** Props for {@link QoderUsagePanel}. */
-interface QoderUsagePanelProps {
-	t: TranslateFn
-	refreshToken?: number
-	activeRegion?: string
-}
-
-function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: QoderUsagePanelProps) {
-	const [regions, setRegions] = react.useState<CardUsageRegion[]>([]);
-	const [status, setStatus] = (0, react.useState)("loading");
-	const [notice, setNotice] = react.useState<string | undefined>(undefined);
-	const [busy, setBusy] = (0, react.useState)(false);
-	const [claimBusy, setClaimBusy] = (0, react.useState)(false);
-	const [claimNotice, setClaimNotice] = react.useState<{ kind?: string; message?: string; amount?: number } | undefined>(undefined);
-	const mounted = (0, react.useRef)(true);
-	(0, react.useEffect)(() => {
-		mounted.current = true;
-		return () => {
-			mounted.current = false;
-		};
-	}, []);
-	const load = (0, react.useCallback)(async (refresh: boolean) => {
-		setBusy(true);
-		try {
-			const response = await fetch(`${QODER_USAGE_PATH}${refresh ? "?refresh=1" : ""}`, {
-				headers: { accept: "application/json" },
-				credentials: "same-origin"
-			});
-			const value = await response.json().catch((): undefined => void 0);
-			if (!response.ok || value === void 0) throw new Error(`HTTP ${response.status}`);
-			if (!mounted.current) return;
-			setRegions(Array.isArray(value.regions) ? value.regions : []);
-			setStatus("ready");
-			setNotice(undefined);
-		} catch (error) {
-			if (!mounted.current) return;
-			setStatus("error");
-			setNotice(error instanceof Error ? error.message : String(error));
-		} finally {
-			if (mounted.current) setBusy(false);
-		}
-	}, []);
-	// The daily check-in goes through the host rather than to Qoder: only the
-	// host can say which round is live at the moment of the click, and a card
-	// that carried its own campaign id could claim a round that closed
-	// yesterday. The usage re-read follows every claim because the Credits land
-	// in the add-on quota rendered a few lines above the button.
-	const claimCheckin = (0, react.useCallback)(async () => {
-		setClaimBusy(true);
-		setClaimNotice(void 0);
-		try {
-			const response = await fetch(`${QODER_CHECKIN_PATH}?region=${encodeURIComponent(activeRegion)}`, {
-				method: "POST",
-				headers: { accept: "application/json" },
-				credentials: "same-origin"
-			});
-			const value = await response.json().catch((): undefined => void 0);
-			if (!response.ok) throw new Error(value?.error ?? `HTTP ${response.status}`);
-			if (mounted.current) setClaimNotice({
-				kind: value?.replayed === true ? "already" : "granted",
-				// Absent when the upstream replayed the round: a repeat claim
-				// grants nothing, so no amount is printed for it.
-				amount: typeof value?.amount === "number" ? value.amount : void 0
-			});
-			await load(true);
-		} catch (error) {
-			if (mounted.current) setClaimNotice({
-				kind: "error",
-				message: error instanceof Error ? error.message : String(error)
-			});
-		} finally {
-			if (mounted.current) setClaimBusy(false);
-		}
-	}, [activeRegion, load]);
-	(0, react.useEffect)(() => {
-		void load(false);
-	}, [load]);
-	// The card's "the account just changed" signal: a re-read landed, so
-	// re-pull the quota for whatever the host can serve now. The mount
-	// effect already did the initial read, so a zero token must not
-	// force a second fetch.
-	(0, react.useEffect)(() => {
-		if (refreshToken === 0) return;
-		void load(true);
-	}, [refreshToken, load]);
-	// Scoped to the selected region (the convergence point on the version
-	// strip), so only one usage block renders instead of one per region. The
-	// fetch still pulls every region; this just picks the one the strip has
-	// selected. The same selection drives the check-in card beside it.
-	const active = regions.find((entry) => entry.region === activeRegion);
-	return (
-		<div className="dsm-qoder-usage-row">
-			<div className="dsm-qoder-usage">
-				<div className="dsm-qoder-usage-head">
-					{/* The head is a stable title row: the panel title stays on
-					    the left and the refresh control stays on the right.
-					    Loading and error states render below it, next to the
-					    selected region's block. */}
-					<h4 className="dsm-qoder-usage-title">{t("usage.title")}</h4>
-					<button
-						type="button"
-						className="dsm-qoder-button"
-						disabled={busy}
-						onClick={() => {
-							void load(true);
-						}}
-					>
-						{t("usage.refresh")}
-					</button>
-				</div>
-				{status === "loading" ? <p className="dsm-qoder-hint">{t("usage.loading")}</p> : null}
-				{status === "error" ? (
-					<p className="dsm-qoder-error">{`${t("usage.error")}: ${notice ?? ""}`}</p>
-				) : null}
-				{active !== undefined ? (
-					<RegionUsage t={t} entry={active} />
-				) : (
-					// The selected edition has no quota entry yet — it is not
-					// signed in or not started — so say so instead of leaving
-					// the panel body empty under its header.
-					status === "ready" ? <p className="dsm-qoder-state">{t("usage.none")}</p> : null
-				)}
-			</div>
-			{/* The daily check-in sits BESIDE the usage panel rather than as one
-			    more stacked row inside it: as a row it spent a full-width line on
-			    "每日签到" and one short button. It is only rendered when upstream
-			    has a round running, so no permanently grey card is left behind —
-			    and the panel then keeps the full width to itself. */}
-			{active?.checkin !== undefined && active.checkin.active === true ? (
-				<CheckinCard
-					t={t}
-					checkin={active.checkin}
-					busy={claimBusy}
-					notice={claimNotice}
-					onClaim={() => {
-						void claimCheckin();
-					}}
-				/>
-			) : null}
-		</div>
-	);
-}
 
 /**
- * The account section. It renders TWO siblings: the body's region strip
- * and, directly below it, the framed card with the SELECTED region's
- * sign-in — who drives it, in which state it is, and what to do when it
- * is not `ok`. The strip is the card's convergence point: each region is
- * one pill (status dot + name + provider switch), and selecting a pill
- * scopes the sign-in detail, the usage panel and the model list to that
- * region, so the region name appears exactly once on the card. It lives
- * ABOVE the account frame because it switches the WHOLE body, not just
- * the sign-in card (the WorkBuddy layout this card is modelled on).
- * `activeRegion` / `onRegionChange` are the card-level pair that drives
- * all three surfaces.
- *
- * The states come from the host's account route and are computed from
- * LOCAL evidence only, so reading the panel costs no network. The
- * deliberate actions are:
- *
- * - **Re-read sign-in** POSTs to the host's reload route, which
- *   invalidates the credential caches, re-reads the app stores, and
- *   starts any region that has come back online — a re-sign-in is
- *   picked up without restarting DSH. `onReconciled` lets the card
- *   re-pull its models and usage once the read has landed.
- * - **Confirm online** is the single optional network call
- *   (`fetchUserInfo`): it answers "is this sign-in still valid at the
- *   upstream?", a question a disk read cannot answer on its own.
- * - The pill's **provider switch** writes `enabledRegions` (opt-out:
- *   absent = offered) through the settings pipeline; a switched-off
- *   region contributes zero models, and the picker + card list hide
- *   it via the same host predicate.
- */
-/** Props for {@link QoderAccountPanel}. */
-interface QoderAccountPanelProps {
-	t: TranslateFn
-	onReconciled?: () => void
-	settingsScope?: SettingsScope
-	activeRegion?: string
-	onRegionChange?: (regionId: string) => void
-}
-
-function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qoder-cn", onRegionChange }: QoderAccountPanelProps) {
-	const [accounts, setAccounts] = react.useState<CardAccountEntry[]>([]);
-	const [status, setStatus] = (0, react.useState)("loading");
-	const [reloading, setReloading] = (0, react.useState)(false);
-	// One confirm outcome per region: `{ kind: "confirmed" |
-	// "sign-in-expired" | "unavailable", detail? }`. Absent means
-	// "not asked since the last re-read".
-	const [confirmState, setConfirmState] = react.useState<Record<string, { kind?: string; detail?: string }>>({});
-	const [confirmBusy, setConfirmBusy] = react.useState<Record<string, boolean>>({});
-	// The per-region provider switch. The host answers with the fully
-	// resolved map for every known region, so saving posts that whole
-	// map back — a host-side per-region merge can never lose a
-	// sibling region, and the scope-mirror fallback replaces a field
-	// it always holds in full.
-	const [enabledRegions, setEnabledRegions] = react.useState<Record<string, boolean>>({});
-	const [toggling, setToggling] = (0, react.useState)(false);
-	const [offerError, setOfferError] = react.useState<string | undefined>(undefined);
-	const mounted = (0, react.useRef)(true);
-	(0, react.useEffect)(() => {
-		mounted.current = true;
-		return () => {
-			mounted.current = false;
-		};
-	}, []);
-	const load = (0, react.useCallback)(async () => {
-		try {
-			const response = await fetch(QODER_ACCOUNT_PATH, {
-				headers: { accept: "application/json" },
-				credentials: "same-origin"
-			});
-			const value = await response.json().catch((): undefined => void 0);
-			if (!response.ok || value === void 0) throw new Error(`HTTP ${response.status}`);
-			if (!mounted.current) return;
-			const regions = Array.isArray(value.regions) ? value.regions : [];
-			setAccounts(regions);
-			// Prefer the host-resolved map; fall back to each region's
-			// own `enabled` flag so an older host that predates the
-			// map still drives the switch (absent = offered).
-			const map = value.enabledRegions !== null && typeof value.enabledRegions === "object" ? value.enabledRegions as Record<string, boolean> : Object.fromEntries((regions as CardAccountEntry[]).filter((entry) => entry.region !== undefined).map((entry) => [entry.region, entry.enabled !== false]));
-			setEnabledRegions(map);
-			setStatus("ready");
-		} catch {
-			if (mounted.current) setStatus("error");
-		}
-	}, []);
-	(0, react.useEffect)(() => {
-		void load();
-	}, [load]);
-	const reload = (0, react.useCallback)(async () => {
-		setReloading(true);
-		try {
-			const response = await fetch(QODER_ACCOUNT_RELOAD_PATH, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				credentials: "same-origin",
-				body: JSON.stringify({})
-			});
-			if (!response.ok) throw new Error(`HTTP ${response.status}`);
-			if (!mounted.current) return;
-			// The re-read just changed what is true on disk: drop the
-			// confirm outcomes (they were answered against the old
-			// credential) and let the card reconcile its models and
-			// usage with the fresh state.
-			setConfirmState({});
-			if (onReconciled !== void 0) onReconciled();
-			await load();
-		} catch {
-			if (mounted.current) setStatus("error");
-		} finally {
-			if (mounted.current) setReloading(false);
-		}
-	}, [load, onReconciled]);
-	// WorkBuddy parity: the tab strip (rendered above the account frame)
-	// is the body's whole header — no title row, no re-read button to
-	// save. The re-read therefore has to find its own moment, and the
-	// dots say when that is. The
-	// opening GET already re-reads every store from disk, so the POST
-	// only adds: drop the cached credential, refresh the catalog, and
-	// start any region that looks signed-out. Once per open is enough;
-	// selecting a still-bad tab (below) covers the "I just signed in
-	// while the card was open" case.
-	const autoReloaded = (0, react.useRef)(false);
-	(0, react.useEffect)(() => {
-		if (status !== "ready" || autoReloaded.current) return;
-		if (!accounts.some((entry) => entry.state !== "ok")) return;
-		autoReloaded.current = true;
-		void reload();
-	}, [status, accounts, reload]);
-	const confirm = (0, react.useCallback)(async (regionId) => {
-		setConfirmBusy((current) => ({ ...current, [regionId]: true }));
-		setConfirmState((current) => {
-			const next = { ...current };
-			delete next[regionId];
-			return next;
-		});
-		try {
-			const response = await fetch(QODER_ACCOUNT_CONFIRM_PATH, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				credentials: "same-origin",
-				body: JSON.stringify({ region: regionId })
-			});
-			const value = await response.json().catch((): undefined => void 0);
-			if (!response.ok || value === void 0) throw new Error(`HTTP ${response.status}`);
-			if (!mounted.current) return;
-			if (value.available !== true) {
-				setConfirmState((current) => ({ ...current, [regionId]: { kind: "unavailable" } }));
-				return;
-			}
-			setConfirmState((current) => ({
-				...current,
-				[regionId]: value.confirmed === true ? {
-					kind: "confirmed"
-				} : {
-					kind: value.kind,
-					detail: value.detail
-				}
-			}));
-		} catch (error) {
-			if (!mounted.current) return;
-			setConfirmState((current) => ({
-				...current,
-				[regionId]: {
-					kind: "unavailable",
-					detail: describeThrown(error)
-				}
-			}));
-		} finally {
-			if (mounted.current) setConfirmBusy((current) => ({ ...current, [regionId]: false }));
-		}
-	}, []);
-	// Flip one region's provider switch. The save goes through the
-	// settings pipeline (host endpoint first, scope mirror second) with
-	// the COMPLETE map, exactly like the model-section saves: a host
-	// that merges per region cannot lose the sibling, and a host that
-	// replaces the field is given the whole thing. On success the card
-	// reconciles (models + usage) and re-reads the account panel, so
-	// the switch settles on the authoritative state rather than an
-	// optimistic guess; on failure the switch reverts and the reason
-	// is shown instead of a silent no-op.
-	const toggleRegion = (0, react.useCallback)(async (regionId, nextOn) => {
-		setToggling(true);
-		setOfferError(undefined);
-		const next = { ...enabledRegions, [regionId]: nextOn };
-		setEnabledRegions(next);
-		try {
-			if (settingsScope === void 0) throw new Error("settings service unavailable");
-			await writeSettingsField(settingsScope, "enabledRegions", next);
-			if (onReconciled !== void 0) onReconciled();
-			await load();
-		} catch (error) {
-			setEnabledRegions((current) => ({ ...current, [regionId]: !nextOn }));
-			if (mounted.current) setOfferError(describeThrown(error));
-		} finally {
-			if (mounted.current) setToggling(false);
-		}
-	}, [enabledRegions, settingsScope, onReconciled, load]);
-	// Tone per state: `ok` is green, a lapsed or unreadable sign-in is
-	// red or amber, and "not installed" stays neutral — the absence of
-	// an app is not a fault of this machine. The same tones drive the
-	// status dots on the region strip.
-	const dotClassOf = (state: string | undefined) => state === "ok" ? " dsm-qoder-region-dot-ok" : state === "expired" ? " dsm-qoder-region-dot-expired" : state === "needs-app" ? " dsm-qoder-region-dot-needs" : "";
-	const stateLabelOf = (entry: CardAccountEntry) => t(`account.state.${entry.state}`);
-	// The strip shows every known region; the detail below it shows
-	// only the one the strip has selected. A selection that no longer
-	// exists should not happen — the host always answers with both
-	// regions — but it falls back to the first entry rather than
-	// breaking the panel.
-	const activeEntry = accounts.find((entry) => entry.region === activeRegion) ?? accounts[0];
-	// `region` is optional on the entry, so it cannot be used as an index until
-	// it is known to be a string. An entry with no region is not addressable in
-	// the per-region maps at all, which is why the fallbacks below answer
-	// "nothing recorded for it" rather than guessing a key.
-	const activeRegionId = activeEntry?.region;
-	// The label the four user-facing strings interpolate. Built once from the
-	// two optional sources rather than repeated as `regionName ?? region` at
-	// each site: that spelling is `string | undefined`, which the translation
-	// helper does not accept, and a missing label must read as an empty string
-	// rather than the word "undefined".
-	const activeEdition = activeEntry?.regionName ?? activeRegionId ?? "";
-	const activeOffered = activeEntry !== undefined && activeRegionId !== undefined && enabledRegions[activeRegionId] !== false;
-	const activeResult = activeEntry !== undefined && activeRegionId !== undefined ? confirmState[activeRegionId] : undefined;
-	// Bound once and tested once: `activeHasIdentity` is a boolean, so it cannot
-	// narrow `activeEntry.identity` at the reads below. Holding the identity
-	// itself is what lets the three later reads be checked rather than asserted.
-	const activeIdentity = activeEntry?.identity ?? undefined;
-	const activeHasIdentity = activeIdentity !== undefined && activeIdentity !== null;
-	const activeName = activeHasIdentity ? String(activeIdentity.name ?? "").trim() : "";
-	// The same three chips the old rows carried: credential source,
-	// app name, and the sign-in's expiry date — now for one region.
-	const activeMeta = [];
-	if (activeEntry !== undefined) {
-		if (activeEntry.source === "env-pat") activeMeta.push(t("account.envPat"));
-		else if (typeof activeEntry.appName === "string" && activeEntry.appName !== "") activeMeta.push(t("account.appFrom", { app: activeEntry.appName }));
-		if (activeHasIdentity && Number(activeIdentity.expiresAt) > 0) activeMeta.push(withDate(t("account.expiresAt"), activeIdentity.expiresAt));
-	}
-	// The expired / not-installed states no longer drag the user onto the
-	// website: they point at the client (re-sign-in / install) and carry
-	// the region's download link, labelled with where it goes. The manage
-	// link is therefore gone, and with it the `manageUrl` render.
-	// The expired / not-installed states no longer drag the user onto the
-	// website: they point at the client (re-sign-in / install) and carry
-	// the region's download link, labelled with where it goes. The manage
-	// link is therefore gone, and with it the `manageUrl` render.
-	return (
-		<react.Fragment>
-			{/*
-				The convergence point, now ABOVE the account card rather than
-				inside its frame: one pill per region — status dot, name,
-				provider switch — and selecting a pill scopes the sign-in
-				detail, the usage panel and the model list to that region, so
-				the region name appears exactly once on the card. The strip
-				switches the WHOLE body, so it is the body's header, matching
-				the WorkBuddy layout it was modelled on; it is hidden on a
-				read failure, whose own retry stays in the card below.
-			*/}
-			{status !== "error" ? (
-				<div className="dsm-qoder-region-tabs" role="tablist" aria-label={t("account.regionTabs")}>
-					{accounts.map((entry) => {
-						// A region-less entry is not addressable: it has no
-						// key in `enabledRegions`, nothing to select, and
-						// nothing to pass to `onRegionChange`. The host
-						// always names one, so this narrows the type at the
-						// render boundary instead of asserting it, and an
-						// unnamed entry is skipped rather than rendered as a
-						// tab that cannot work.
-						const regionId = entry.region;
-						if (regionId === undefined) return null;
-						// Provider switch state. The local map is the source
-						// of truth for the switch (it settles on the host
-						// value after each save); a region with no key yet
-						// reads as offered, the same default the host
-						// predicate uses.
-						const offered = enabledRegions[regionId] !== false;
-						const isActive = regionId === activeRegion;
-						return (
-							<div
-								key={`tab:${regionId}`}
-								className={`dsm-qoder-region-tab-cell${isActive ? " dsm-qoder-region-tab-cell-active" : ""}`}
-							>
-								<button
-									type="button"
-									role="tab"
-									aria-selected={isActive}
-									className={`dsm-qoder-region-tab${offered ? "" : " dsm-qoder-region-tab-off"}`}
-									title={`${entry.regionName ?? regionId} · ${stateLabelOf(entry)}`}
-									onClick={() => {
-										if (typeof onRegionChange === "function") onRegionChange(regionId);
-										// Choosing a not-ok region is also the
-										// moment the user has just signed in
-										// over there: run the pick-up for it,
-										// dots included.
-										if (entry.state !== "ok") void reload();
-									}}
-								>
-									<span aria-hidden="true" className={`dsm-qoder-region-dot${dotClassOf(entry.state)}`} />
-									<span className="dsm-qoder-region-name">{entry.regionName ?? regionId}</span>
-								</button>
-								<label className="dsm-qoder-region-toggle-cell" title={t("account.offerTitle")}>
-									<input
-										type="checkbox"
-										className="dsm-qoder-region-toggle"
-										checked={offered}
-										disabled={toggling}
-										onChange={(event: CheckboxEvent) => {
-											void toggleRegion(regionId, event.target.checked);
-										}}
-										aria-label={`${t("account.offer")}: ${entry.regionName ?? regionId}`}
-									/>
-								</label>
-							</div>
-						);
-					})}
-				</div>
-			) : null}
-			<div className="dsm-qoder-account">
-				{status === "error" ? (
-					// A failure says so with its own retry inside the card,
-					// rather than a button that is otherwise redundant.
-					<div className="dsm-qoder-account-error">
-						<p className="dsm-qoder-error">{t("account.error")}</p>
-						<button
-							type="button"
-							className="dsm-qoder-button"
-							disabled={reloading}
-							onClick={() => {
-								void reload();
-							}}
-						>
-							{t("account.reload")}
-						</button>
-					</div>
-				) : (
-					<react.Fragment>
-						{/* The selected region's sign-in: who it is, where the
-						    credential comes from, and what to do when it is not
-						    `ok`. */}
-						{activeEntry !== undefined ? (
-							<react.Fragment>
-								<div className={`dsm-qoder-account-row${activeOffered ? "" : " dsm-qoder-account-row-off"}`}>
-									<span className="dsm-qoder-account-id">
-										<span className="dsm-qoder-account-name">
-											{activeName !== "" ? activeName : "—"}
-										</span>
-										{activeMeta.length > 0 ? (
-											<span className="dsm-qoder-account-meta">{activeMeta.join(" · ")}</span>
-										) : null}
-									</span>
-									<span className="dsm-qoder-usage-spacer" />
-									{activeEntry.source !== undefined && activeRegionId !== undefined ? (
-										<button
-											type="button"
-											className="dsm-qoder-button"
-											disabled={confirmBusy[activeRegionId] === true}
-											onClick={() => {
-												void confirm(activeRegionId);
-											}}
-										>
-											{confirmBusy[activeRegionId] === true ? t("account.confirming") : t("account.confirm")}
-										</button>
-									) : null}
-								</div>
-								{!activeOffered ? (
-									<p className="dsm-qoder-account-note">{t("account.offerOff")}</p>
-								) : null}
-								{activeEntry.state === "needs-app" ? (
-									<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
-										{t("account.readFail", { detail: activeEntry.detail ?? "" })}
-									</p>
-								) : null}
-								{activeEntry.state === "expired" ? (
-									<p className="dsm-qoder-account-note">
-										<span>
-											{t("account.expiredHint", {
-												app: activeEntry.appName ?? activeEntry.regionName ?? "Qoder",
-											})}
-										</span>
-										<br />
-										<span>
-											{t("account.download", { edition: activeEdition })}
-											{typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (
-												<react.Fragment>
-													{" · "}
-													<a
-														href={activeEntry.downloadUrl}
-														target="_blank"
-														rel="noreferrer"
-														title={activeEntry.downloadUrl}
-													>
-														{t("account.downloadLink", { edition: activeEdition })}
-													</a>
-												</react.Fragment>
-											) : null}
-										</span>
-									</p>
-								) : null}
-								{activeEntry.state === "signed-out" ? (
-									<p className="dsm-qoder-account-note">
-										<span>{t("account.unsigned")}</span>
-										<br />
-										<span>
-											{t("account.download", { edition: activeEdition })}
-											{typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (
-												<react.Fragment>
-													{" · "}
-													<a
-														href={activeEntry.downloadUrl}
-														target="_blank"
-														rel="noreferrer"
-														title={activeEntry.downloadUrl}
-													>
-														{t("account.downloadLink", { edition: activeEdition })}
-													</a>
-												</react.Fragment>
-											) : null}
-										</span>
-									</p>
-								) : null}
-								{activeResult?.kind === "confirmed" ? (
-									<p className="dsm-qoder-account-note">{t("account.confirmed")}</p>
-								) : null}
-								{activeResult?.kind === "sign-in-expired" ? (
-									<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
-										{t("account.confirmExpired")}
-									</p>
-								) : null}
-								{activeResult?.kind === "unavailable" ? (
-									<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
-										{t("account.confirmFailed", { detail: activeResult.detail ?? "" })}
-									</p>
-								) : null}
-							</react.Fragment>
-						) : null}
-					</react.Fragment>
-				)}
-				{offerError !== undefined ? (
-					<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
-						{t("account.offerError", { detail: offerError })}
-					</p>
-				) : null}
-			</div>
-		</react.Fragment>
-	);
-}
-
-/**
- * Whether the card starts expanded, resolved from the host's `view`.
- *
- * The host renders a slot card with one of three shapes:
- *
- * - `view: "page"` — the card is the page itself (the bundle / row
- *   detail pages, and the WorkBuddy-style detail surface). Collapsing a
- *   page would leave the user staring at an empty screen, so the card
- *   opens by default. This is the "auto-expand" behaviour borrowed from
- *   the WorkBuddy bundle.
- * - `view: "summary"` — the card sits in a list of cards, where an
- *   expanded card would push every sibling off-screen; start collapsed
- *   and let the header click do the work.
- * - no `view` (legacy slots that predate the prop) — the previous
- *   default was collapsed, and keeping it means an old host surface
- *   does not suddenly change shape on upgrade.
- *
- * Collapsing is never destructive: the card's body is `hidden`, not
- * unmounted, so staged edits and a ticking off-peak countdown survive a
- * collapse/expand cycle.
+ * Whether the card starts expanded. Defaults to collapsed (the body is
+ * `hidden`, not unmounted, so staged edits and a ticking countdown survive a
+ * cycle); a host slot that passes `view="page"` opens it.
  *
  * @param view - the `view` prop the host slot passed, if any.
  * @returns true when the card should start expanded.
@@ -889,7 +286,6 @@ interface QoderPluginCardProps {
 	view?: unknown
 }
 
-/** Render the Qoder model and image-input card. */
 export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps) {
 	if (t === void 0) throw new Error("Qoder settings card requires its translation function");
 	const [open, setOpen] = (0, react.useState)(() => initialOpenForView(view));
