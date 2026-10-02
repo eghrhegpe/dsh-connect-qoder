@@ -18,15 +18,30 @@
 `docs/history/0.5.0-abi-cutover.md`）。本文件登记的缺口均不引用被删的旧 ABI 面，
 条目不受影响；第 7 条的覆盖率基线已按砍后的源码重测。
 
+**本轮（2026-10-03，chat 分诊 + umid 枚举）**：「仍未分诊的上游端点」段改写——
+chat 端点已分诊（`streamChat` 的 content-type + 不可读帧判定，`test/chat-protocol-drift.test.js`
+守门），剩余项收窄为 `fetchUsage` / `readCampaigns` / `fetchUserInfo`；第 8 条
+`umidRootsFor` 的写死版本路径改为运行时枚举（`test/umid-roots.test.js` 守门），
+并新增「签到降级用户可见性」残留项（host warn 已落地，卡片半边欠着）。
+
 **本轮新增的两处镜像**（跟着 issue 04/05/10 一起进来，是刻意接受而非遗漏）：
 `test/model-route.test.js` 直接 import `buildModelRowsPayload`，断言的是**真实的**实现，
 不是副本；`test/protocol-shape-card.test.js` 则从**产物文本里提取** `refreshNoticeKey` 并执行，
 所以它守的是发货的那份代码（手法与 `test/client-bundle.test.js` 相同）。两者都不需要"改一处
 必须同步改另一处"的人工纪律——这是与第 3 条那两处镜像的本质区别。
 
-**仍未分诊的上游端点**：协议形状分诊目前只做在 `fetchModels` 上（issue 10 的残留缺口）。
-`fetchUsage` / `readCampaigns` / `fetchUserInfo` 各自只取自己那几个字段，形状变化对它们
-表现为"字段读不到"而非漂移告警；chat 端点是最常打的一个，先分诊它。
+**chat 端点分诊已落地（2026-10-03，本轮）**：`streamChat` 补了 chat 侧的
+协议形状分诊——200 路径先查 content-type（`json|html|xml` 即漂移，SSE 头缺失
+或 event-stream 不误伤），帧路径把「整条流没有任何一帧可读」（envelope 解析
+失败 / 内层 body 解析失败 / 非 chunk 非已知失败的 JSON 帧）判为
+`ProtocolShapeChangedError` 并保留第一帧原文作证据；零数据帧的「空应答」仍走
+原来的 `empty response` 错误，两种形态分开。判定不进队列预算（`retryable:
+false`），shim 按 502 + 完整消息回给 agent，「插件需要更新」不再静默。守门在
+`test/chat-protocol-drift.test.js`。
+
+**仍未分诊的上游端点**：`fetchUsage` / `readCampaigns` / `fetchUserInfo` 各自只取
+自己那几个字段，形状变化对它们仍表现为"字段读不到"而非漂移告警；chat 端点已
+完成分诊（见上），这三个端点的分诊是剩余项。
 
 **凭据 sweep 的身份守卫（issue 01）**：`sweepStaleOscryptDirs` 现在要求
 `lstat` 判真目录 + `.dsh-oscrypt` 标记文件 + `key.b64` 恰好解出 32 字节，
@@ -335,8 +350,19 @@ CN 与 PAT 凭据不受影响。二进制每进程只跑一次（`umidInfo` 缓�
   国际端 campaigns 是它的判别因子，其余端点是否也门控未逐一验证；若上游收紧
   （只认机器身份、拒裸请求），全走 umid 头反而是对的。若上游将来对 umid 做
   频控/绑定，需要按端点收窄。
-- `runtime-info.exe` 的 0.4.3 版本路径是**当前实测值**：0.4.x 的 `.qoder-versions`
-  布局升级后版本目录会变（例如 0.4.4），`umidRootsFor` 需要同步补档。
+- `runtime-info.exe` 的版本根目录**已改为运行时枚举**（2026-10-03，本轮）：
+  `umidRootsFor` 不再钉死 `0.4.3`，而是按目录枚举 `.qoder-versions` 下的版本
+  根（数值序 newest-first，仅目录条目——实测布局里版本目录旁有
+  `0.4.3.qoder-update-ready.json` 之类的标记**文件**，须过滤），launcher tree
+  仍是回落候选。上游升版（0.4.4…）不再需要插件发版跟档。剩余：CN 端的
+  `QoderCN\.qoder-versions` 布局未实测（本机无 CN 安装），按对称规则枚举，
+  目录不存在时静默 no-op；枚举读失败同样 no-op（`umid-roots` 测试守着）。
+- **签到降级的用户可见性**（2026-10-03 补了 host 半边）：umid 读不到时，
+  国际版签到轮次不下发、卡片签到区不渲染，此前全程无痕迹。`index.ts` 激活期
+  现在会在「global region 已启动 + umid 不可用」时打一条 warn（条件精确到
+  CN-only / 无 Qoder 机器的日志保持干净）；判据走 `__dshQoderUmidState` 缝
+  （`umid-headers` 测试守着）。卡片半边——国际版用量面板上一行「机器身份不可
+  用，签到轮次暂缺」的提示——需要动 client 五道闸，欠着，登记在此。
 - 跨平台（第 6 条）依旧：umid 二进制是 Windows 专物，macOS / Linux 上国际版
   签到卡片会继续缺席，与跨平台凭据链缺口同源。
 - **领取幂等性未实测**：本轮只读验证了"看见轮次"，没有真发 POST 领取

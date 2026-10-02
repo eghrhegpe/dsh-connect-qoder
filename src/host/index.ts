@@ -54,7 +54,7 @@ import type { RouteRelease } from './lifecycle.ts'
 import type { CatalogEntry, CatalogOutcome, HostContext, PluginLogger, RefreshFailure, Region } from './domain.ts'
 import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
 import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
-import { exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.ts'
+import { __dshQoderUmidState, exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.ts'
 import type { UsageSnapshot } from './upstream.ts'
 import { classifyUpstreamError, describeThrown, isProtocolShapeChangedError } from './errors.ts'
 import {
@@ -762,6 +762,22 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // "re-sign in and it appears without restarting DSH" path unreachable from a
     // fresh install, which is the case that path exists for.
     ctx.logger.warn?.('dsh-connect-qoder: no Qoder region could start; card routes stay up so the account panel can explain it')
+  }
+
+  // The international edition's daily check-in round is served only to requests
+  // carrying the desktop app's umid machine identity (KNOWN_GAPS §8); without
+  // it the campaigns list omits the round and the card does not render the
+  // check-in — a documented degradation, but a silent one: nothing on screen
+  // says WHY the round is absent. This warn is the host-side half of the
+  // visibility: it fires only where it can matter (the global region actually
+  // started on this machine), so a CN-only or no-Qoder profile keeps a clean
+  // log. The card-side half — a one-line hint on the international usage
+  // panel — is still owed; see docs/KNOWN_GAPS §8.
+  if (started.some((entry) => entry.region.id === 'qoder')) {
+    const umid = __dshQoderUmidState()
+    if (umid.available !== true) {
+      ctx.logger.warn?.(`dsh-connect-qoder: ${umid.reason}; the international edition's daily check-in round cannot be claimed on this machine until it can`)
+    }
   }
 
   /**

@@ -21,7 +21,7 @@
  */
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { classifyUpstreamError, describeThrown, errorMessage, parseRetryAfterSeconds, ProtocolShapeChangedError, SignInExpiredError, thrownFlag } from './errors.ts'
 import { windowIsOpen } from './offpeak.ts'
@@ -464,6 +464,29 @@ export function __dshQoderUmidCacheReset() {
 }
 
 /**
+ * Observability seam: whether the umid machine identity is available to this
+ * process, forcing the same lazy per-process resolution `openApiHeaders`
+ * performs when the read has not happened yet.
+ *
+ * The activation warn in `index.ts` uses it to name the one degradation the
+ * international edition's check-in depends on — no machine identity, no daily
+ * round — without waiting for the first OpenAPI call. The test seam
+ * `__dshQoderUmidProbe` still stands in for the binary read, so the answer is
+ * deterministic on any machine; the cache stays machine-scoped, region
+ * independent, exactly like the header builder's.
+ */
+export function __dshQoderUmidState(): { available: boolean; reason?: string } {
+  if (umidInfo === undefined) umidInfo = readUmidInfo(undefined)
+  if (umidInfo !== null) return { available: true }
+  return {
+    available: false,
+    reason:
+      'the desktop app machine identity (umid) could not be read ' +
+      '(no install, no matching version root, or a silent binary failure)',
+  }
+}
+
+/**
  * The app's umid machine-identity header block, or `{}` when it cannot be
  * read. See {@link openApiHeaders} for why the block exists.
  *
@@ -517,7 +540,7 @@ function normalizeUmidBlock(answer: unknown): UmidBlock | null {
  *   the install root.
  * @returns the parsed block or `null`.
  */
-function readUmidInfo(region: Region): UmidBlock | null {
+function readUmidInfo(region?: Region): UmidBlock | null {
   // The test seam stands in for the whole binary read: a probe that answers
   // `null` models "the binary is absent on this machine", which is the
   // production behaviour on a CN-only install or a CI runner.
@@ -558,17 +581,77 @@ function readUmidInfo(region: Region): UmidBlock | null {
  * The 0.4.x launcher splits each version into `Programs\Qoder\.qoder-versions\<v>\resources`,
  * leaving a thin launcher tree at `Programs\Qoder\resources` that carries
  * the shared `umid` binary; the CN app keeps its own `Programs\QoderCN` tree.
+ *
+ * The version directories are ENUMERATED rather than pinned: the old list
+ * hard-coded `0.4.3` (the measured value of the day it was written), and a
+ * pinned list stops matching the moment upstream ships the next desktop
+ * version — which is exactly when the shared binary may have moved into the
+ * new version root. Measured 2026-10-03, the `.qoder-versions` directory also
+ * carries sibling MARKER FILES next to the version directories (`0.4.3.qoder-update-ready.json`
+ * on this machine), so only directory entries become candidates. Enumeration
+ * failing (no `.qoder-versions`, a locked directory) answers an empty list —
+ * not a failure: the launcher-tree root below it remains the fallback, and
+ * each candidate is still verified with `existsSync` before the binary runs.
+ *
+ * The CN tree is enumerated by the same rule by symmetry with the global one.
+ * It is unmeasured here (no CN install on this machine); the no-op behaviour
+ * when the directory is absent is what makes the symmetry safe.
  */
-function umidRootsFor(region: Region): string[] {
+export function umidRootsFor(region?: Region): string[] {
   const localAppData = process.env.LOCALAPPDATA
   if (localAppData === undefined) return []
   const programs = join(localAppData, 'Programs')
   const roots = [
-    join(programs, 'Qoder', '.qoder-versions', '0.4.3'),
+    ...versionedUmidRoots(join(programs, 'Qoder')),
     join(programs, 'Qoder'),
   ]
-  if (region?.id === 'qoder-cn') roots.push(join(programs, 'QoderCN'))
+  if (region?.id === 'qoder-cn') {
+    roots.push(...versionedUmidRoots(join(programs, 'QoderCN')), join(programs, 'QoderCN'))
+  }
   return roots
+}
+
+/**
+ * The version-split install roots under one launcher tree, newest version first.
+ *
+ * Newest-first matters: when two version roots both carry the binary, the
+ * newer one is the one the app runs against, and its umid values are the
+ * current machine identity.
+ */
+function versionedUmidRoots(tree: string): string[] {
+  let names: string[]
+  try {
+    names = readdirSync(join(tree, '.qoder-versions'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+  } catch {
+    // Absent or unreadable directory: no version-split candidates. The caller's
+    // launcher-tree root is the fallback; this is not a failure worth naming.
+    return []
+  }
+  // Newest first, numerically: `0.4.10` must beat `0.4.9`, and a
+  // lexicographic sort is exactly the bug the enumeration exists to avoid.
+  // A non-numeric part falls to the end, last among equals.
+  names.sort((a, b) => versionCompare(b, a))
+  return names.map((name) => join(tree, '.qoder-versions', name))
+}
+
+/** Compare two dot-separated version strings numerically per part. */
+function versionCompare(a: string, b: string): number {
+  const partsA = a.split('.')
+  const partsB = b.split('.')
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+    const na = Number(partsA[i] ?? 0)
+    const nb = Number(partsB[i] ?? 0)
+    if (Number.isFinite(na) && Number.isFinite(nb)) {
+      if (na !== nb) return na - nb
+      continue
+    }
+    const ca = String(partsA[i] ?? '')
+    const cb = String(partsB[i] ?? '')
+    if (ca !== cb) return ca < cb ? -1 : 1
+  }
+  return 0
 }
 
 /**
@@ -1291,6 +1374,31 @@ export async function fetchUserInfo(
 }
 
 /**
+ * The shape probe a chat turn hands to its frame reader.
+ *
+ * The doubly-wrapped SSE protocol is measured, not contracted, so the one
+ * evidence that a turn's wire has moved is the frame itself: a `data:` payload
+ * this build cannot read as an envelope, a chunk, or a named failure. A
+ * healthy turn yields chunks and never consults the probe, so counting the
+ * unreadable frames costs nothing; the verdict (in `streamChat`'s retry loop)
+ * fires only when a WHOLE attempt stream carried frames and not one of them
+ * was usable — the chat-side twin of the model-list freeze the catalog path
+ * already triages (`protocol-shape-changed`).
+ */
+interface ChatShapeProbe {
+  /** Data payloads the gateway streamed that this build does not read. */
+  skipped: number
+  /** The first unreadable payload, as received — the evidence the verdict names. */
+  sample?: string
+}
+
+/** Note one unreadable frame on the turn's probe; the first is the one kept. */
+function noteUnreadableFrame(probe: ChatShapeProbe, payload: string): void {
+  probe.skipped += 1
+  if (probe.sample === undefined) probe.sample = payload.slice(0, 300)
+}
+
+/**
  * One chat turn, streamed.
  *
  * Yields plain objects in the OpenAI chunk vocabulary
@@ -1435,13 +1543,18 @@ export async function* streamChat(
   const url = chatUrl(region)
   const bodyBytes = encodeBody(Buffer.from(JSON.stringify(body)))
 
+  // The turn's shape probe: shared across the attempts of this loop, because
+  // the verdict is reached only when a WHOLE stream carried frames and none of
+  // them was usable (see ChatShapeProbe).
+  const shapeProbe: ChatShapeProbe = { skipped: 0, sample: undefined }
+
   /**
    * Open one attempt and hand back its frame stream.
    *
    * Nothing is yielded until the first frame arrives, so a queue rejection
    * raised here is still safe to retry: the caller has seen no output yet.
    */
-  async function* readFrames(response: Response): AsyncGenerator<UpstreamChunk> {
+  async function* readFrames(response: Response, probe: ChatShapeProbe): AsyncGenerator<UpstreamChunk> {
     // A response with no body is not a stream that ended — it is an answer this
     // transport cannot read, and `getReader()` on `null` would throw a
     // TypeError that the caller would classify as an ordinary fetch failure.
@@ -1471,11 +1584,15 @@ export async function* streamChat(
           if (payload === '[DONE]') { streamDone = true; break }
 
           // The frame is an envelope whose `body` is itself JSON — but a few
-          // frames carry the chunk inline, so both shapes are accepted.
+          // frames carry the chunk inline, so both shapes are accepted. Every
+          // data payload this build ends up not reading is noted on the probe
+          // rather than dropped: the verdict at the end of a stream that
+          // yielded nothing is the drift triage (see ChatShapeProbe).
           let envelope
           try {
             envelope = JSON.parse(payload)
           } catch {
+            noteUnreadableFrame(probe, payload)
             continue
           }
           let chunk = envelope
@@ -1483,6 +1600,7 @@ export async function* streamChat(
             try {
               chunk = JSON.parse(envelope.body)
             } catch {
+              noteUnreadableFrame(probe, payload)
               continue
             }
           } else if (envelope?.body !== undefined && typeof envelope.body === 'object') {
@@ -1498,9 +1616,15 @@ export async function* streamChat(
 
           // A failure arrives as an ordinary 200 frame carrying an error object
           // rather than a chunk. Silently dropping it would present the user
-          // with an empty assistant turn, so it is raised instead.
+          // with an empty assistant turn, so it is raised instead. A frame that
+          // is none of chunk, usage, or a NAMED failure — a renamed field, a
+          // new wrapper — is noted like the unparseable ones: the verdict that
+          // fires when the whole stream is like this says the wire moved.
           const failure = readFailure(chunk)
-          if (failure === undefined) continue
+          if (failure === undefined) {
+            noteUnreadableFrame(probe, payload)
+            continue
+          }
           // Checked before the queue branch on purpose: a spent daily allowance
           // arrives WITH queue markers and a multi-hour Retry-After, so anything
           // that classified on the marker fallback first would turn it into a
@@ -1653,6 +1777,20 @@ export async function* streamChat(
       if (failure.kind === 'sign-in-expired') throw new SignInExpiredError(message)
       throw new Error(message)
     }
+    // A 200 that claims a document content-type is the endpoint answering with
+    // something other than the SSE stream: an SSO/HTML page, a JSON error
+    // document, a non-streaming answer to a `stream: true` request. Left to
+    // the frame reader, every one of those surfaces as an "empty response"
+    // that names nothing about why. The check stays narrow on purpose — only
+    // the content types the documented drift modes arrive as are triaged; an
+    // absent header or an event-stream one passes untouched, and the frame
+    // probe below is the second half of the same verdict.
+    const contentType = response.headers.get('content-type') ?? ''
+    if (/json|html|xml/i.test(contentType)) {
+      throw new ProtocolShapeChangedError(
+        `chat answered \`200 ${contentType}\` where \`text/event-stream\` was expected`,
+      )
+    }
     if (response.body === null) throw new Error('Qoder chat returned no body')
     return response
   }
@@ -1672,7 +1810,7 @@ export async function* streamChat(
     // attempt could spend unbounded time without ever exhausting it.
     const attemptStartedAt = Date.now()
     try {
-      stream = readFrames(await openAttempt())
+      stream = readFrames(await openAttempt(), shapeProbe)
       // Pull the first frame before committing to a response, so a queue
       // rejection surfaces here rather than mid-stream where it could not be
       // retried without duplicating output.
@@ -1690,9 +1828,21 @@ export async function* streamChat(
     waitedMs += Date.now() - attemptStartedAt
 
     if (first.done === true) {
-      // The gateway accepted the request but sent nothing usable. Treat it as an
-      // empty turn rather than a queue rejection: it is not something waiting
-      // will fix.
+      // The gateway accepted the request but yielded no usable frame. Two
+      // shapes are kept apart, because their answers differ: a stream that
+      // carried frames this build does not parse says the WIRE moved — a
+      // renamed envelope, a new wrapper, an error shape this code does not
+      // name — and that is the drift verdict the card's "update the plugin"
+      // copy exists for; a stream that carried no data payloads at all is an
+      // empty answer, not a defect of this build. Before the split, both
+      // cases read as "empty response" and a changed protocol kept the turn
+      // failing silently — the chat-side twin of the model-list freeze the
+      // catalog path triages as `protocol-shape-changed`.
+      if (shapeProbe.skipped > 0) {
+        throw new ProtocolShapeChangedError(
+          `${region.displayName} chat stream: ${shapeProbe.skipped} frame(s) this build does not parse; first: ${shapeProbe.sample ?? '(none kept)'}`,
+        )
+      }
       throw new Error(`${region.displayName} returned an empty response`)
     }
 
