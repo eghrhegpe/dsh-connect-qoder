@@ -52,21 +52,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
  * the ratchet at 445 would have failed on the first run.
  *
  * Lowered batch by batch as the host modules were annotated: 536 → 502 → 445 →
- * 387 → 354 → 289 → 211 → 122 → 104 → 76. THE WHOLE HOST SIDE AND THE CLIENT
- * GLUE ARE AT ZERO; the only file still on the list is `src/client/card.ts`.
+ * 387 → 354 → 289 → 211 → 122 → 104 → 76 → 0. THE DEBT IS CLEARED, and
+ * `noImplicitAny` is now `true` in tsconfig.json — the compiler enforces the
+ * rule directly. This script stays as a second opinion and as the record of the
+ * trajectory: it runs tsc with the individual flags spelled out (so it works
+ * even if the project config is loosened again), and a budget of 0 means any
+ * reintroduced `any` fails the build.
  *
- * Note what the 104 → 76 step was: adding a REAL (if minimal) declaration for
- * `react` / `react/jsx-runtime` at `src/client/react-shim.d.ts`. It was never a
- * matter of annotating 28 things by hand — a bare `declare module 'react';`
- * types every member as `any`, so those sites were invisible to this audit
- * rather than merely unannotated. Two side effects, both intended: the shim
- * immediately surfaced 16 REAL type errors in card.ts that the empty shell had
- * been hiding, and one of them was a genuine call-arity bug (`load` takes
- * `(refresh, signal?)` but was called with one argument).
- *
- * See the per-file breakdown under `--write`.
+ * Worth keeping in mind about where the last 104 went: 28 of them were not
+ * "unannotated" at all, but INVISIBLE — a bare `declare module 'react';` types
+ * every member as `any`, so nothing inside card.ts could be reported. Declaring
+ * a real (if minimal) React surface immediately exposed 16 genuine type errors
+ * the empty shell had been hiding, one of which was a real call-arity bug.
+ * An `any` you cannot see is worth more attention than one you can.
  */
-const BUDGET = 76
+const BUDGET = 0
 
 // Flags from tsconfig's `strict` family that `noImplicitAny` implies. Passing
 // these explicitly keeps this script's count identical whether or not the

@@ -1,5 +1,5 @@
 {
-  "$comment": "Source is TypeScript now (src/host/*.ts, src/client/*.ts), and every .ts file is type-checked unconditionally — `checkJs` only governs plain .js files, of which src/ has none. strict/noImplicitAny stay false (for now), so untyped parameters are implicit-any and pass: the ONE shape that does not is a parameter WITH a default initializer, which is typed from that initializer — give it an explicit annotation instead of JSDoc (@param/@type are comments in a .ts file). noEmit:true means this check never produces artifacts — the build is tsdown's job. Run it with `npm run typecheck`.",
+  "$comment": "Source is TypeScript now (src/host/*.ts, src/client/*.ts), and every .ts file is type-checked unconditionally — `checkJs` only governs plain .js files, of which src/ has none. noImplicitAny is TRUE: the 536 implicit-any sites the migration left behind are all annotated, so the rule is now enforced by the compiler instead of by a ratchet (scripts/audit-implicit-any.mjs still runs, with a budget of 0, as a second opinion and as the place the trajectory is recorded). strict stays false: strictNullChecks is the next decision, not an oversight, and turning it on now would be a different migration. Run it with `npm run typecheck`.",
   "compilerOptions": {
     "target": "ES2023",
     "module": "NodeNext",
@@ -11,7 +11,7 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "strict": false,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "noImplicitThis": true,
     "useUnknownInCatchVariables": true,
     "strictFunctionTypes": true,
