@@ -18,6 +18,44 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import { buildModelsFor } from './adapter-models.ts'
+import type { ModelRuntime } from './adapter-models.ts'
+import type { ImageMode } from './preferences.ts'
+
+/**
+ * One region's shim handle.
+ *
+ * `token()` is the loopback secret that route presents and nothing else; the
+ * baseUrl is what each model's descriptor points at, so selecting a model is
+ * what selects the region.
+ */
+export interface RegionShim {
+  baseUrl(): string
+  token(): Promise<string> | string
+}
+
+/**
+ * One entry of `options.regions`.
+ *
+ * Extends {@link ModelRuntime} rather than restating it: the model builder
+ * already declares `catalog` and `region`, and this adds only the shim that
+ * `adapter.ts` adds. The peer-side values this module hands to `PiAiAdapter`
+ * (the provider descriptor, the adapter instance) are deliberately `unknown` —
+ * see the note on `domain.ts` about not inventing shapes for peer packages.
+ */
+export interface RegionAdapterInput extends ModelRuntime {
+  shim: RegionShim
+}
+
+/** The per-build settings readers, each a function so a change needs no re-register. */
+export interface AdapterSwitches {
+  preferMaximumContext?: () => boolean
+  imageModeFor?: (modelId: string) => ImageMode
+  enabledIdsFor?: (regionId: string) => string[]
+  regionEnabled?: (regionId: string) => boolean
+  /** Omitting this breaks every image request — see the option's documentation. */
+  resolveAttachments?: unknown
+  resolveImageAccess?: unknown
+}
 
 /**
  * The model descriptor builder, re-exported from lib/pi-model.js.
@@ -55,7 +93,7 @@ const REQUEST_IMAGE_BUDGETS = {
 const INERT_AUTH = {
   credentials: {
     async read() {},
-    async list() {
+    async list(): Promise<never[]> {
       return []
     },
     async modify() {
@@ -140,7 +178,9 @@ export { filterByEnabled } from './catalog-entry.ts'
  *   Without it the store is reachable but no image can actually be located.
  * @returns `{ adapter, invalidate, providerIds }`.
  */
-export function createQoderAdapter(options) {
+export function createQoderAdapter(
+  options: AdapterSwitches & { regions: RegionAdapterInput[] },
+): { adapter: unknown; invalidate: () => void; providerIds: string[] } {
   const runtimes = options.regions
   if (runtimes.length === 0) throw new Error('dsh-connect-qoder: no regions to adapt')
   const preferMaximumContext = options.preferMaximumContext ?? (() => false)
@@ -154,7 +194,7 @@ export function createQoderAdapter(options) {
   // lives in lib/adapter-models.js where it can be asserted: the rest of the
   // assembly is pure wiring against pi-ai, which needs the peer dependency and
   // therefore stays here.
-  const buildModels = (runtime) =>
+  const buildModels = (runtime: RegionAdapterInput) =>
     buildModelsFor(runtime, {
       baseUrl: `${runtime.shim.baseUrl()}/v1`,
       preferMaximumContext: preferMaximumContext(),
@@ -163,8 +203,8 @@ export function createQoderAdapter(options) {
       imageModeFor,
     })
 
-  const buildProfiles = () => {
-    const profiles = new Map()
+  const buildProfiles = (): Map<string, unknown> => {
+    const profiles = new Map<string, unknown>()
     for (const runtime of runtimes) {
       const providerId = runtime.region.id
       const displayName = runtime.region.displayName
@@ -175,7 +215,7 @@ export function createQoderAdapter(options) {
           auth: {
             apiKey: {
               name: 'Qoder loopback shim token',
-              async resolve({ credential }) {
+              async resolve({ credential }: { credential?: { key?: string } | undefined }) {
                 const apiKey = credential?.key
                 return apiKey === undefined || apiKey.length === 0
                   ? undefined
@@ -208,7 +248,7 @@ export function createQoderAdapter(options) {
     profiles: () => profiles,
     auth: INERT_AUTH,
     // Each region's shim secret is the only credential this route presents.
-    resolveApiKey: async (provider) => {
+    resolveApiKey: async (provider: string) => {
       const runtime = runtimes.find((entry) => entry.region.id === provider)
       return runtime?.shim.token()
     },

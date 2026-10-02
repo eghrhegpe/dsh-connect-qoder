@@ -1006,10 +1006,17 @@ async function activate(ctx, config) {
           }
           try {
             const body = await readJsonBody(req)
+            // `readJsonBody` is a raw reader — it parses JSON and nothing else,
+            // so the shape is whatever the client sent. Both fields are handed
+            // over as `unknown` on purpose: `applySettingsSave` does the
+            // validating (a non-string `field` is a 400 there, not a crash
+            // here), and reading `body.field` directly off `unknown` is exactly
+            // the unchecked access this narrowing replaces.
+            const posted = (body ?? {}) as { field?: unknown; value?: unknown }
             const outcome = await applySettingsSave({
               settings,
-              field: body?.field,
-              value: body?.value,
+              field: posted.field,
+              value: posted.value,
               // The live host namespace first: on 0.1.7 it is the Loader entry
               // id (`llm-qoder`), and the constant only covers hosts that mount
               // this plugin without a Loader entry. The provider name stays in
@@ -1150,7 +1157,14 @@ async function activate(ctx, config) {
       }
     }
 
-    const raw = await claimCampaign(runtime.region, credential, campaign.campaignId)
+    // `campaignId` is not read by `claim.ts` on purpose — the card-facing state
+    // never publishes it — but the CLAIM POST needs it, so it is read here off
+    // the record the picker returned. An absent id is the upstream changing the
+    // protocol, and `claimCampaign` answers a 400 for it rather than posting an
+    // empty id.
+    const campaignId = campaign.campaignId
+    if (typeof campaignId !== 'string') throw new Error('campaign record carries no campaign id')
+    const raw = await claimCampaign(runtime.region, credential, campaignId)
     const result = normalizeClaimResult(raw, campaign)
     if (result.claimed !== true) throw new Error('Qoder did not confirm this check-in')
 
@@ -1284,9 +1298,14 @@ async function activate(ctx, config) {
           const read = await readJsonBodyOr400(req, res)
           if (read.ok !== true) return
           const body = read.body
+          // As in the save route: the body's shape is the client's, so the one
+          // read below goes through an explicit narrowing rather than off
+          // `unknown`. A non-string `region` is not an error here — it simply
+          // falls through to `undefined`, which means "every region".
+          const posted = (body ?? {}) as { region?: unknown }
           const wanted =
-            typeof body?.region === 'string' && REGIONS.some((region) => region.id === body.region)
-              ? body.region
+            typeof posted.region === 'string' && REGIONS.some((region) => region.id === posted.region)
+              ? posted.region
               : undefined
           // "Re-read" for a running region means: drop the cached credential
           // so the next resolve re-reads the app store, and force a catalog
@@ -1335,7 +1354,11 @@ async function activate(ctx, config) {
           if (!originAllowed(req, res)) return
           const read = await readJsonBodyOr400(req, res)
           if (read.ok !== true) return
-          const region = REGIONS.find((entry) => entry.id === read.body?.region)
+          // Same narrowing as the reload route: `find` comparing against `entry.id`
+          // is the validity check, so a missing or non-string `region` simply
+          // matches nothing and the 400 below answers it.
+          const posted = (read.body ?? {}) as { region?: unknown }
+          const region = REGIONS.find((entry) => entry.id === posted.region)
           if (region === undefined) return sendJson(res, 400, { error: 'unknown region' })
           const runtime = started.find((entry) => entry.region.id === region.id)?.runtime
           const credential =

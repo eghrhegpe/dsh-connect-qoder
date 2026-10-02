@@ -28,6 +28,10 @@
  * @module dsh-connect-qoder/routes
  */
 import { sendJson } from './http-utils.ts'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+
+/** The result of a guarded body read: a parsed body, or a 400 already sent. */
+export type JsonBodyResult = { ok: true; body: unknown } | { ok: false; body: undefined }
 
 /**
  * Read a JSON request body, capped.
@@ -42,8 +46,8 @@ import { sendJson } from './http-utils.ts'
  * @param maxBytes - the largest body accepted, in bytes.
  * @returns the parsed value, or `undefined` for an empty body.
  */
-export async function readJsonBody(req, maxBytes = 64 * 1024) {
-  const chunks = []
+export async function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
+  const chunks: Buffer[] = []
   let size = 0
   await new Promise((resolve, reject) => {
     req.on('data', (chunk) => {
@@ -85,7 +89,11 @@ export async function readJsonBody(req, maxBytes = 64 * 1024) {
  * owns the 64 KiB cap, and a default here would quietly override it.
  * @returns `{ ok: true, body }`, or `{ ok: false }` once a 400 has been sent.
  */
-export async function readJsonBodyOr400(req: any, res: any, maxBytes?: number) {
+export async function readJsonBodyOr400(
+  req: IncomingMessage,
+  res: ServerResponse,
+  maxBytes?: number,
+): Promise<JsonBodyResult> {
   try {
     return { ok: true, body: await readJsonBody(req, maxBytes) }
   } catch (error: any) {
@@ -139,14 +147,14 @@ export async function readJsonBodyOr400(req: any, res: any, maxBytes?: number) {
  * @param req - the Node request.
  * @returns true when the request may proceed.
  */
-export function loopbackRequest(req) {
+export function loopbackRequest(req: IncomingMessage): boolean {
   const origin = req.headers.origin
   // No Origin is the same-origin GET case (and any non-browser client). The
   // browser always sends one for a cross-origin request, so its absence cannot
   // mean "a page on another loopback port did this".
   if (origin === undefined) return true
   if (typeof origin !== 'string') return false
-  let authority
+  let authority: string
   try {
     authority = new URL(origin).host
   } catch {
@@ -169,7 +177,7 @@ export function loopbackRequest(req) {
  * comparison in {@link loopbackRequest}. Exported so the loopback set is one
  * list rather than a condition repeated in two places.
  */
-export function isLoopbackAuthority(authority) {
+export function isLoopbackAuthority(authority: unknown): boolean {
   const text = String(authority).toLowerCase()
   // Strip the port, keeping an IPv6 literal's brackets intact: `[::1]:19387`
   // is loopback, `::1:19387` is not a valid authority to compare.
@@ -200,7 +208,11 @@ export function isLoopbackAuthority(authority) {
  *
  * @returns true if the method is allowed, false if the response was sent.
  */
-export function methodAllowed(req, res, ...methods) {
+export function methodAllowed(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ...methods: Array<string | undefined>
+): boolean {
   // A HEAD on a GET route is served as a GET; the writer omits the body.
   if (req.method === 'HEAD' && methods.includes('GET')) return true
   if (methods.includes(req.method)) return true
@@ -220,7 +232,7 @@ export function methodAllowed(req, res, ...methods) {
  *
  * @returns true if the origin is trusted, false if the response was sent.
  */
-export function originAllowed(req, res) {
+export function originAllowed(req: IncomingMessage, res: ServerResponse): boolean {
   if (loopbackRequest(req)) return true
   sendJson(res, 403, { error: 'origin-not-trusted' })
   return false

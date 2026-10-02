@@ -46,6 +46,18 @@
  * @module dsh-connect-qoder/claim
  */
 import { toEpochMs } from './time.ts'
+import type { Campaign, CheckinState } from './domain.ts'
+
+/**
+ * An upstream record of the kind these readers accept.
+ *
+ * Typed as "an object, or something this plugin has not seen" rather than
+ * `Campaign`, because every field on {@link Campaign} is optional and the real
+ * guarantee the readers rely on is only that the value is NOT null — the
+ * upstream is a private protocol this plugin clones with no contract, so a
+ * narrower claim would be a claim it cannot keep.
+ */
+type LooseRecord = Partial<Campaign> & Record<string, unknown>
 
 /** MIME-free label for the one campaign type that actually pays out. */
 export const CLAIM_BENEFIT_ACTION = 'CLAIM_BENEFIT'
@@ -62,8 +74,8 @@ export const CLAIMED_STATUS = 'CLAIMED'
  * @param {object} campaign - one raw campaign record.
  * @returns `{ amount, kind, validDays }` when it has a numeric amount.
  */
-export function benefitOf(campaign) {
-  const benefit = campaign?.benefit
+export function benefitOf(campaign: unknown): { amount: number; kind: string; validDays?: number } | undefined {
+  const benefit = (campaign as LooseRecord | null | undefined)?.benefit
   if (benefit === null || typeof benefit !== 'object') return undefined
   const amount = Number(benefit.amount)
   if (!Number.isFinite(amount) || amount <= 0) return undefined
@@ -84,9 +96,10 @@ export function benefitOf(campaign) {
  * absent window means the upstream is not gating the round rather than that
  * the round has ended.
  */
-function windowOpenAt(campaign, nowMs) {
-  const startAt = toEpochMs(campaign?.startAt ?? campaign?.beginAt)
-  const endAt = toEpochMs(campaign?.endAt)
+function windowOpenAt(campaign: unknown, nowMs: number): boolean {
+  const record = campaign as LooseRecord | null | undefined
+  const startAt = toEpochMs(record?.startAt ?? record?.beginAt)
+  const endAt = toEpochMs(record?.endAt)
   if (startAt !== undefined && nowMs < startAt) return false
   if (endAt !== undefined && nowMs > endAt) return false
   return true
@@ -99,8 +112,8 @@ function windowOpenAt(campaign, nowMs) {
  * @param {number} [nowMs] - clock, injected for testing.
  * @returns the raw record, or `undefined` when there is none.
  */
-export function claimableCampaignOf(payload, nowMs = Date.now()) {
-  const list = payload?.campaigns
+export function claimableCampaignOf(payload: unknown, nowMs = Date.now()): LooseRecord | undefined {
+  const list = (payload as LooseRecord | null | undefined)?.campaigns
   if (!Array.isArray(list)) return undefined
   for (const campaign of list) {
     if (campaign === null || typeof campaign !== 'object') continue
@@ -117,8 +130,8 @@ export function claimableCampaignOf(payload, nowMs = Date.now()) {
  * @param {object} campaign - the record from {@link claimableCampaignOf}.
  * @returns true when its status says so.
  */
-export function campaignIsClaimed(campaign) {
-  return campaign?.claimStatus === CLAIMED_STATUS
+export function campaignIsClaimed(campaign: unknown): boolean {
+  return (campaign as LooseRecord | null | undefined)?.claimStatus === CLAIMED_STATUS
 }
 
 /**
@@ -138,7 +151,7 @@ export function campaignIsClaimed(campaign) {
  * @param {number} [nowMs] - clock, injected for testing.
  * @returns `{ active, todayCheckedIn, amount?, unit?, validDays?, endsAt? }`.
  */
-export function checkinStateFrom(payload, nowMs = Date.now()) {
+export function checkinStateFrom(payload: unknown, nowMs = Date.now()): CheckinState {
   const campaign = claimableCampaignOf(payload, nowMs)
   if (campaign === undefined) return { active: false, todayCheckedIn: false }
   const benefit = benefitOf(campaign)
@@ -174,8 +187,14 @@ export function checkinStateFrom(payload, nowMs = Date.now()) {
  *   so reporting what the campaign advertises would claim a gain that did not
  *   happen.
  */
-export function normalizeClaimResult(payload, campaign) {
-  const body = payload?.data !== null && typeof payload?.data === 'object' ? payload.data : payload
+export function normalizeClaimResult(
+  payload: unknown,
+  campaign?: unknown,
+): { claimed: boolean; replayed: boolean; amount?: number; expiresAt?: number } {
+  const payloadRecord = payload as LooseRecord | null | undefined
+  const body = (
+    payloadRecord?.data !== null && typeof payloadRecord?.data === 'object' ? payloadRecord.data : payload
+  ) as LooseRecord | null | undefined
   const status = typeof body?.status === 'string' ? body.status : ''
   const replayed = body?.replayed === true
   const granted = status === CLAIMED_STATUS || replayed || body?.success === true

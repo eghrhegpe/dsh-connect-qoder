@@ -45,7 +45,55 @@ import {
 } from './credentials.ts'
 
 /** The four states {@link readAccountState} can return. */
-export const ACCOUNT_STATES = ['ok', 'expired', 'needs-app', 'signed-out']
+export const ACCOUNT_STATES = ['ok', 'expired', 'needs-app', 'signed-out'] as const
+
+/** One of the four states, as a type. */
+export type AccountState = (typeof ACCOUNT_STATES)[number]
+
+/**
+ * The region fields this module reads.
+ *
+ * `appNames` / `newAppNames` are the two directory spellings it probes; `id`,
+ * `displayName`, `manageUrl` and `downloadUrl` are echoed into the card payload
+ * verbatim. Declared here rather than reusing `Region` from `domain.ts` because
+ * the region table also carries credential-facing fields this module has no
+ * business touching.
+ */
+export interface AccountRegion {
+  id: string
+  displayName: string
+  manageUrl?: string
+  downloadUrl?: string
+  appNames: string[]
+  newAppNames?: string[]
+}
+
+/** Identity for display — never a credential. See the module header. */
+export interface AccountIdentity {
+  name: string
+  email: string
+  expiresAt?: number
+}
+
+/**
+ * The state record the card receives.
+ *
+ * `identity` and `detail` are typed as present-but-possibly-undefined rather
+ * than optional because the payload builder writes every key on purpose — the
+ * card's checks are then property reads rather than `in` checks on keys that
+ * might be missing.
+ */
+export interface AccountStateRecord {
+  region: string
+  regionName: string
+  manageUrl?: string
+  downloadUrl?: string
+  state: AccountState
+  source?: string
+  appName?: string
+  identity: AccountIdentity | undefined
+  detail: string | undefined
+}
 
 /**
  * The app data directories a region probes, new layout first.
@@ -55,7 +103,7 @@ export const ACCOUNT_STATES = ['ok', 'expired', 'needs-app', 'signed-out']
  * `<AppName>` one) and `loadCredential` tries them in that order; a present
  * directory is a present directory in either layout, so both are checked.
  */
-function probeDirs(region, appDataRoot) {
+function probeDirs(region: AccountRegion, appDataRoot: string): Array<{ name: string; path: string }> {
   const names = [...(region.newAppNames ?? []), ...region.appNames]
   return names
     .map((name) => ({ name, path: join(appDataRoot, name) }))
@@ -95,18 +143,32 @@ function probeDirs(region, appDataRoot) {
 export interface ReadAccountStateOptions {
   force?: boolean
   cachedOnly?: boolean
-  loadCredential?: (region: any, appDataRoot: string, options?: { force?: boolean; cachedOnly?: boolean }) => any
-  loadEnvCredential?: (region: any) => any
-  describeUnwrapFailure?: (region: any, appDataRoot: string) => any
+  /**
+   * The store readers, typed loosely on purpose: a test injects minimal
+   * stand-ins, and `loadCredentialAsync` returns a promise where the sync one
+   * does not — so the two are one signature here and are told apart by the
+   * unconditional `Promise.resolve` in the body, which is what lets one
+   * implementation serve both.
+   */
+  loadCredential?: (region: AccountRegion, appDataRoot: string, options?: { force?: boolean; cachedOnly?: boolean }) => unknown
+  loadEnvCredential?: (region: AccountRegion) => unknown
+  describeUnwrapFailure?: (path: string) => string | undefined
 }
 
-export function readAccountState(region: any, appDataRoot?: any, options: ReadAccountStateOptions = {}): Promise<any> {
+/** The region fields echoed into every state record. */
+type RecordBase = Pick<AccountStateRecord, 'region' | 'regionName' | 'manageUrl' | 'downloadUrl'>
+
+export function readAccountState(
+  region: AccountRegion,
+  appDataRoot?: string,
+  options: ReadAccountStateOptions = {},
+): Promise<AccountStateRecord> {
   const loadCred =
     options.loadCredential ??
     (options.cachedOnly === true
-      ? (r, root) => loadCredential(r, root, { cachedOnly: true })
+      ? (r: AccountRegion, root: string) => loadCredential(r, root, { cachedOnly: true })
       : options.force === true
-        ? (r, root) => loadCredential(r, root, { force: true })
+        ? (r: AccountRegion, root: string) => loadCredential(r, root, { force: true })
         : loadCredential)
   const loadEnv = options.loadEnvCredential ?? loadEnvCredential
   const unwrapFailure = options.describeUnwrapFailure ?? readUnwrapFailure
@@ -145,41 +207,64 @@ export function readAccountState(region: any, appDataRoot?: any, options: ReadAc
  *   `loadCredential` may return a promise.
  * @returns a promise of the state record.
  */
-export function readAccountStateAsync(region: any, appDataRoot?: any, options: ReadAccountStateOptions = {}) {
+export function readAccountStateAsync(
+  region: AccountRegion,
+  appDataRoot?: string,
+  options: ReadAccountStateOptions = {},
+): Promise<AccountStateRecord> {
   return readAccountState(region, appDataRoot, {
     ...options,
     loadCredential:
       options.loadCredential ??
       (options.cachedOnly === true
-        ? (r, root) => loadCredentialAsync(r, root, { cachedOnly: true })
+        ? (r: AccountRegion, root: string) => loadCredentialAsync(r, root, { cachedOnly: true })
         : options.force === true
-          ? (r, root) => loadCredentialAsync(r, root, { force: true })
+          ? (r: AccountRegion, root: string) => loadCredentialAsync(r, root, { force: true })
           : loadCredentialAsync),
   })
 }
 
 /** The `ok` / `expired` verdict, given a readable credential. */
-function signedIn(base, credential) {
-  const identity = {
-    name: typeof credential.name === 'string' ? credential.name : '',
-    email: typeof credential.email === 'string' ? credential.email : '',
+function signedIn(
+  base: RecordBase,
+  credential: unknown,
+): AccountStateRecord {
+  // Only identity fields are read, and only into a fresh object — the token and
+  // its refresh half stay behind. See the module header: this record is the only
+  // account payload the card ever receives.
+  const cred = (credential ?? {}) as {
+    name?: unknown
+    email?: unknown
+    expiresAt?: unknown
+    expired?: unknown
+    source?: unknown
+    appName?: unknown
+  }
+  const identity: AccountIdentity = {
+    name: typeof cred.name === 'string' ? cred.name : '',
+    email: typeof cred.email === 'string' ? cred.email : '',
     // Epoch milliseconds, when the source has them. An env PAT carries no
     // expiry of its own (the exchange result's expiry is not local
     // evidence), so its identity simply has no `expiresAt`.
-    ...(Number(credential.expiresAt) > 0 ? { expiresAt: Number(credential.expiresAt) } : {}),
+    ...(Number(cred.expiresAt) > 0 ? { expiresAt: Number(cred.expiresAt) } : {}),
   }
   return {
     ...base,
-    state: credential.expired === true ? 'expired' : 'ok',
-    source: credential.source,
-    appName: credential.appName,
+    state: cred.expired === true ? 'expired' : 'ok',
+    source: typeof cred.source === 'string' ? cred.source : undefined,
+    appName: typeof cred.appName === 'string' ? cred.appName : undefined,
     identity,
     detail: undefined,
   }
 }
 
 /** The `needs-app` / `signed-out` verdict, from directory presence alone. */
-function signedOutOrNeedsApp(region, appData, base, unwrapFailure) {
+function signedOutOrNeedsApp(
+  region: AccountRegion,
+  appData: string,
+  base: RecordBase,
+  unwrapFailure: (path: string) => string | undefined,
+): AccountStateRecord {
   const present = probeDirs(region, appData)
   if (present.length > 0) {
     // The first recorded cause wins: it is the one for the directory the

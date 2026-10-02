@@ -171,3 +171,54 @@ export type CatalogOutcome =
 export interface PluginLogger {
   warn?(message: string, error?: unknown): void
 }
+
+/**
+ * One raw campaign record, as `GET /sash/api/v1/me/campaigns` returns it.
+ *
+ * This is an UPSTREAM shape, not one this plugin mints — `claim.ts` reads it in
+ * place and normalizes the answer, deliberately never handing the record itself
+ * to the card (a stale campaign id could be clicked from a published state, so
+ * the host re-reads before every claim).
+ *
+ * Every field is optional and the timestamps are `unknown`, not `number`: the
+ * upstream is inconsistent here in a way `toEpochMs` exists to absorb — the
+ * campaign list publishes second-precision integers while the claim endpoint for
+ * the same round answers with RFC 3339 strings.
+ */
+export interface Campaign {
+  /** `CLAIM_BENEFIT` for the round that pays; anything else never does. */
+  actionType?: string
+  /** `CLAIMED` once this account collected the round. */
+  claimStatus?: string
+  /** Seconds, milliseconds or an RFC 3339 string — see `toEpochMs`. */
+  startAt?: unknown
+  /** The alternative spelling the campaign list sometimes uses. */
+  beginAt?: unknown
+  /** Seconds, milliseconds or an RFC 3339 string — see `toEpochMs`. */
+  endAt?: unknown
+  /** The payout attached to a `CLAIM_BENEFIT` action, when there is one. */
+  benefit?: {
+    amount?: unknown
+    kind?: unknown
+    validity?: { days?: unknown }
+  }
+}
+
+/**
+ * The card-facing check-in state, shaped after `status.checkin`.
+ *
+ * The card renders a button and never derives `active` or `todayCheckedIn`
+ * itself — that "one fact, one place" rule is what off-peak pricing cost this
+ * plugin once, so the two fields are stated here and nowhere else.
+ */
+export interface CheckinState {
+  /** Whether the upstream has a round running. */
+  active: boolean
+  /** Whether this account already collected it. */
+  todayCheckedIn: boolean
+  /** Only present when the round actually pays out. */
+  amount?: number
+  unit?: string
+  validDays?: number
+  endsAt?: number
+}

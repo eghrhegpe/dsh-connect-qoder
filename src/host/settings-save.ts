@@ -18,6 +18,26 @@
  * @module dsh-connect-qoder/settings-save
  */
 import { unwrapVolatile } from './volatile.ts'
+import type { VolatileRef } from './volatile.ts'
+
+/** One row as `settings.describe()` reports it — `{ ns, value }` and whatever else. */
+export type SettingsRow = { ns?: unknown; value?: Record<string, unknown> } & Record<string, unknown>
+
+/**
+ * The host settings service, as much of it as this module touches.
+ *
+ * `mutate` and `describe` are the only two members read. On the 0.1.7 line a
+ * `mutate` can resolve without persisting — that is the whole reason the read-back
+ * check below exists — so the shape being declared here must not be read as a
+ * promise that calling it wrote anything.
+ */
+export interface SettingsService {
+  describe(): SettingsRow[]
+  mutate(ns: string, ops: Array<{ op: 'set'; path: string[]; value: unknown }>, extra?: unknown): Promise<unknown>
+}
+
+/** Deep equality, injected so this module stays free of `node:util`. */
+export type EqualityFn = (a: unknown, b: unknown) => boolean
 
 /**
  * The fields a save may write, and the merge rule each one uses.
@@ -37,7 +57,7 @@ export const SAVE_FIELDS = {
   enabledRegions: 'regions',
   imageOverrides: 'whole',
   useMaximumContextWindow: 'whole',
-}
+} as const
 
 /**
  * Find the settings row this plugin owns.
@@ -55,7 +75,7 @@ export const SAVE_FIELDS = {
  * @param candidates - the namespaces to try, in priority order.
  * @returns the matching row, or `undefined`.
  */
-export function findSettingsRow(rows, candidates) {
+export function findSettingsRow(rows: SettingsRow[], candidates: string[]): SettingsRow | undefined {
   for (const candidate of candidates) {
     const exact = rows.find((entry) => String(entry.ns) === candidate)
     if (exact !== undefined) return exact
@@ -87,8 +107,8 @@ export function findSettingsRow(rows, candidates) {
  * @param fallback - the namespace to declare when the host exposes no entry id.
  * @returns the namespace to declare to the host.
  */
-export function settingsNamespaceOf(ctx, fallback) {
-  const id = ctx?.fiber?.entry?.options?.id
+export function settingsNamespaceOf(ctx: unknown, fallback: string): string {
+  const id = (ctx as { fiber?: { entry?: { options?: { id?: unknown } } } } | undefined)?.fiber?.entry?.options?.id
   return typeof id === 'string' && id !== '' ? id : fallback
 }
 
@@ -100,12 +120,12 @@ export function settingsNamespaceOf(ctx, fallback) {
  * @param stored - the document's current value, already unwrapped.
  * @returns the value to write.
  */
-export function mergeForShape(shape, incoming, stored) {
+export function mergeForShape(shape: unknown, incoming: unknown, stored: unknown): unknown {
   if (shape !== 'regions') return incoming
   // Merge per region rather than replacing: the card posts one region at a
   // time, and a wholesale replace would delete the other region's allow-list.
-  const base = stored !== null && typeof stored === 'object' ? stored : {}
-  const target = incoming !== null && typeof incoming === 'object' ? incoming : {}
+  const base = stored !== null && typeof stored === 'object' ? (stored as Record<string, unknown>) : {}
+  const target = incoming !== null && typeof incoming === 'object' ? (incoming as Record<string, unknown>) : {}
   return { ...base, ...target }
 }
 
@@ -116,8 +136,13 @@ export function mergeForShape(shape, incoming, stored) {
  * @param field - the field name.
  * @returns the value the host actually holds.
  */
-export function readField(row, field) {
-  return unwrapVolatile(row?.value?.[field])
+export function readField(row: SettingsRow | undefined, field: string): unknown {
+  // The `value` hop goes through an explicit read rather than optional chaining
+  // on an `unknown`: a row whose `value` is not an object must answer
+  // `undefined`, not throw — and that is a runtime check, so it is written as one.
+  const value = row?.value
+  if (value === null || typeof value !== 'object') return undefined
+  return unwrapVolatile((value as Record<string, VolatileRef<unknown>>)[field])
 }
 
 /**
@@ -136,7 +161,19 @@ export function readField(row, field) {
  *   `node:util`; defaults to a structural comparison.
  * @returns `{ status, body }` — the HTTP status and the JSON payload.
  */
-export async function applySettingsSave({ settings, field, value, candidates, equals }) {
+export async function applySettingsSave({
+  settings,
+  field,
+  value,
+  candidates,
+  equals,
+}: {
+  settings: SettingsService
+  field: unknown
+  value: unknown
+  candidates: string[]
+  equals?: EqualityFn
+}): Promise<{ status: number; body: Record<string, unknown> }> {
   // `Object.hasOwn` rather than a plain lookup: a bare `SAVE_FIELDS[field]`
   // reaches the prototype chain, so `field: 'constructor'` (or `toString`,
   // `__proto__`, …) yields a function, is not `undefined`, and walks straight
@@ -149,7 +186,12 @@ export async function applySettingsSave({ settings, field, value, candidates, eq
       body: { error: `field must be one of ${Object.keys(SAVE_FIELDS).join(', ')}` },
     }
   }
-  const shape = SAVE_FIELDS[field]
+  // `as const` on the whitelist is what makes this index legal: it turns the
+  // four keys into literal types, so indexing with the narrowed `field` is
+  // checked against the real key set rather than falling back to an index
+  // signature. The `Object.hasOwn` guard above is what makes it safe at
+  // runtime; this is what makes it readable at compile time.
+  const shape = SAVE_FIELDS[field as keyof typeof SAVE_FIELDS]
 
   const rows = settings.describe()
   const row = findSettingsRow(rows, candidates)
@@ -165,7 +207,11 @@ export async function applySettingsSave({ settings, field, value, candidates, eq
   }
 
   const merged = mergeForShape(shape, value, readField(row, field))
-  await settings.mutate(row.ns, [{ op: 'set', path: [field], value: merged }], undefined)
+  // `row.ns` is compared by `String(...)` everywhere above, so it is stringified
+  // once here rather than passed as the raw `unknown` — the namespace that goes
+  // to `mutate` is then the same value the match was made against.
+  const ns = String(row.ns)
+  await settings.mutate(ns, [{ op: 'set', path: [field], value: merged }], undefined)
 
   // Read the value back and verify it actually landed. On the 0.1.7 line a
   // `mutate` can settle without persisting, so "the call returned" is not
@@ -200,14 +246,18 @@ export async function applySettingsSave({ settings, field, value, candidates, eq
  * production; this exists so the module can be exercised without importing it,
  * and it is only ever reached when a test omits `equals`.
  */
-function deepEqual(a, b) {
+function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (typeof a !== typeof b) return false
   if (a === null || b === null) return false
   if (typeof a !== 'object') return Number.isNaN(a) && Number.isNaN(b)
   if (Array.isArray(a) !== Array.isArray(b)) return false
-  const aKeys = Object.keys(a)
-  const bKeys = Object.keys(b)
+  // Both are objects by this point and not both arrays, so the index reads are
+  // legal against `Record<string, unknown>` rather than reaching for a cast.
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const aKeys = Object.keys(left)
+  const bKeys = Object.keys(right)
   if (aKeys.length !== bKeys.length) return false
-  return aKeys.every((key) => Object.prototype.hasOwnProperty.call(b, key) && deepEqual(a[key], b[key]))
+  return aKeys.every((key) => Object.prototype.hasOwnProperty.call(right, key) && deepEqual(left[key], right[key]))
 }
