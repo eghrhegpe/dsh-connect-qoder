@@ -228,3 +228,99 @@ test('a save the host endpoint refuses surfaces the reason, not a "saved" banner
     'the card must not claim a save that never persisted',
   )
 })
+
+test('the name filter narrows the roster and counts what remains', async () => {
+  const { container, react } = await mount({
+    models: [model({ id: 'a1', name: 'Alpha' }), model({ id: 'b1', name: 'Beta' })],
+  })
+
+  const input = container.querySelector('.dsm-qoder-search')
+  assert.ok(input !== null, 'no search box rendered')
+  await update(react, () => {
+    // `value` is the controlled input; set it the way the browser would.
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, 'alpha')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+
+  const names = [...container.querySelectorAll('.dsm-qoder-name')].map((n) => n.textContent)
+  assert.deepEqual(names, ['Alpha'], 'the filter must hide Beta')
+
+  const count = container.querySelector('.dsm-qoder-count')
+  assert.match(count.textContent, /1 \/ 2/, 'the counter must report the filtered view')
+})
+
+test('a filter that matches nothing offers a one-click way back', async () => {
+  const { container, react } = await mount({
+    models: [model({ id: 'a1', name: 'Alpha' })],
+  })
+
+  const input = container.querySelector('.dsm-qoder-search')
+  await update(react, () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, 'zzz-no-such-model')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+
+  const empty = [...container.querySelectorAll('.dsm-qoder-state')]
+    .find((n) => n.textContent.includes('没有匹配'))
+  assert.ok(empty !== undefined, 'an empty result must say so')
+
+  const clear = [...container.querySelectorAll('button')]
+    .find((b) => b.textContent.trim() === '清除筛选')
+  assert.ok(clear !== undefined, 'an empty result must offer to clear the filter')
+  await update(react, () => clear.click())
+
+  const names = [...container.querySelectorAll('.dsm-qoder-name')].map((n) => n.textContent)
+  assert.deepEqual(names, ['Alpha'], 'clearing the filter must restore the roster')
+})
+
+test('a protocol-shape change is shown as "update the plugin", not "re-sign in"', async () => {
+  const { container } = await mount({
+    models: [
+      model({ id: 'm1', promotion: { active: false, windowStart: '22:00', windowEnd: '08:00' } }),
+    ],
+    fetch: (() => {
+      const json = (value) => ({ ok: true, status: 200, json: async () => value })
+      const models = [
+        { id: 'm1', region: 'qoder-cn', name: 'Alpha', isVL: false },
+      ]
+      return async (url) => {
+        const path = String(url)
+        if (path.includes('/models')) {
+          return json({
+            models,
+            imageOverrides: {},
+            enabledModelIds: {},
+            useMaximumContextWindow: false,
+            refreshedAt: 1750000000000,
+            refreshFailures: [{ reason: 'protocol-shape-changed' }],
+          })
+        }
+        if (path.includes('/account')) {
+          return json({
+            regions: [
+              { region: 'qoder-cn', regionName: 'Qoder CN', state: 'ok', enabled: true },
+            ],
+            enabledRegions: { 'qoder-cn': true },
+          })
+        }
+        if (path.includes('/usage')) return json({ regions: [] })
+        throw new Error(`unexpected fetch: ${path}`)
+      }
+    })(),
+  })
+
+  const states = [...container.querySelectorAll('.dsm-qoder-state')].map((n) => text(n))
+  const protocol = states.find((s) => s.includes('更新插件'))
+  assert.ok(
+    protocol !== undefined,
+    `a protocol change must point at a plugin update, got ${JSON.stringify(states)}`,
+  )
+  // The copy also says "重新登录没有用" — that is the point. The assertion that
+  // matters is the FIRST remedy named is the update, not a re-sign-in prompt.
+  assert.ok(
+    protocol.indexOf('更新插件') < protocol.indexOf('登录') || !protocol.includes('登录'),
+    `the copy must lead with the update, got ${JSON.stringify(protocol)}`,
+  )
+})
