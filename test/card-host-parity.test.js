@@ -37,6 +37,12 @@ import {
   contextWindowIsReal,
   formatContextWindow,
 } from '../src/host/pi-model.ts'
+// The card's window-label rule, imported from the browser-free decision layer
+// rather than re-transcribed. `windowLabelOf` was moved out of the React bundle
+// into src/client/card-model.ts, so this parity test can assert the REAL card
+// rule against the host's. The bundle-text assertions further below still guard
+// the shipped artifact itself (a second copy of the arithmetic must not return).
+import { windowLabelOf } from '../src/client/card-model.ts'
 import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../src/host/offpeak.ts'
 
 const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakRemaining }
@@ -55,12 +61,7 @@ const BUNDLE = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8'
  * when a default was actually marked.
  */
 function cardWindowLabelOf(model, preferMax) {
-  const options = Array.isArray(model.contextOptions) ? model.contextOptions.filter((n) => Number(n) > 0) : []
-  if (options.length === 0 || !(Number(model.defaultContextWindow) > 0)) return ''
-  if (preferMax) return format(Math.max(...options))
-  return typeof model.contextWindowLabel === 'string'
-    ? model.contextWindowLabel
-    : format(Number(model.defaultContextWindow))
+  return windowLabelOf(model, preferMax)
 }
 
 const format = (tokens) => {

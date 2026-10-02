@@ -238,7 +238,8 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/controller.ts` | 卡片可编辑状态机（staged/saved 三字段、`dirty`、`save`、`discard` 与派生的模型视图）——无 React、无 DOM，可被 `node:test` 直接测 |
 | `src/client/copy.ts` | 卡片文案聚合入口（中/英），`index.ts` 与 `card.tsx` 只从这里取 |
 | `src/client/copy-row.ts` `copy-usage.ts` `copy-account.ts` | 按面板拆分的三段文案：模型行与错峰、用量与签到、账号与区域标签条 |
-| `src/client/card.tsx` | 卡片的纯函数与六个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `CheckinCard` / `QuotaBlock`）——JSX 语法，组件本身只做渲染接线，可编辑状态委托给 `controller.ts` |
+| `src/client/card-model.ts` | 卡片的**浏览器无关决策层**：视图模型类型词汇 + 纯规则（`offPeakState` / `rateAt` / `windowLabelOf` / `refreshNoticeKey` / 格式化）。无 React、无 DOM、无 `fetch`，因此 Node 测试可直接 import 真规则，而非镜像副本（这是向 sensenova `snapshot.ts` 对齐的那一刀） |
+| `src/client/card.tsx` | 卡片的六个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `CheckinCard` / `QuotaBlock`）——JSX 语法，组件本身只做渲染接线，纯规则委托给 `card-model.ts`、可编辑状态委托给 `controller.ts` |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
 | `src/client/react-shim.d.ts` | 最小 React 类型垫片（只管类型检查，不参与构建、不随包发布） |
 

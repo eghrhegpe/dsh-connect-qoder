@@ -25,6 +25,13 @@ import assert from 'node:assert/strict'
 
 import { normalizeEntry, projectModelRow } from '../src/host/catalog-entry.ts'
 import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../src/host/offpeak.ts'
+// The card's off-peak gate, imported from the browser-free decision layer rather
+// than re-transcribed. `offPeakState` was moved out of the React bundle into
+// src/client/card-model.ts so a Node test can assert against the REAL rule, not a
+// copy that would pass even if the source drifted (the mirror failure this file
+// previously accepted). test/client-bundle.test.js still guards the shipped
+// bundle independently.
+import { offPeakState } from '../src/client/card-model.ts'
 
 const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakRemaining }
 
@@ -48,76 +55,30 @@ function cardInstallsClock(rows) {
 }
 
 /**
- * The card's per-row off-peak gate, reproduced for the same reason as
- * {@link cardInstallsClock}.
+ * The card's per-row off-peak gate, now backed by the REAL rule.
  *
- * SYNC CONSTRAINT: this mirrors `offPeakState` in lib/client.js. The card
- * evaluates the window in the browser so it can tick on its own, and that copy
- * of the rule used to look at the window fields alone — not at
- * `promotion.active`. Qoder keeps `windowStart`/`windowEnd` populated on a
- * promotion it has switched off (upstream.normalizePromotion carries `active`
- * and the window independently), so such a row was rendered at the DISCOUNTED
- * rate during its own hours: a price the user is not charged, and one the host
- * contradicted — the picker, resolving the same catalog entry through `rateNow`,
- * correctly showed the `before` rate.
+ * This used to be a hand-written transcription of `offPeakState` (`SYNC
+ * CONSTRAINT: this mirrors …`). It is now a thin wrapper around the imported
+ * `offPeakState` from src/client/card-model.ts, so the assertions below exercise
+ * the actual card code rather than a copy that would pass even if the source
+ * drifted (the mirror failure this file previously accepted).
+ *
+ * Why the gate must look at `promotion.active`, not the window fields alone:
+ * Qoder keeps `windowStart`/`windowEnd` populated on a promotion it has switched
+ * off (upstream.normalizePromotion carries `active` and the window
+ * independently), so a switched-off row was once rendered at the DISCOUNTED rate
+ * during its own hours — a price the user is not charged, and one the host
+ * contradicted (the picker, resolving the same catalog entry through `rateNow`,
+ * correctly showed the `before` rate). The active gate is load-bearing.
  *
  * The bug needs a mixed catalog to surface: the ticking clock is installed when
  * ANY model reports `active === true`, and from then on every row re-resolves
  * through this gate.
  *
- * This is a faithful transcription, guards and window arithmetic both, so the
- * comparison below is over the whole verdict. It is a SPECIFICATION of the
- * card's rule, not the card's code: the card runs in the browser and cannot be
- * imported into a Node test, so this file pins the rule and
- * test/client-bundle.test.js pins the shipped bundle (see docs/KNOWN_GAPS.md
- * item 3（客户端卡片的门控表达式）). If the card's gate is rewritten, this copy
- * has to be rewritten with it.
- *
  * @returns whether the card would render an off-peak badge for this row.
  */
 function cardRendersOffPeak(row, now) {
-  const promo = row.promotion
-  if (promo === null || typeof promo !== 'object') return false
-  if (promo.active !== true) return false
-  const start = cardParseClock(promo.windowStart)
-  const end = cardParseClock(promo.windowEnd)
-  if (start === undefined || end === undefined || start === end) return false
-  const seconds = cardLocalSecondsOf(now, promo.timezone ?? 'Asia/Shanghai')
-  if (seconds === undefined) return false
-  // `end` not after `start` means the window crosses midnight.
-  return start < end ? seconds >= start && seconds < end : seconds >= start || seconds < end
-}
-
-/** `HH:MM` (or `HH:MM:SS`) to seconds past midnight, as the card parses it. */
-function cardParseClock(text) {
-  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(text ?? '').trim())
-  if (match === null) return undefined
-  const hour = Number(match[1])
-  const minute = Number(match[2])
-  const second = Number(match[3] ?? 0)
-  if (hour > 23 || minute > 59 || second > 59) return undefined
-  return hour * 3600 + minute * 60 + second
-}
-
-/** Seconds past local midnight in `timezone`, as the card computes it. */
-function cardLocalSecondsOf(date, timezone) {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hourCycle: 'h23',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).formatToParts(date)
-    const read = (type) => Number(parts.find((part) => part.type === type)?.value ?? Number.NaN)
-    const hour = read('hour') % 24
-    const minute = read('minute')
-    const second = read('second')
-    if (![hour, minute, second].every(Number.isFinite)) return undefined
-    return hour * 3600 + minute * 60 + second
-  } catch {
-    return undefined
-  }
+  return offPeakState(row, now)?.active === true
 }
 
 const PROMOTION = {

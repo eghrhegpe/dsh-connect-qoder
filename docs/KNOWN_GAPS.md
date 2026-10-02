@@ -99,53 +99,56 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
 
 ## 3. 客户端卡片的门控表达式
 
-**状态**：**已知的、刻意接受的镜像**，而且现在是**两个**。两处都**必须**留在卡片，原因不是
-"抽不出来"而是**语义不同**：卡片要每秒重算，22:00 / 08:00 的翻转必须自己发生；宿主那份
-只在请求时算一次。
+**状态**：**一真镜像 + 两层真门禁**。随 `card-model.ts` 抽离，原"两处刻意接受的镜像"
+已经收缩成**一处**——下面第 1 点；第 2 点（错峰门控）现在 import 的是**真实规则**，
+不再是手抄副本。
 
-1. `test/model-row.test.js` 的 `cardInstallsClock` 复刻了卡片 bundle 中的
-   `models.some((m) => m.promotion?.active === true)`。
-2. 同文件的 `cardRendersOffPeak`（连同 `cardParseClock` / `cardLocalSecondsOf`）
-   复刻了 `offPeakState` 的**完整**判定——守卫加窗口算术——用来钉住卡片的错峰
-   门控与 host 端 `isOffPeakActive` 永远一致。
+1. `test/model-row.test.js` 的 `cardInstallsClock` 仍复刻卡片 bundle 里的
+   `models.some((m) => m.promotion?.active === true)`。这条**抽不出来**：它住在
+   `QoderPluginCard` 的 hook 里、与"决定是否装每秒时钟"的 React 状态绑定，属于 JSX
+   装配层而非纯函数，本仓库不为卡片引入 jsdom，所以只能镜像。它的语义是"装时钟的
+   前置条件"，与 host 端 `isOffPeakActive` 不在同一处、不重算，故需要这一份独立断言。
+2. 同文件的 `cardRendersOffPeak` 与 `card-host-parity.test.js` 的 `cardWindowLabelOf`
+   **现已改为对真实规则的薄封装**：二者都 `import { offPeakState }` / `{ windowLabelOf }`
+   自 `src/client/card-model.ts` 并直接转调，不再手抄任何判定或窗口算术。这消掉了
+   这条原本最危险的镜像——它曾精确复刻 `offPeakState` 的守卫加窗口算术，原实现改坏时
+   副本照样绿。
 
-**与第 1 点的区别（这一条是本条现在的重点）**：上面这两处是**规格**，不是门禁——
-手抄的副本在原实现被改坏时依然会绿。真正的门禁在 `test/client-bundle.test.js`：
-它从**产物文本**里提取 `offPeakState` 及其依赖并执行，所以卡片侧改坏会当场变红。
-也就是说这里已经不存在"只能靠人工纪律维持"的镜像了。
+**两层真门禁（与上面第 1 点的"仅镜像"相对）**：
 
-**本轮还去掉了唯一一处真分歧**（issue 09）：`windowLabelOf` 曾与宿主的
-`contextWindowIsReal` 在"`contextOptions` 非空但 `defaultContextWindow === 0`"上给出不同答案，
-卡片显示 `200K` 而选择器不显示。卡片现在读宿主算好的 `contextWindowLabel`，
-只保留宿主无法表达的"逐行切到最宽窗口"；`test/card-host-parity.test.js` 逐状态对拍，
-并断言产物里不再有第二份窗口算术。
+- `test/client-bundle.test.js` 从**产物文本**里提取 `offPeakState` 及其依赖并执行，
+  卡片侧改坏会当场变红；这正是 issue 03（16 字节桩替换整卡）之后立的闸门，不能撤。
+- `test/protocol-shape-card.test.js` 从产物文本提取 `refreshNoticeKey` 并执行，守的是
+  发货的那份刷新裁决代码。
 
-**为什么无法 import**：卡片是浏览器 bundle——开头就取 `window.__ModuleLoader__` 与
-`react`，Node 测试里没有 DOM 宿主能装载它。源码如今**已经**入库
-（`src/client/*.ts`，issue 17 还原），`npm run build` 也能逐字节重建产物
-（verify 的 `--tsdown` 一步就是这道门），但"可重建"不等于"可 import"：测试里能执行的
-仍然只有从产物文本中提取的纯函数。
+也就是说"只能靠人工纪律维持"的镜像已经只剩 `cardInstallsClock` 一处（`offPeakState` /
+`windowLabelOf` 的断言对象已是真函数，副本漂移不再可能；产物层另由上面两道闸门兜底）。
 
-**同步约束**：卡片里那两条表达式一旦改写，测试里的副本必须一起改，否则测试会在断言
-一条没人实现的规则的同时保持绿色。
+**为什么 `card-model.ts` 能 import 而卡片整体不能**：浏览器无关决策层（`offPeakState` /
+`rateAt` / `windowLabelOf` / `refreshNoticeKey` / 格式化工具 + 视图模型类型词汇）已搬出
+React 装配层，模块**无 React、无 DOM、无 fetch**——这正是向 `dsh-connect-sensenova-token-plan`
+的 `snapshot.ts` 对齐的那一刀（sensenova 把快照决策逻辑抬进 Node 可 import 的纯模块）。
+卡片整体仍是浏览器 bundle（取 `window.__ModuleLoader__` 与 `react`），不可装进 Node 测试；
+但凡能脱离 JSX 状态的纯规则都应落进 `card-model.ts`，从而可被直接 import 而非从产物
+文本里抠。新增客户端判定逻辑前先问一句"它碰 DOM/React 状态吗"：不碰就进 `card-model.ts`，
+碰（如 `cardInstallsClock`）才留在卡片、以镜像守。
 
-**已经因此漏掉过一次**：`offPeakState` 原先只看窗口字段、不看 `promotion.active`，
-于是 Qoder 已下线但仍保留窗口字段的促销被按**折扣价**渲染——用户看到一个自己
-并不被收取的价格，而同一目录条目在模型选择器里经 `rateNow` 算出的却是
-`before` 价，两个界面自相矛盾。触发条件是目录里同时存在两种状态的模型：
-只要有任一模型 `active === true`，每秒时钟就会装上，此后**所有**行都走这条门控。
-修复是给 `offPeakState` 补上 `promo.active !== true` 的守卫（`lib/client.js`），
-并由 `cardRendersOffPeak` 与 host 端逐状态对拍。已用变异验证：抽掉守卫，
-`model-row.test.js` 3 条变红。
+**本轮去掉的唯一真分歧**（issue 09）：`windowLabelOf` 曾与宿主的 `contextWindowIsReal`
+在"`contextOptions` 非空但 `defaultContextWindow === 0`"上给出不同答案，卡片显示 `200K`
+而选择器不显示。卡片现在读宿主算好的 `contextWindowLabel`，只保留宿主无法表达的"逐行切到
+最宽窗口"；`test/card-host-parity.test.js` 逐状态对拍，并断言产物里不再有第二份窗口算术。
 
-这与本仓库其他测试曾犯的错是同一类（手抄副本），之所以接受，是因为
-「完全不覆盖」比「覆盖一个可能过期的副本」更糟——这两个 bug 都恰恰是在那一层
-发生的。
+**已经因此漏掉过一次**（这段事故史保留，它是本条存在的理由）：`offPeakState` 原先只看窗口
+字段、不看 `promotion.active`，于是 Qoder 已下线但仍保留窗口字段的促销被按**折扣价**渲染
+——用户看到一个自己并不被收取的价格，而同一目录条目在模型选择器里经 `rateNow` 算出的却是
+`before` 价，两个界面自相矛盾。触发条件是目录里同时存在两种状态的模型：只要有任一模型
+`active === true`，每秒时钟就会装上，此后**所有**行都走这条门控。修复是给 `offPeakState`
+补上 `promo.active !== true` 的守卫（`lib/client.js`），并由 `cardRendersOffPeak`（当时是副本，
+现已是真实规则的封装）与 host 端逐状态对拍。已用变异验证：抽掉守卫，`model-row.test.js`
+3 条变红（如今这 3 条断言的是真 `offPeakState`）。
 
-**根治办法（已落地）**：`src/client/*.ts` 入库，`lib/client.js` 成为可复现的构建产物。
-这消掉的是"产物无法修改"，**不是**"卡片无法进测试"——后者是 DOM 问题，本仓库不打算
-为此引入 jsdom。在这一层补上之前，规矩不变：**往卡片上加任何 UI 判定逻辑之前，先想
-清楚它的 host 端对应物是什么**——两个界面算同一个数，就必须有两处测试。
+这与本仓库其他测试曾犯的错是同一类（手抄副本），区别是现在这一类镜像只剩 `cardInstallsClock`
+一处，且 `offPeakState` / `windowLabelOf` 的覆盖对象已是可 import 的真函数，漂移在结构上不再可能。
 
 ---
 
