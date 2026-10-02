@@ -809,14 +809,10 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 		else if (typeof activeEntry.appName === "string" && activeEntry.appName !== "") activeMeta.push(t("account.appFrom", { app: activeEntry.appName }));
 		if (activeHasIdentity && Number(activeEntry.identity.expiresAt) > 0) activeMeta.push(withDate(t("account.expiresAt"), activeEntry.identity.expiresAt));
 	}
-	// A manage-page link accompanies every state the card cannot fix
-	// by itself; only the selected region's notes carry one now.
-	const activeManageLink = activeEntry !== undefined && typeof activeEntry.manageUrl === "string" && activeEntry.manageUrl !== "" ? (0, react_jsx_runtime.jsx)("a", {
-		href: activeEntry.manageUrl,
-		target: "_blank",
-		rel: "noreferrer",
-		children: ` · ${t("account.openManage")}`
-	}) : null;
+	// The expired / not-installed states no longer drag the user onto the
+	// website: they point at the client (re-sign-in / install) and carry
+	// the region's download link, labelled with where it goes. The manage
+	// link is therefore gone, and with it the `manageUrl` render.
 	return (0, react_jsx_runtime.jsxs)("div", {
 		className: "dsm-qoder-account",
 		children: [
@@ -940,34 +936,78 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 						activeEntry.state === "needs-app" ? (0, react_jsx_runtime.jsxs)("p", {
 							className: "dsm-qoder-account-note dsm-qoder-account-note-error",
 							children: [
-								t("account.readFail", { detail: activeEntry.detail ?? "" }),
-								activeManageLink
+								t("account.readFail", { detail: activeEntry.detail ?? "" })
 							]
 						}) : null,
 						activeEntry.state === "expired" ? (0, react_jsx_runtime.jsxs)("p", {
 							className: "dsm-qoder-account-note",
 							children: [
-								t("account.expiredHint"),
-								activeManageLink
+								(0, react_jsx_runtime.jsx)("span", {
+									children: t("account.expiredHint", {
+										app: activeEntry.appName ?? activeEntry.regionName ?? "Qoder"
+									})
+								}),
+								(0, react_jsx_runtime.jsx)("br"),
+								(0, react_jsx_runtime.jsxs)("span", {
+									children: [
+										t("account.download", {
+											edition: activeEntry.regionName ?? activeEntry.region
+										}),
+										typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
+											children: [
+												" · ",
+												(0, react_jsx_runtime.jsx)("a", {
+													href: activeEntry.downloadUrl,
+													target: "_blank",
+													rel: "noreferrer",
+													title: activeEntry.downloadUrl,
+													children: t("account.downloadLink", {
+														edition: activeEntry.regionName ?? activeEntry.region
+													})
+												})
+											]
+										}) : null
+									]
+								})
 							]
 						}) : null,
 						activeEntry.state === "signed-out" ? (0, react_jsx_runtime.jsxs)("p", {
 							className: "dsm-qoder-account-note",
 							children: [
-								t("account.unsigned"),
-								activeManageLink
+								(0, react_jsx_runtime.jsx)("span", {
+									children: t("account.unsigned")
+								}),
+								(0, react_jsx_runtime.jsx)("br"),
+								(0, react_jsx_runtime.jsxs)("span", {
+									children: [
+										t("account.download", {
+											edition: activeEntry.regionName ?? activeEntry.region
+										}),
+										typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
+											children: [
+												" · ",
+												(0, react_jsx_runtime.jsx)("a", {
+													href: activeEntry.downloadUrl,
+													target: "_blank",
+													rel: "noreferrer",
+													title: activeEntry.downloadUrl,
+													children: t("account.downloadLink", {
+														edition: activeEntry.regionName ?? activeEntry.region
+													})
+												})
+											]
+										}) : null
+									]
+								})
 							]
 						}) : null,
 						activeResult?.kind === "confirmed" ? (0, react_jsx_runtime.jsx)("p", {
 							className: "dsm-qoder-account-note",
 							children: t("account.confirmed")
 						}) : null,
-						activeResult?.kind === "sign-in-expired" ? (0, react_jsx_runtime.jsxs)("p", {
+						activeResult?.kind === "sign-in-expired" ? (0, react_jsx_runtime.jsx)("p", {
 							className: "dsm-qoder-account-note dsm-qoder-account-note-error",
-							children: [
-								t("account.confirmExpired"),
-								activeManageLink
-							]
+							children: t("account.confirmExpired")
 						}) : null,
 						activeResult?.kind === "unavailable" ? (0, react_jsx_runtime.jsx)("p", {
 							className: "dsm-qoder-account-note dsm-qoder-account-note-error",

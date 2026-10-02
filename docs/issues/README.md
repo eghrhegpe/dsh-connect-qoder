@@ -31,3 +31,4 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [15-delivery-docs-curation.md](15-delivery-docs-curation.md) | P3 | 交付漂移、文档与事实不符、默认不策展 |
 | [16-silent-failure-policy.md](16-silent-failure-policy.md) | P2 | 门禁：新代码不得再新增静默失败分支 |
 | [17-client-source-restore.md](17-client-source-restore.md) | P1 | `src/client` 已机械还原（内容等价）；字节一致经实测不可达，产物去留待拍板 |
+| [18-account-expired-link-no-context.md](18-account-expired-link-no-context.md) | P2 | 账号失效提示裸链接跳官网无说明 → 改为「先提示客户端重登/下载 + 带说明的下载链接」 |

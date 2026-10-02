@@ -56,6 +56,7 @@ function recordingReader(state) {
       region: region.id,
       regionName: region.displayName,
       manageUrl: region.manageUrl,
+      downloadUrl: region.downloadUrl,
       state,
       source: undefined,
       appName: undefined,

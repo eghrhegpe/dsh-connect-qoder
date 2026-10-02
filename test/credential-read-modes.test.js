@@ -38,6 +38,7 @@ const REGION = {
   appNames: ['QoderCN'],
   newAppNames: ['com.qodercn.app.stable'],
   manageUrl: 'https://qoder.com.cn',
+  downloadUrl: 'https://qoder.com.cn/download',
   baseUrl: 'https://gateway.qoder.com.cn/',
 }
 

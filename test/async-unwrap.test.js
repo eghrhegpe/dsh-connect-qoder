@@ -42,6 +42,7 @@ const REGION = {
   newAppNames: ['com.qodercn.app.stable'],
   patEnvNames: ['QODERCN_PAT'],
   manageUrl: 'https://qoder.com.cn',
+  downloadUrl: 'https://qoder.com.cn/download',
 }
 
 /** A 32-byte master key, base64'd the way the DPAPI hand-off writes it. */
