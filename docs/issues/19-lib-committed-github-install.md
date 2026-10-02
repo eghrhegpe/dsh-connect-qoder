@@ -70,8 +70,13 @@
 - [x] 门禁自检（故意破坏）：一次性分支改 `src/host/index.ts` 不重建 `lib/`（run `37053873694`）→
       build job 恰在 "The committed lib/ matches a fresh build" 一步 failure、后续 verify 步骤
       skipped，测试矩阵 4 组全 success——拦截信号干净；分支已删
-- [ ] DSH 对话框「添加插件」粘贴 `github:eghrhegpe/dsh-connect-qoder` 安装：**无**构建脚本审批提示，
-      卡片与模型路由正常（安装前置条件已满足：远端 main 带 `lib/`、pnpm 判据 `false`）——最后一步待人工点验
+- [x] DSH 对话框「添加插件」粘贴 `github:eghrhegpe/dsh-connect-qoder` 安装：**无**构建脚本审批提示，
+      卡片与模型路由正常。实测记录（2026-10-03，desktop profile）：`pnpm add github:eghrhegpe/dsh-connect-qoder`
+      7.5 s 完成（pnpm v11.7.0，`downloaded 1` 即 git 克隆本身，无 allowBuilds、无 devDeps 拉取）；
+      安装目录 `profiles/desktop/node_modules/@eghrhegpe/dsh-connect-qoder/lib/{index.js,client.js}` 在场；
+      重启 DSH 后插件页 Qoder 卡片与模型组正常渲染。（安装输出里唯一的红色警告属于 profile 内
+      第三方插件 `dsh-notify-me@1.1.8` 与本运行时 0.2.0-rc.2 的 peer 不兼容，与本插件无关——
+      本插件全程无任何兼容性告警。）
 
 ## 与上游布局的关系
 
