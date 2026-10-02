@@ -1,5 +1,5 @@
 {
-  "$comment": "Source is TypeScript now (src/host/*.ts, src/client/*.ts), and every .ts file is type-checked unconditionally — `checkJs` only governs plain .js files, of which src/ has none. noImplicitAny is TRUE: the 536 implicit-any sites the migration left behind are all annotated, so the rule is now enforced by the compiler instead of by a ratchet (scripts/audit-implicit-any.mjs still runs, with a budget of 0, as a second opinion and as the place the trajectory is recorded). strict stays false: strictNullChecks is the next decision, not an oversight, and turning it on now would be a different migration. Run it with `npm run typecheck`.",
+  "$comment": "Source is TypeScript now (src/host/*.ts, src/client/*.ts), and every .ts file is type-checked unconditionally — `checkJs` only governs plain .js files, of which src/ has none. noImplicitAny is TRUE: the 536 implicit-any sites the migration left behind are all annotated, so the rule is now enforced by the compiler instead of by a ratchet (scripts/audit-implicit-any.mjs still runs, with a budget of 0, as a second opinion and as the place the trajectory is recorded). strictNullChecks is TRUE as well (via `strict`): the 99 sites it reported — 39 undefined-callable, and the rest null/index/assignability — are all settled, none of them with a `!`. Two of those were real bugs the flag surfaced: a request header that went out as the literal text \"undefined\" when a machine fingerprint was absent, and a `null` check-in notice that a `!== undefined` guard let through to a `.kind` read. `strict` also implies strictBindCallApply / strictFunctionTypes / noImplicitThis, all of which were already on individually. Run it with `npm run typecheck`.",
   "compilerOptions": {
     "target": "ES2023",
     "module": "NodeNext",
@@ -10,7 +10,7 @@
     "checkJs": false,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "strict": false,
+    "strict": true,
     "noImplicitAny": true,
     "noImplicitThis": true,
     "useUnknownInCatchVariables": true,
