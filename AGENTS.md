@@ -28,6 +28,9 @@ DSH 插件：把本机已登录的 **Qoder**（国内版 `qoder-cn` / 国际版 
 - 浏览器与 Host 实际执行的是 **`lib/` 产物，不是 `src/`**。只改 `src/` 不 rebuild，界面不会变。
 - 桌面端走安装副本；以 `~/.dsh/profiles/{web,desktop}/node_modules` 里的实际 junction 为准。
 - `lib/client.js` 头部自带「Generated … edit the sources, not this file」——**禁止手改产物**。
+- `lib/` 是**受版本管理的产物**（`docs/issues/19`）：改 `src/` 后 `npm run build` 并把 `lib/`
+  与源码**同一次提交**。这是 DSH 市场 `github:` 源安装能开箱即用的前提（不入库装出来的插件
+  没有宿主入口）；也意味着 `lib/` 永远不许加回 `.gitignore`。
 
 ## 去哪参考（本机就有，别再全网瞎找）
 
@@ -51,7 +54,8 @@ npm test                   # node --test "test/*.test.js"（裸 node，套件直
                            # 靠 Node 22.19+/24 原生 strip types；无需安装也能跑）
 npm run test:card          # 只跑 jsdom 卡片 DOM 测试 test/card-dom.test.js
 npm run audit:any          # 两道隐式/显式 any 审计，client 改动容易踩
-npm run build              # 重建 lib/（host bundle + client bundle），改 src/ 后必跑
+npm run build              # 重建 lib/（host bundle + client bundle），改 src/ 后必跑；
+                           # 重建后把 lib/ 与 src/ 同一次提交（CI 新鲜度门禁会查，docs/issues/19）
 npm run verify             # typecheck + 两道 audit + build + test + host/bundle 行为核验
 ```
 
@@ -72,6 +76,9 @@ npm run verify             # typecheck + 两道 audit + build + test + host/bund
    的回收窗口见 issue 02，改清理逻辑必须带越界与残留两类测试。
 3. **client 产物必须包含卡片实体**：不得手改 `lib/client.js`；构建闸门里的 REQUIRED 字符串
    （组件、路由、jsx-runtime shim）一个都不能少。
+   `lib/` 是受版本管理的产物（`docs/issues/19`）：改 `src/` 后必须 `npm run build` 并与源码
+   同一次提交，CI 新鲜度门禁会拦漂移；**不许把 `lib/` 加回 `.gitignore`**——那会静默打断
+   DSH 市场 `github:` 源安装（装出的包没有宿主入口）。
 4. **双 region 写设置带完整 map**；切区/关区不得丢另一个区的账号、勾选与草稿。
 5. **主题 token 用宿主真实名字**：`--dsw-alias-state-warn-primary` 是缩写形式（长式
    `warning` 从未定义），自定义属性拼错不会报错只会静默落 fallback——新增 token 先核对
@@ -93,8 +100,9 @@ npm run verify             # typecheck + 两道 audit + build + test + host/bund
 | 何时 | 查 |
 |---|---|
 | 动手前通览事故史与优先级 | `docs/PLAN.md`（P0–P3 总览，三条本机实测事故在 §0） |
-| 改某个已知问题前 | `docs/issues/README.md` 索引 → 对应 `docs/issues/NN-*.md`（18 份，含证据 file:line 与验收标准） |
+| 改某个已知问题前 | `docs/issues/README.md` 索引 → 对应 `docs/issues/NN-*.md`（19 份，含证据 file:line 与验收标准） |
 | 改 client 构建/产物链路 | `scripts/build-client.mjs` 头部注释（loader ABI、字节比对、REQUIRED 闸门都是契约）+ `docs/issues/03`、`17` |
+| 市场 `github:` 源安装 / lib 为何入库 | `docs/issues/19`（pnpm 11 allowBuilds 审批流 + 本机 profile 实锤；CI 新鲜度门禁在 `.github/workflows/test.yml`） |
 | 了解已知差距与未做项 | `docs/KNOWN_GAPS.md` |
 | 对 Qoder 平台事实（计费系数、Credits、签到、免费模型） | `docs/docs-qoder-cn/`（上游官方文档转换件） |
 | 探测宿主版本/协议漂移 | `docs/howto/host-version-probe.md`、`test/protocol-drift.test.js` |

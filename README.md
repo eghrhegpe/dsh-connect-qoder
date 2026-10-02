@@ -91,15 +91,25 @@ dsh plugin --profile web add @eghrhegpe/dsh-connect-qoder
 ```
 github:eghrhegpe/dsh-connect-qoder
 ```
+
+`github:` 源是**零配置**的：宿主产物 `lib/`（host + client bundle）随仓库提交，克隆即可加载，
+安装过程不需要批准构建脚本、也不需要拉 devDependencies。若 DSH 反而提示该包有待批准的构建
+脚本，说明它拿到了一份缺 `lib/` 的旧克隆——删掉重装即可（`lib/` 自 `docs/issues/19` 起必须
+入库，CI 有新鲜度门禁）。
+
 > 注意：npm 上不带 scope 的 `dsh-connect-qoder` 由上游发布，**装到的是上游那份**；
 本 fork 自己发的是 scoped 包 `@eghrhegpe/dsh-connect-qoder`（上面那条），二者不是同一个包。
-
+npm 安装每次发布都会现场重建产物（`prepack`），**同版本号下 npm 的产物比仓库提交里更新的
+可能性更大**——追新走 npm，`github:` 源装的是对应提交时刻的产物。
 
 或本地开发模式：
 
 ```sh
 dsh plugin --profile web add <本仓库路径>
 ```
+
+本地开发时 `lib/` 对应的是**提交时刻**的源码：改过 `src/` 后先
+`npm install && npm run build`，再让 DSH 指向本目录，否则跑的还是旧产物。
 
 安装后需要**重启 DSH 进程**：bundle 的 patch 在启动时读取。
 
@@ -253,8 +263,11 @@ dsh plugin --profile web add <本仓库路径>
 
 ## 构建产物：`lib/` 不是源码
 
-**源码全在 `src/`，`lib/` 是纯构建产物，不进版本库**（`.gitignore` 里有 `/lib/`；发到 registry
-的那一份由 `prepack` 现场构建）。`npm run build` 从 `src/` 重建出两个文件：
+**源码全在 `src/`，`lib/` 是构建产物，但**受版本管理**（`docs/issues/19`：DSH 市场的
+`github:` 源安装正是把这两个文件原样发给用户的，缺了它装出来的插件没有宿主入口，所以
+`lib/` 必须入库，`.gitignore` 里不许再出现 `/lib/`）。改 `src/` 后跑 `npm run build` 并把
+`lib/` 与源码**同一次提交**（CI 有新鲜度门禁：重建产物必须与提交里的一致）；发到 registry
+的那一份仍由 `prepack` 现场构建。`npm run build` 从 `src/` 重建出两个文件：
 
 | 产物 | 由谁构建 | 内容 |
 | --- | --- | --- |
@@ -301,8 +314,9 @@ npm run build           # 从 src/ 重建 lib/（宿主 bundle + 卡片产物）
 
 中间那条是最要紧的：宿主与卡片两步都**只比较、不认账**。它过了，就说明产物不是手抄进来的
 副本——改 `src/` 而产物不变的情况会在这里红。`verify:host` 补的是迁移带来的新缺口：源码
-在 `src/host/`、产物在 `lib/` 之后，「改了源码忘了重建」第一次成为可能的错误，而 `lib/`
-不进版本库，没有别的检查会看见它。
+在 `src/host/`、产物在 `lib/` 之后，「改了源码忘了重建」第一次成为可能的错误；`lib/` 如今
+受版本管理（`docs/issues/19`），这道本地对拍之外，CI 的 `git diff --exit-code -- lib` 门禁
+也会在推上去时看见它。
 
 **绿灯不等于门禁有效。** 这几道门禁每条都用故意的破坏验过：`build` 缺关键串时会拒绝写入
 （第一次构建摇掉全部模块、只剩 84 行，bundler 仍然退出 0）；`verify:host` 往 `lib/index.js`

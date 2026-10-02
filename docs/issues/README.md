@@ -32,3 +32,4 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [16-silent-failure-policy.md](16-silent-failure-policy.md) | P2 | 门禁：新代码不得再新增静默失败分支 |
 | [17-client-source-restore.md](17-client-source-restore.md) | P1 | `src/client` 已机械还原（内容等价）；字节一致经实测不可达，产物去留待拍板 |
 | [18-account-expired-link-no-context.md](18-account-expired-link-no-context.md) | P2 | 账号失效提示裸链接跳官网无说明 → 改为「先提示客户端重登/下载 + 带说明的下载链接」 |
+| [19-lib-committed-github-install.md](19-lib-committed-github-install.md) | **P2 已决策** | `github:` 源安装缺 `lib/` 静默失效 → `lib/` 改回受版本管理 + CI 新鲜度门禁（pnpm 11 allowBuilds 审批流证据链） |

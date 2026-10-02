@@ -5,9 +5,11 @@ node_modules/
 *.tar.gz
 *.tsbuildinfo
 
-# 构建产物：源码全在 src/（host + client），lib/ 由 `npm run build` 重建，
-# 纯产物、可删可重建、不进版本库。发到 registry 的那一份由 prepack 现场构建。
-/lib/
+# lib/ 是**受版本管理的产物**（docs/issues/19），不要把它加回 .gitignore：
+# DSH 市场 github: 源安装走 pnpm git-dep，pnpm 11 在没有 allowBuilds 批准时不会
+# 替它跑 prepack——lib/ 不入库，装出来的插件就没有宿主入口，卡片直接失效。
+# 策略：改 src/ 后跑 `npm run build` 并把 lib/ 与源码一起提交（CI 有新鲜度门禁）；
+# 发到 registry 的那一份仍由 prepack 现场重建，两条路径都不靠手工。
 
 # Editor / OS noise
 .DS_Store
