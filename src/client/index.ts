@@ -26,7 +26,7 @@ interface ClientContext {
 		inject(slotName: string, callback: () => unknown): unknown
 		register(slot: Record<string, unknown>, card: unknown): unknown
 	}
-	get(name: string): any
+	get(name: string): unknown
 }
 
 /** Stable browser-plugin name. */
@@ -67,7 +67,18 @@ function apply(ctx: ClientContext) {
 	 * mirrors the legacy `settingsScope.bind` shape (`.set` / `.getSnapshot`),
 	 * so the card body below is unchanged.
 	 */
-	const softGet = (name: string): any => ctx.get(name);
+	/**
+	 * Probe a service by name without a hard dependency.
+	 *
+	 * Answers `unknown`, matching the fact that `ctx.get` is a string-keyed
+	 * lookup: there is no mapping the compiler could check, so each caller
+	 * states the shape it expects at the point it reads a member. The two
+	 * shapes below (`configForms`, `settingsScope`) belong to the harness, not
+	 * to this plugin, which is why they are declared inline where they are used
+	 * rather than invented as interfaces here — a hand-written guess at a peer
+	 * package's surface is worse than an honest `unknown`.
+	 */
+	const softGet = (name: string): unknown => ctx.get(name);
 	/**
 	 * The namespace the HOST actually serves this plugin's settings under.
 	 *
@@ -90,11 +101,19 @@ function apply(ctx: ClientContext) {
 	 */
 	const resolveNamespace = (): string => {
 		const fallback = "dsh-connect-qoder";
-		const forms = softGet("configForms");
+		// The two hops below are the harness's own `configForms` surface. Each is
+		// declared as the minimum this line reads rather than guessed at whole:
+		// `describe()` returns a live view whose `namespaces` array carries the
+		// `ns` strings, and the optional links are optional because a future
+		// harness that flattens any of them should answer `fallback` here, not
+		// throw — the `try`/`catch` below already covers a throwing shape.
+		const forms = softGet("configForms") as
+			| { describe(): { getSnapshot(): { view?: { namespaces?: Array<{ ns: string }> } } } }
+			| undefined;
 		if (forms === void 0) return fallback;
 		try {
 			const served = (forms.describe().getSnapshot().view?.namespaces ?? [])
-				.find((entry: { ns: string }) => entry.ns === fallback || /qoder/i.test(entry.ns));
+				.find((entry) => entry.ns === fallback || /qoder/i.test(entry.ns));
 			return served !== void 0 ? served.ns : fallback;
 		} catch {
 			return fallback;
@@ -107,8 +126,13 @@ function apply(ctx: ClientContext) {
 	}), "dsh-connect-qoder: settings copy");
 	const t = ctx.locale.bind(namespace);
 	let settingsScope: SettingsScope | undefined;
-	const forms = softGet("configForms");
-	const legacy = softGet("settingsScope");
+	// Both spellings of the settings surface, narrowed to the one call each is
+	// probed with. `SettingsScope` is this card's own type (declared with the
+	// card), so the cast on the two lines below is where the harness's answer
+	// meets it — the same division of labour as the `unknown` above, kept to
+	// one line per spelling.
+	const forms = softGet("configForms") as { get(ns: string): unknown } | undefined;
+	const legacy = softGet("settingsScope") as { bind(options: { namespace: string }): unknown } | undefined;
 	if (forms !== void 0) {
 		settingsScope = forms.get(namespace) as SettingsScope;
 	} else if (legacy !== void 0) {
@@ -142,7 +166,7 @@ function apply(ctx: ClientContext) {
 					settingsScope
 				}
 			}, QoderPluginCard));
-		} catch (error: any) {
+		} catch (error) {
 			console.error(`[dsh-connect-qoder] card slot "${slotName}" failed to register (host provider unaffected):`, error);
 		}
 	};
@@ -151,7 +175,7 @@ function apply(ctx: ClientContext) {
 		registerCard("plugins.row.config", `${bundle}#llm-qoder`);
 	}
 	registerCard("settings.plugin.item", "qoder");
-	} catch (error: any) {
+	} catch (error) {
 		console.error("[dsh-connect-qoder] client card failed to load (host provider unaffected):", error);
 	}
 }

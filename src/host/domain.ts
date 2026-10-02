@@ -491,8 +491,19 @@ export interface HostService {
  */
 export interface HostContext {
   logger: PluginLogger
-  /** `ctx.get` + undefined check is the older service-locator spelling. */
-  get?: (name: string) => any
+  /**
+   * `ctx.get` + undefined check is the older service-locator spelling.
+   *
+   * Answers `unknown`, not `any`: the name is a string the caller chooses, so
+   * there is no key-to-service mapping the compiler could check against, and
+   * every caller must narrow what it gets back. `any` let three call sites read
+   * arbitrary members off the answer with no check at all; `unknown` makes each
+   * one state the shape it expects, which is the only honest thing to do here —
+   * the services behind these names belong to peer packages this repository
+   * deliberately does not install, so inventing interfaces for them would be
+   * worse than the narrowing it replaces.
+   */
+  get?: (name: string) => unknown
   /**
    * Declare interest in services; the callback runs once they are ready.
    *

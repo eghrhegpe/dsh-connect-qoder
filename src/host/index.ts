@@ -35,6 +35,7 @@ import {
 import { buildAccountPayload } from './account-payload.ts'
 import { CredentialCache } from './credential-cache.ts'
 import { applySettingsSave, settingsNamespaceOf } from './settings-save.ts'
+import type { SettingsService } from './settings-save.ts'
 import { createSingleFlight } from './single-flight.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -1102,7 +1103,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'POST')) return
           if (!originAllowed(req, res)) return
-          const settings = webCtx.get?.('settings')
+          // `ctx.get` answers `unknown` (see `HostContext.get`): the name is a
+          // string, so nothing ties it to a type. This asserts the two methods
+          // `applySettingsSave` actually calls rather than trusting an `any`.
+          // The `undefined` case is still the real "service not ready" path and
+          // keeps its own 503.
+          const settings = webCtx.get?.('settings') as SettingsService | undefined
           if (settings === undefined) {
             return sendJson(res, 503, { error: 'settings service unavailable to this fiber' })
           }
