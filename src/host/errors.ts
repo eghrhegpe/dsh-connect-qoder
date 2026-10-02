@@ -71,6 +71,32 @@ export function thrownFlag(error: unknown, key: ThrownFlag): unknown {
 export type ThrownFlag = 'name' | 'message' | 'cause' | 'code' | 'retryable' | 'dailyLimit' | 'signInExpired' | 'protocolShapeChanged' | 'retryAfterSeconds' | 'status'
 
 /**
+ * A refusal that means the sign-in is gone, so the cached credential is stale.
+ *
+ * The upstream layer used to build this as `const error: any = new Error(msg)`
+ * and then hang `signInExpired = true` on it. That worked, and the flag is
+ * genuinely what {@link isStaleCredentialError} reads — but declaring the local
+ * `any` meant the assignment itself was never checked, and the two throw sites
+ * had to agree by hand with a reader in another file.
+ *
+ * The property is declared here rather than inferred, so the two sites and the
+ * reader are tied together by the compiler.
+ */
+export class SignInExpiredError extends Error {
+  /** Read by {@link isStaleCredentialError}. Always true (see class doc). */
+  signInExpired: boolean
+
+  /**
+   * @param message - the readable sentence; built by the caller, which knows
+   *   which of the two failure shapes produced it.
+   */
+  constructor(message: string) {
+    super(message)
+    this.signInExpired = true
+  }
+}
+
+/**
  * Read a Qoder error frame and decide what it actually is.
  *
  * Codes that arrive here have very different meanings, and conflating them sent

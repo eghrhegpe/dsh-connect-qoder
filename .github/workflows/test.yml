@@ -36,7 +36,9 @@ jobs:
 
       # `.npmrc` sets legacy-peer-deps: the `@deepseek-ai/*` peers are supplied
       # by the host at runtime and are not on the public registry, so npm's
-      # automatic peer install would fail before reaching tsdown.
+      # automatic peer install would fail before reaching tsdown. The devDeps
+      # now also include `jsdom`, `react` and `react-dom` — `test/card-dom.test.js`
+      # renders the shipped card with them.
       - run: npm install --no-audit --no-fund
 
       # Required before `npm test`: lib/client.js is an artifact, and the tests

@@ -23,11 +23,11 @@ import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { classifyUpstreamError, describeThrown, errorMessage, ProtocolShapeChangedError, thrownFlag } from './errors.ts'
+import { classifyUpstreamError, describeThrown, errorMessage, ProtocolShapeChangedError, SignInExpiredError, thrownFlag } from './errors.ts'
 import { windowIsOpen } from './offpeak.ts'
 import { toEpochMs } from './time.ts'
 import { checkinStateFrom } from './claim.ts'
-import type { Campaign, ChatTurnRequest, QoderCredential, Region, UpstreamChunk } from './domain.ts'
+import type { ChatTurnRequest, QoderCredential, Region, UpstreamChunk } from './domain.ts'
 
 /** Public key the gateway expects the per-request AES key to be wrapped with. */
 const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -584,7 +584,7 @@ function umidRootsFor(region: Region): string[] {
  * @param context - short label for the error message (e.g. "Qoder model list").
  * @returns the parsed JSON value.
  */
-async function readJson(response: Response, context: string): Promise<any> {
+async function readJson(response: Response, context: string): Promise<unknown> {
   const text = await response.text()
   try {
     return JSON.parse(text)
@@ -613,13 +613,17 @@ async function readJson(response: Response, context: string): Promise<any> {
  * check-in to claim today. Sending two requests for those would be one more
  * way for the panel and the button to disagree.
  *
- * @returns the parsed campaigns document.
+ * @returns the parsed campaigns document, unvalidated — `readJson` proves only
+ *   that the body parsed as JSON, so the shape is left `unknown` and
+ *   {@link projectCampaignRows} is what narrows it. The previous signature
+ *   claimed `{ campaigns?: Campaign[] }`, which no code had ever checked; it
+ *   compiled only because the field reads went through an `any`.
  */
 export async function readCampaigns(
   region: Region,
   credential: QoderCredential,
   signal?: AbortSignal,
-): Promise<{ campaigns?: Campaign[] } & Record<string, unknown>> {
+): Promise<unknown> {
   const response = await fetch(campaignsUrl(region), {
     method: 'GET',
     headers: openApiHeaders(credential, region),
@@ -706,14 +710,15 @@ export function claimCampaignUrl(region: Region, campaignId: string): string {
  * Shape normalisation is a separate pure function (`normalizeClaimResult`) so
  * the interesting part is asserted without a network.
  *
- * @returns the parsed claim response.
+ * @returns the parsed claim response, unvalidated — {@link normalizeClaimResult}
+ *   is what narrows it, so the shape stays `unknown` here.
  */
 export async function claimCampaign(
   region: Region,
   credential: QoderCredential,
   campaignId: string,
   signal?: AbortSignal,
-): Promise<any> {
+): Promise<unknown> {
   if (typeof campaignId !== 'string' || campaignId.length === 0) {
     throw new Error('Qoder check-in failed: no campaign id to claim')
   }
@@ -874,13 +879,13 @@ export async function fetchUsage(
 ): Promise<UsageSnapshot | undefined> {
   const headers = openApiHeaders(credential, region)
 
-  const read = async (url: string): Promise<any> => {
+  const read = async (url: string): Promise<unknown> => {
     const response = await fetch(url, { method: 'GET', headers, redirect: 'error', signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return readJson(response, 'Qoder usage')
   }
 
-  let payload: any
+  let payload: unknown
   let source = 'presentation'
   try {
     payload = await read(usagePresentationUrl(region))
@@ -892,12 +897,19 @@ export async function fetchUsage(
 
   // The presentation route wraps the same body under `qoderUsage`; the plain
   // route returns it directly. Both spellings of each field are accepted.
-  const usage = payload?.qoderUsage ?? payload?.data ?? payload
+  //
+  // Read through one record, so the unwrap is checked rather than assumed: a
+  // response that is neither object (a bare string, an array) answers the raw
+  // payload and falls through the object test below to `undefined`, which is
+  // the same "no usage to report" outcome the `?.` chain produced.
+  const envelope = payload === null || typeof payload !== 'object' ? {} : (payload as Record<string, unknown>)
+  const usage = envelope.qoderUsage ?? envelope.data ?? payload
   if (usage === null || typeof usage !== 'object') return undefined
+  const record = usage as Record<string, unknown>
 
-  const userQuota = normalizeQuotaBucket(usage.user_quota ?? usage.userQuota)
-  const addOnQuota = normalizeQuotaBucket(usage.add_on_quota ?? usage.addOnQuota)
-  const rawPackages = usage.dedicated_resource_packages ?? usage.dedicatedResourcePackages
+  const userQuota = normalizeQuotaBucket(record.user_quota ?? record.userQuota)
+  const addOnQuota = normalizeQuotaBucket(record.add_on_quota ?? record.addOnQuota)
+  const rawPackages = record.dedicated_resource_packages ?? record.dedicatedResourcePackages
   const dedicatedPackages = Array.isArray(rawPackages)
     ? rawPackages.map(normalizeDedicatedPackage).filter((entry) => entry !== undefined)
     : []
@@ -916,18 +928,18 @@ export async function fetchUsage(
     if (signal?.aborted) throw error
   }
 
-  const expiresAt = toEpochMs(usage.expires_at ?? usage.expiresAt)
-  const isQuotaExceeded = usage.is_quota_exceeded ?? usage.isQuotaExceeded
+  const expiresAt = toEpochMs(record.expires_at ?? record.expiresAt)
+  const isQuotaExceeded = record.is_quota_exceeded ?? record.isQuotaExceeded
 
   // Nothing usable at all is reported as "no data" so the card can say so
   // instead of rendering an empty panel.
   if (userQuota === undefined && addOnQuota === undefined && dedicatedPackages.length === 0) return undefined
 
   return {
-    displayMode: typeof payload?.displayMode === 'string' ? payload.displayMode : 'qoder',
-    userType: String(usage.user_type ?? usage.userType ?? ''),
+    displayMode: typeof envelope.displayMode === 'string' ? envelope.displayMode : 'qoder',
+    userType: String(record.user_type ?? record.userType ?? ''),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
-    upgradeUrl: String(usage.upgrade_url ?? usage.upgradeUrl ?? ''),
+    upgradeUrl: String(record.upgrade_url ?? record.upgradeUrl ?? ''),
     ...(userQuota !== undefined ? { userQuota } : {}),
     ...(addOnQuota !== undefined ? { addOnQuota } : {}),
     dedicatedPackages,
@@ -1185,14 +1197,19 @@ export async function exchangePat(
     throw new Error(`Qoder PAT exchange failed: HTTP ${response.status} ${(await response.text()).slice(0, 300)}`)
   }
   const data = await readJson(response, 'Qoder PAT exchange')
-  const token = data?.token ?? data?.job_token ?? data?.jobToken
+  // The gateway has answered this field three different ways across builds, so
+  // all three spellings are tried. Narrowed through one record read rather than
+  // three chained `?.` on an `any`: the values stay `unknown`, so the
+  // `typeof token !== 'string'` check below is what actually proves the token.
+  const payload = data === null || typeof data !== 'object' ? {} : (data as Record<string, unknown>)
+  const token = payload.token ?? payload.job_token ?? payload.jobToken
   if (typeof token !== 'string' || token.length === 0) {
     throw new Error('Qoder PAT exchange returned no token')
   }
   return {
     token,
-    refreshToken: typeof data?.refresh_token === 'string' ? data.refresh_token : '',
-    expiresAt: toEpochMs(data?.expires_at) ?? (Date.now() + 3600_000),
+    refreshToken: typeof payload.refresh_token === 'string' ? payload.refresh_token : '',
+    expiresAt: toEpochMs(payload.expires_at) ?? (Date.now() + 3600_000),
   }
 }
 
@@ -1228,11 +1245,18 @@ export async function fetchUserInfo(
     throw new Error(`Qoder userinfo failed: HTTP ${response.status} ${(await response.text()).slice(0, 300)}`)
   }
   const data = await readJson(response, 'Qoder userinfo')
-  const body = data?.data ?? data
+  // Two envelopes occur: the identity sits either under `data` or at the top
+  // level. Both hops are narrowed, so a body that is neither (a bare string, a
+  // number) answers `{}` and the fields below read as empty rather than
+  // throwing — the same "no identity" outcome the `??` chain produced, but
+  // checked instead of assumed.
+  const envelope = data === null || typeof data !== 'object' ? {} : (data as Record<string, unknown>)
+  const inner = envelope.data
+  const body = inner === null || typeof inner !== 'object' ? envelope : (inner as Record<string, unknown>)
   return {
-    userID: String(body?.id ?? body?.user_id ?? ''),
-    name: String(body?.name ?? body?.nickname ?? ''),
-    email: String(body?.email ?? ''),
+    userID: String(body.id ?? body.user_id ?? ''),
+    name: String(body.name ?? body.nickname ?? ''),
+    email: String(body.email ?? ''),
   }
 }
 
@@ -1293,7 +1317,10 @@ export async function* streamChat(
   // reintroduce the very truncation that omission avoids: reasoning and the
   // answer share this budget upstream, so an over-large value is not harmless
   // and an absent one lets Qoder apply its own.
-  const parameters: any = {}
+  // Mixed value types by design (booleans and numbers, and only the keys the
+  // caller actually asked for), so the honest type is a record of unknowns.
+  // The three assignments below are what prove each value is the right one.
+  const parameters: Record<string, unknown> = {}
   // Bound first: `Number.isSafeInteger` is not a type predicate, so testing
   // `request.maxTokens` directly leaves it `number | undefined` inside the
   // branch. Testing the local narrows it, and the comment above is why an
@@ -1455,9 +1482,11 @@ export async function* streamChat(
             throw new QueueRejection(failure.retryAfterSeconds, failure.detail)
           }
           const message = failureMessage(failure, region)
-          const error: any = new Error(message)
-          if (failure.kind === 'sign-in-expired') error.signInExpired = true
-          throw error
+          // The flag is on the class, not hung on a bare `Error` through an
+          // `any` local: `isStaleCredentialError` reads it, and this way the
+          // reader and this throw cannot drift apart.
+          if (failure.kind === 'sign-in-expired') throw new SignInExpiredError(message)
+          throw new Error(message)
         }
       }
     } finally {
@@ -1590,9 +1619,9 @@ export async function* streamChat(
       if (failure.kind === 'daily-limit') throw new DailyLimitRejection(failure.detail, failure.retryAfterSeconds)
       if (failure.kind === 'rate-limit') throw new QueueRejection(failure.retryAfterSeconds, failure.detail)
       const message = failureMessage(failure, region, response.status, response.statusText)
-      const error: any = new Error(message)
-      if (failure.kind === 'sign-in-expired') error.signInExpired = true
-      throw error
+      // Same reasoning as the frame path above.
+      if (failure.kind === 'sign-in-expired') throw new SignInExpiredError(message)
+      throw new Error(message)
     }
     if (response.body === null) throw new Error('Qoder chat returned no body')
     return response
@@ -1778,8 +1807,21 @@ export function queueWaitFor(error: unknown, waitedMs: number, attempt: number):
   return Math.min(clamped, remaining)
 }
 
-/** Build the readable sentence for a non-queue failure. */
-function failureMessage(failure: any, region: any, status?: number, statusText?: string) {
+/**
+ * Build the readable sentence for a non-queue failure.
+ *
+ * Both parameters are the real shapes rather than `any`: `failure` is exactly
+ * what {@link readFailure} returns (the only producer), and `region` is the
+ * plugin's own `Region`. The `any` here meant the five field reads below —
+ * including `failure.detail.length`, which throws on a non-string — were never
+ * checked against the object that actually flows in.
+ */
+function failureMessage(
+  failure: { kind: string; code: string; detail: string },
+  region: Region,
+  status?: number,
+  statusText?: string,
+) {
   if (failure.kind === 'sign-in-expired') {
     return (
       `${region.displayName} sign-in is no longer valid — open the ${region.displayName} app ` +
@@ -1995,7 +2037,9 @@ export function toQoderMessages(messages: unknown): Array<Record<string, unknown
 
       // An assistant turn that only called tools carries no content; the
       // endpoint rejects a null content field, so an empty string is sent.
-      const entry: any = { role: 'assistant', content: text }
+      // Typed as the element of `out` rather than `any`: `content` is a string
+      // and `tool_calls` is a real array, so both assignments are checked.
+      const entry: Record<string, unknown> = { role: 'assistant', content: text }
       if (toolCalls.length > 0) entry.tool_calls = toolCalls
       out.push(entry)
       continue
