@@ -222,3 +222,137 @@ export interface CheckinState {
   validDays?: number
   endsAt?: number
 }
+
+/**
+ * One streamed tool call, before the shim has merged it with its siblings.
+ *
+ * `arguments` arrives FRAGMENTED — a function's arguments are streamed across
+ * several frames and concatenated by string, which is why the accumulator
+ * appends rather than assigns. `index` is the call's position in the array and
+ * is what identifies "the same call" across frames.
+ *
+ * Every field is optional and the `function` is itself open: a frame may carry
+ * only the id, only the name, or only an argument fragment, and the shim's
+ * guards on each read individually are load-bearing rather than defensive.
+ */
+export interface ToolCallDelta {
+  index?: number
+  id?: string
+  function?: {
+    name?: string
+    arguments?: string
+    [field: string]: unknown
+  }
+  [field: string]: unknown
+}
+
+/**
+ * One SSE frame from the upstream chat stream, as this shim reads it.
+ *
+ * This is Qoder's own envelope, and the shim translates it to OpenAI's shape
+ * because that is what pi-ai's parser expects. Both spellings of the content
+ * carrier appear — `delta` on a streaming frame, `message` on a non-streaming
+ * one — and the shim reads `delta ?? message` in both code paths, so the type
+ * admits both rather than pretending one is canonical.
+ *
+ * `usage` is deliberately top-level and optional: the token-accounting frame
+ * arrives with an EMPTY `choices` array, so every consumer that indexes
+ * `choices[0]` before checking `usage` silently drops the frame. That ordering
+ * bug is what made Qoder report no tokens; see the streaming path in `shim.ts`.
+ */
+export interface UpstreamChunk {
+  choices?: Array<{
+    delta?: {
+      content?: unknown
+      reasoning_content?: unknown
+      reasoning?: unknown
+      tool_calls?: ToolCallDelta[]
+      [field: string]: unknown
+    }
+    message?: {
+      content?: unknown
+      tool_calls?: ToolCallDelta[]
+      [field: string]: unknown
+    }
+    finish_reason?: unknown
+  }>
+  /** Top-level token accounting, present only on its own frame. */
+  usage?: unknown
+  [field: string]: unknown
+}
+
+/**
+ * The decoded request body pi-ai posts to the shim's chat route.
+ *
+ * Every field is optional and `unknown`-valued because this is the OpenAI
+ * request shape arriving from a peer, and the shim's job is precisely to
+ * decide what it may trust: `resolveThinking` reads `reasoning_effort` and
+ * `thinking` as "whatever the client sent" and falls back to the catalog, and
+ * `max_tokens` is forwarded only when it is actually a number.
+ */
+export interface ChatRequestBody {
+  model?: unknown
+  messages?: unknown
+  tools?: unknown
+  max_tokens?: unknown
+  reasoning_effort?: unknown
+  thinking?: unknown
+  stream?: unknown
+  user?: unknown
+  [field: string]: unknown
+}
+
+/** The failure object the upstream layer raises, as the shim reads it. */
+export interface UpstreamFailure {
+  message?: unknown
+  /** Set by `QueueRejection`; the shim turns it into a `Retry-After`. */
+  retryAfterSeconds?: unknown
+  /** Queue and other transient failures the host should retry. */
+  retryable?: unknown
+  /** A spent daily allowance — its own kind, never a queue. */
+  dailyLimit?: unknown
+  signInExpired?: unknown
+  name?: unknown
+  code?: unknown
+}
+
+/**
+ * One chat turn as the shim asks the upstream layer for it.
+ *
+ * `alwaysThinking` is not the same as `enableThinking`: the first marks a model
+ * that REJECTS `enable_thinking: false` (so the flag is omitted rather than
+ * sent as `false`), the second is this turn's decision. Conflating them is how
+ * a forced-off selection turns into a 403.
+ */
+export interface ChatTurnRequest {
+  /** Qoder's own model key — the shim maps the user-facing id onto it. */
+  model: unknown
+  messages: unknown
+  tools: unknown
+  maxTokens: number | undefined
+  enableThinking: boolean
+  alwaysThinking: boolean
+  reasoningEffort: string | undefined
+  sessionId: string | undefined
+}
+
+/** The async stream the shim pulls one chat turn from. */
+export type ChatStream = AsyncIterator<UpstreamChunk>
+
+/**
+ * The upstream call the shim makes per request.
+ *
+ * Takes the abort signal so a client disconnect cancels the upstream fetch —
+ * without it a dropped request keeps billing the account until Qoder answers.
+ *
+ * Returns a PULL iterator rather than an `AsyncIterable` because the shim drives
+ * it by hand: it pulls the first chunk before committing to a status code, and
+ * a `for await` loop cannot express "look at this one frame first, then decide
+ * whether the response has started". An async generator satisfies this shape.
+ */
+export type RunChat = (
+  region: Region,
+  credential: Record<string, unknown>,
+  request: ChatTurnRequest,
+  signal: AbortSignal,
+) => AsyncIterator<UpstreamChunk>

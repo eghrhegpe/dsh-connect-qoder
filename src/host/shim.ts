@@ -19,16 +19,68 @@ import { streamChat, toQoderMessages, toQoderTools } from './upstream.ts'
 import { filterByEnabled } from './catalog-entry.ts'
 import { isStaleCredentialError } from './errors.ts'
 import { writeError, sendJson } from './http-utils.ts'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type {
+  CatalogEntry,
+  ChatRequestBody,
+  ChatStream,
+  ChatTurnRequest,
+  PluginLogger,
+  Region,
+  RunChat,
+  UpstreamChunk,
+  UpstreamFailure,
+} from './domain.ts'
+
+/**
+ * The credential the upstream calls present.
+ *
+ * Typed as an open record rather than a concrete credential: the Qoder auth
+ * path signs with a per-request derived key and a user id, and the values are
+ * produced by `credentials.ts`. Naming the individual fields here would be a
+ * guess about a peer-owned shape — see the note on `domain.ts`.
+ */
+export type ShimCredential = Record<string, unknown>
+
+/** A tool call accumulated across non-streaming chunks. */
+interface ToolCallAccumulator {
+  id: string
+  type: string
+  function: { name: string; arguments: string }
+}
+
+/** The knobs `createQoderShim` is built from; every reader is a function on purpose. */
+export interface ShimOptions {
+  resolveCredential: () => Promise<ShimCredential | null | undefined> | ShimCredential | null | undefined
+  resolveModels: () => CatalogEntry[]
+  resolveUpstreamKey?: (modelId: unknown) => string | undefined
+  resolveAlwaysThinking?: (modelId: unknown) => boolean | undefined
+  resolveEnabledIds?: () => unknown
+  invalidateCredential?: () => void
+  region: Region
+  logger?: PluginLogger
+  /** Injected so a test can force a queue rejection without the real gateway. */
+  runChat?: RunChat
+}
+
+/** The live shim handle a region's runtime holds. */
+export interface ShimHandle {
+  ready: Promise<void>
+  baseUrl: () => string
+  token: () => string
+  /** Idempotent: a second call returns the first call's promise. */
+  close: () => Promise<void>
+}
 
 /** Reject anything that is not addressed to the loopback interface. */
-function hostIsLoopback(host) {
+function hostIsLoopback(host: unknown): boolean {
   if (typeof host !== 'string') return false
   const name = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.split(':')[0]
   return name === '127.0.0.1' || name === 'localhost' || name === '::1'
 }
 
 /** Reject any request that claims a non-loopback origin. */
-function originIsLoopback(origin) {
+function originIsLoopback(origin: unknown): boolean {
   if (origin === undefined) return true
   if (typeof origin !== 'string') return false
   try {
@@ -83,7 +135,10 @@ const THINKING_LEVEL_RANK = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
  * `effortLevels` list contains, so it can never trip the host's
  * `UNSUPPORTED_REASONING_EFFORT` validation.
  */
-export function defaultEffortFor(catalogEntry, alwaysThinking) {
+export function defaultEffortFor(
+  catalogEntry: CatalogEntry | undefined,
+  alwaysThinking: boolean | undefined,
+): string | undefined {
   if (alwaysThinking === true) return undefined
   const supported = Array.isArray(catalogEntry?.effortLevels) ? catalogEntry.effortLevels : []
   if (supported.length === 0) return undefined
@@ -91,8 +146,8 @@ export function defaultEffortFor(catalogEntry, alwaysThinking) {
   return THINKING_LEVEL_RANK.find((level) => supported.includes(level)) ?? supported[0]
 }
 
-function retryAfterHeader(error) {
-  const seconds = Number(error?.retryAfterSeconds)
+function retryAfterHeader(error: unknown): Record<string, string> | undefined {
+  const seconds = Number((error as UpstreamFailure | null | undefined)?.retryAfterSeconds)
   if (!Number.isFinite(seconds) || seconds <= 0) return undefined
   const clamped = Math.min(Math.max(Math.ceil(seconds), 1), RETRY_AFTER_MAX_SECONDS)
   return { 'Retry-After': String(clamped) }
@@ -109,9 +164,9 @@ function retryAfterHeader(error) {
  */
 const MAX_BODY_BYTES = 20 * 1024 * 1024
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = []
+function readBody(req: IncomingMessage): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = []
     let total = 0
     let settled = false
     req.on('data', (chunk) => {
@@ -156,7 +211,7 @@ function readBody(req) {
  * @param options.logger - optional logger for upstream failures.
  * @returns `{ ready, baseUrl, token, close }`.
  */
-export function createQoderShim(options) {
+export function createQoderShim(options: ShimOptions): ShimHandle {
   const {
     resolveCredential,
     resolveModels,
@@ -176,7 +231,7 @@ export function createQoderShim(options) {
   const SHARED_SECRET = randomBytes(32).toString('base64url')
 
   /** Constant-time bearer check. */
-  function bearerOk(req) {
+  function bearerOk(req: IncomingMessage): boolean {
     const header = req.headers.authorization
     if (typeof header !== 'string') return false
     const match = /^Bearer\s+(.+)$/i.exec(header.trim())
@@ -206,7 +261,7 @@ export function createQoderShim(options) {
     return `http://127.0.0.1:${address.port}`
   }
 
-  async function handle(req, res) {
+  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!hostIsLoopback(req.headers.host)) {
       writeError(res, 403, 'host_not_allowed', 'Host header must name the loopback interface')
       return
@@ -247,8 +302,8 @@ export function createQoderShim(options) {
     writeError(res, 404, 'not_found', `no such route: ${req.method} ${url}`)
   }
 
-  async function chatCompletions(req, res) {
-    let credential
+  async function chatCompletions(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let credential: ShimCredential | null | undefined
     try {
       credential = await resolveCredential()
     } catch (error: any) {
@@ -266,9 +321,9 @@ export function createQoderShim(options) {
       return
     }
 
-    let body
+    let body: ChatRequestBody
     try {
-      body = JSON.parse((await readBody(req) as Buffer).toString('utf8'))
+      body = JSON.parse((await readBody(req)).toString('utf8')) as ChatRequestBody
     } catch (error: any) {
       if (error?.name === 'BodyTooLargeError') {
         writeError(res, 413, 'payload_too_large', 'request body exceeds the 20 MiB limit')
@@ -297,7 +352,7 @@ export function createQoderShim(options) {
       typeof body.reasoning_effort === 'string' && body.reasoning_effort.length > 0
         ? body.reasoning_effort
         : undefined
-    const request = {
+    const request: ChatTurnRequest = {
       // DSH sends the user-facing model id; the wire needs Qoder's own key.
       model: resolveUpstreamKey(body.model) ?? body.model,
       messages: toQoderMessages(body.messages ?? []),
@@ -310,12 +365,13 @@ export function createQoderShim(options) {
     }
 
     const wantStream = body.stream !== false
-    let iterator
+    let iterator: ChatStream
+    let first: IteratorResult<UpstreamChunk>
     try {
       iterator = runChat(region, credential, request, controller.signal)
       // Pull the first chunk before committing to a status code, so an auth or
       // quota failure surfaces as an HTTP error rather than a broken stream.
-      var first = await iterator.next()
+      first = await iterator.next()
     } catch (error: any) {
       logger?.warn?.(`dsh-connect-qoder: ${region.displayName} upstream failed`, error)
       // Queueing is transient, so it must not look like a rejection. DSH
@@ -355,16 +411,19 @@ export function createQoderShim(options) {
     }
 
     if (!wantStream) {
-      const content = []
-      const toolCalls = new Map()
+      const content: string[] = []
+      const toolCalls = new Map<number, ToolCallAccumulator>()
       let finish = 'stop'
-      let usage
+      // `undefined` until the usage frame arrives, and only then attached to the
+      // response — an absent field is better than a fabricated zero, which would
+      // read as "this turn cost nothing".
+      let usage: unknown
       for (let step = first; !step.done; step = await iterator.next()) {
         // The usage frame carries no choice, so it is collected separately.
         if (step.value?.usage !== undefined && step.value.usage !== null) usage = step.value.usage
         absorb(step.value, content, toolCalls, (f) => { finish = f })
       }
-      const message: any = { role: 'assistant', content: content.join('') }
+      const message: Record<string, unknown> = { role: 'assistant', content: content.join('') }
       if (toolCalls.size > 0) message.tool_calls = [...toolCalls.values()]
       sendJson(res, 200, {
         id: `chatcmpl-${randomBytes(8).toString('hex')}`,
@@ -488,7 +547,7 @@ export function createQoderShim(options) {
    * @param body - the decoded request body.
    * @param catalogEntry - the model's catalog entry, when the catalog knows it.
    */
-  function resolveThinking(body, catalogEntry) {
+  function resolveThinking(body: ChatRequestBody, catalogEntry: CatalogEntry | undefined): boolean {
     if (typeof body.reasoning_effort === 'string' && body.reasoning_effort.length > 0) {
       return body.reasoning_effort !== 'off' && body.reasoning_effort !== 'none'
     }
@@ -500,7 +559,7 @@ export function createQoderShim(options) {
   }
 
   let closed = false
-  let closedPromise
+  let closedPromise: Promise<void> | undefined
   return {
     ready,
     baseUrl,
@@ -510,7 +569,7 @@ export function createQoderShim(options) {
     // same settled promise instead of calling server.close() again, which
     // would emit an 'error' event and reject the caller.
     close: () => {
-      if (closed) return closedPromise
+      if (closed) return closedPromise ?? Promise.resolve()
       closed = true
       closedPromise = new Promise<void>((resolve, reject) => {
         server.closeAllConnections()
@@ -525,25 +584,38 @@ export function createQoderShim(options) {
 }
 
 /** Accumulate one non-streaming chunk into the final message. */
-function absorb(chunk, content, toolCalls, setFinish) {
+function absorb(
+  chunk: UpstreamChunk | undefined,
+  content: string[],
+  toolCalls: Map<number, ToolCallAccumulator>,
+  setFinish: (reason: string) => void,
+): void {
   const choice = chunk?.choices?.[0]
   if (choice === undefined) return
   const delta = choice.delta ?? choice.message ?? {}
   if (typeof delta.content === 'string') content.push(delta.content)
   if (Array.isArray(delta.tool_calls)) {
     for (const call of delta.tool_calls) {
+      // An entry that is not an object is skipped rather than read through: a
+      // malformed frame must not abort the whole non-streaming assembly, and the
+      // remaining frames still carry the rest of the answer.
+      if (call === null || typeof call !== 'object') continue
       const index = call.index ?? 0
       const current = toolCalls.get(index) ?? { id: '', type: 'function', function: { name: '', arguments: '' } }
       if (call.id) current.id = call.id
       if (call.function?.name) current.function.name = call.function.name
+      // Appended, never assigned: arguments arrive fragmented across frames.
       if (call.function?.arguments) current.function.arguments += call.function.arguments
       toolCalls.set(index, current)
     }
   }
-  if (choice.finish_reason) setFinish(choice.finish_reason)
+  // Only a string reason is forwarded: `finish_reason` is `unknown` off the wire,
+  // and the accumulator's caller assigns it into a field that is serialized into
+  // the response body, where a non-string would change the JSON's type.
+  if (typeof choice.finish_reason === 'string') setFinish(choice.finish_reason)
 }
 
 /** Write one SSE frame. */
-function writeSse(res, value) {
+function writeSse(res: ServerResponse, value: unknown): void {
   res.write(`data: ${JSON.stringify(value)}\n\n`)
 }
