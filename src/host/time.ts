@@ -23,11 +23,10 @@ const SECONDS_BOUNDARY_MS = 1e12
 /**
  * Coerce one upstream timestamp into epoch milliseconds.
  *
- * @param {unknown} value - the raw value: seconds, milliseconds, or an RFC 3339
- *   string.
+ * @param value - the raw value: seconds, milliseconds, or an RFC 3339 string.
  * @returns epoch milliseconds, or `undefined` when it is not a usable time.
  */
-export function toEpochMs(value) {
+export function toEpochMs(value: unknown): number | undefined {
   if (value === null || value === undefined) return undefined
   if (typeof value === 'number') {
     if (!Number.isFinite(value) || value <= 0) return undefined

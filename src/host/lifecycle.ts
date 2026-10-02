@@ -5,6 +5,16 @@
  */
 
 /**
+ * The release a `webServer.register(...)` call handed back, if it handed one
+ * back at all.
+ *
+ * Typed as `() => void` rather than `Function` on purpose: the check below is
+ * `typeof result === 'function'`, and a narrower element type is what lets
+ * `sink.push(result)` typecheck without an assertion.
+ */
+export type RouteRelease = () => void
+
+/**
  * Remember what a route registration returned, so it can be undone on dispose.
  *
  * WHY THIS EXISTS, AND WHY IT GUESSES NOTHING
@@ -34,10 +44,13 @@
  * @param result - whatever `webServer.register(...)` returned.
  * @returns the release, or `undefined` when there was nothing to keep.
  */
-export function rememberRouteRelease(sink, result) {
+export function rememberRouteRelease(
+  sink: RouteRelease[],
+  result: unknown,
+): RouteRelease | undefined {
   if (typeof result === 'function') {
-    sink.push(result)
-    return result
+    sink.push(result as RouteRelease)
+    return result as RouteRelease
   }
   return undefined
 }
@@ -53,7 +66,7 @@ export function rememberRouteRelease(sink, result) {
  * @param sink - the array collected by {@link rememberRouteRelease}.
  * @returns how many releases ran, for logging or a test.
  */
-export function releaseRoutes(sink) {
+export function releaseRoutes(sink: RouteRelease[] | undefined): number {
   let released = 0
   for (const release of sink ?? []) {
     try {

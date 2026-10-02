@@ -22,6 +22,28 @@
  */
 import { filterByEnabled } from './catalog-entry.ts'
 import { toPiModel } from './pi-model.ts'
+import type { Region } from './domain.ts'
+
+/**
+ * The slice of a region runtime this builder reads.
+ *
+ * Declared here rather than reused from `index.ts`, which cannot be imported
+ * without the Cordis peers installed — so naming the shape means naming what
+ * this function actually depends on, which is two reads and a `region.id`.
+ */
+export interface ModelRuntime {
+  catalog(): { current(): unknown[] }
+  region: Region
+}
+
+/** The projection switches `buildModelsFor` resolves from settings. */
+export interface BuildModelsOptions {
+  baseUrl: string
+  preferMaximumContext?: boolean
+  enabledIds?: unknown
+  regionEnabled?: unknown
+  imageModeFor: (modelId: string) => 'auto' | 'on' | 'off'
+}
 
 /**
  * Build the model list a region offers.
@@ -36,7 +58,7 @@ import { toPiModel } from './pi-model.ts'
  * @param options.imageModeFor - `(modelId) => 'auto' | 'on' | 'off'`.
  * @returns the projected pi-ai model descriptors.
  */
-export function buildModelsFor(runtime, options) {
+export function buildModelsFor(runtime: ModelRuntime, options: BuildModelsOptions): unknown[] {
   // A switched-off region offers no models. Returning the empty list is what
   // makes DSH hide the region's model group (the same rule a not-yet-signed-in
   // region already rides on), and `invalidate()` re-snapshots on the next

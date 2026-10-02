@@ -17,6 +17,7 @@
  *
  * @module dsh-connect-qoder/region-gate
  */
+import type { Region, ResolvedCredential } from './domain.ts'
 
 /**
  * Decide from a resolved credential.
@@ -27,7 +28,10 @@
  *   `'warn'` for something the user must act on and `'info'` for the ordinary
  *   "not signed in yet" case.
  */
-export function regionPublishDecision(credential, region) {
+export function regionPublishDecision(
+  credential: ResolvedCredential | undefined | null,
+  region: Region,
+): { ok: true } | { ok: false; level: 'info' | 'warn'; message: string } {
   if (credential === undefined || credential === null) {
     return {
       ok: false,
@@ -64,7 +68,9 @@ export function regionPublishDecision(credential, region) {
  * @param region - the region descriptor, for the message.
  * @returns the `{ level, message }` pair describing the refusal.
  */
-export function unreadableSignInDecision(region) {
+export function unreadableSignInDecision(
+  region: Region,
+): { level: 'warn'; message: string } {
   return {
     level: 'warn',
     message: `dsh-connect-qoder: ${region.displayName} sign-in is unusable; region not registered`,

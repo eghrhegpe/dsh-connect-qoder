@@ -27,16 +27,23 @@
 /**
  * Wrap `task` so only one run of it is active at a time.
  *
+ * Generic over the task's arguments and result, so a caller keeps the real
+ * signature: `createSingleFlight((force) => …)` still takes a boolean and still
+ * answers with the catalog, rather than degrading to `(…args: any[]) => any`
+ * and throwing that away at every call site.
+ *
  * @param task - the async operation; receives the caller's arguments.
  * @returns a function with `task`'s call signature. Concurrent calls share the
  *   first call's promise; once a run settles, the next call starts a fresh one
  *   with its own arguments. A rejection is handed to every joined caller and
  *   clears the slot, so a failed run never blocks future ones.
  */
-export function createSingleFlight(task) {
-  /** @type {Promise<unknown> | undefined} the active run, if any. */
-  let inFlight = undefined
-  return (...args) => {
+export function createSingleFlight<Args extends unknown[], Result>(
+  task: (...args: Args) => Promise<Result> | Result,
+): (...args: Args) => Promise<Result> {
+  /** The active run, if any. */
+  let inFlight: Promise<Result> | undefined = undefined
+  return (...args: Args) => {
     if (inFlight !== undefined) return inFlight
     // The async wrapper starts `task` SYNCHRONOUSLY — the run is live by the
     // time this call returns, so a joiner arriving in the same tick can never

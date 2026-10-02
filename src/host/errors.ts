@@ -30,7 +30,7 @@
 const QUEUE_MARKERS = ['"queueType"', '"retryAfterSeconds"', '"isQueued"', '"serviceAvailable"']
 
 /** How many of the queue markers appear in a payload text. */
-function queueMarkerCount(text) {
+function queueMarkerCount(text: string): number {
   let count = 0
   for (const marker of QUEUE_MARKERS) {
     if (text.includes(marker)) count += 1
@@ -39,7 +39,7 @@ function queueMarkerCount(text) {
 }
 
 /** Extract `retryAfterSeconds` from a queue payload, best-effort. */
-function queueSeconds(text) {
+function queueSeconds(text: string): number {
   // The payload reaches here already unwrapped once from the outer envelope,
   // but the queue descriptor is still buried: per the shape documented at the
   // top of this file, `detail` is `{ code, message }` whose `message` is a JSON
@@ -54,23 +54,34 @@ function queueSeconds(text) {
   // queue the server had already said how long to wait for.
   let node = text
   for (let depth = 0; depth < 4; depth++) {
-    let parsed
+    let parsed: unknown
     try {
       parsed = JSON.parse(node)
     } catch {
       return 0
     }
     if (parsed === null || typeof parsed !== 'object') return 0
-    const seconds = Number(parsed.retryAfterSeconds)
+    // Narrow to an indexable record. `typeof x === 'object'` alone lands on
+    // `object`, which has neither `retryAfterSeconds` nor `message` — the field
+    // reads below only ever worked because `parsed` used to be an implicit
+    // `any`. Re-widening here is what makes those reads checked rather than
+    // merely unchecked: the values stay `unknown`, so a non-numeric
+    // `retryAfterSeconds` still falls through `Number.isFinite` as before.
+    const descriptor = parsed as Record<string, unknown>
+    const seconds = Number(descriptor.retryAfterSeconds)
     if (Number.isFinite(seconds) && seconds > 0) return seconds
     // Descend: a `message` that is a string is another JSON document.
-    if (typeof parsed.message !== 'string') return 0
-    node = parsed.message
+    if (typeof descriptor.message !== 'string') return 0
+    node = descriptor.message
   }
   return 0
 }
 
-function classifyUpstreamError(_chunk: unknown, code: unknown, detail: string) {
+function classifyUpstreamError(
+  _chunk: unknown,
+  code: unknown,
+  detail: string,
+): { kind: string; retryAfterSeconds?: number } {
   // `code` may arrive as a JSON number from a gateway that stopped quoting it
   // (the unwrap layer normalises, but this stays defensive), so normalise
   // before comparing instead of strict-string-matching.
@@ -126,9 +137,12 @@ function classifyUpstreamError(_chunk: unknown, code: unknown, detail: string) {
  * @param error - the thrown error, or `undefined` from a catch block.
  * @returns true when the credential should be re-read on the next request.
  */
-export function isStaleCredentialError(error) {
-  if (error?.signInExpired === true) return true
-  return /sign-in is no longer valid|sign-in-expired/i.test(String(error?.message ?? ''))
+export function isStaleCredentialError(error: unknown): boolean {
+  // Narrowed through an explicit local rather than a cast on the argument, so
+  // both flag reads below are checked against the shape they claim to need.
+  const e = error as { signInExpired?: unknown; message?: unknown } | null | undefined
+  if (e?.signInExpired === true) return true
+  return /sign-in is no longer valid|sign-in-expired/i.test(String(e?.message ?? ''))
 }
 
 /**
@@ -185,8 +199,8 @@ export class ProtocolShapeChangedError extends Error {
  * @param error - the thrown error, or `undefined` from a catch block.
  * @returns true when the plugin should tell the user to update, not to re-sign.
  */
-export function isProtocolShapeChangedError(error) {
-  return error?.protocolShapeChanged === true
+export function isProtocolShapeChangedError(error: unknown): boolean {
+  return (error as { protocolShapeChanged?: unknown } | null | undefined)?.protocolShapeChanged === true
 }
 
 export { classifyUpstreamError }

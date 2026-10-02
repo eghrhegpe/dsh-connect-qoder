@@ -123,7 +123,7 @@ export class CatalogStore {
     return now - this.fetchedAt < this.ttlMs
   }
 
-  replace(entries, now = Date.now()) {
+  replace(entries: unknown[], now = Date.now()): void {
     this.entries = entries
     this.fetchedAt = now
     this.save()

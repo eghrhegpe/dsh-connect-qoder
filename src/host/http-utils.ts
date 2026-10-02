@@ -8,6 +8,10 @@
  *
  * @module dsh-connect-qoder/http-utils
  */
+import type { ServerResponse } from 'node:http'
+
+/** Response headers this plugin sets, passed through to `writeHead`. */
+export type ResponseHeaders = Record<string, number | string | readonly string[]>
 
 /**
  * Write one JSON body.
@@ -25,7 +29,12 @@
  *   `sendJson` call would otherwise be silently dropped, which is exactly the
  *   bug the 405 path had when it tried to advertise `Allow` that way.
  */
-export function sendJson(res, status, value, extraHeaders = undefined) {
+export function sendJson(
+  res: ServerResponse,
+  status: number,
+  value: unknown,
+  extraHeaders: ResponseHeaders | undefined = undefined,
+): void {
   const payload = JSON.stringify(value)
   res.writeHead(status, {
     'Content-Type': 'application/json',
@@ -49,7 +58,13 @@ export function sendJson(res, status, value, extraHeaders = undefined) {
  * @param message - the human-readable error message.
  * @param extraHeaders - optional additional headers (e.g., Retry-After).
  */
-export function writeError(res, status, code, message, extraHeaders = undefined) {
+export function writeError(
+  res: ServerResponse,
+  status: number,
+  code: string,
+  message: string,
+  extraHeaders: ResponseHeaders | undefined = undefined,
+): void {
   const payload = JSON.stringify({ error: { message, type: code, code } })
   res.writeHead(status, {
     'Content-Type': 'application/json',

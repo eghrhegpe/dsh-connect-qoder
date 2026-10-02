@@ -40,6 +40,7 @@
  *
  * @module dsh-connect-qoder/catalog-refresh
  */
+import type { CatalogOutcome, RefreshableRuntime, RefreshFailure } from './domain.ts'
 
 /** The reasons a refresh can leave the catalog unrefreshed. */
 export const REFRESH_FAILURE_REASONS = [
@@ -68,7 +69,7 @@ export const REFRESH_FAILURE_REASONS = [
  * @param runtime - the runtime, carrying `disposed`.
  * @returns true when the runtime is gone and the result must be dropped.
  */
-export function isRefreshObsolete(runtime) {
+export function isRefreshObsolete(runtime: RefreshableRuntime | null | undefined): boolean {
   return runtime?.disposed === true
 }
 
@@ -86,7 +87,10 @@ export function isRefreshObsolete(runtime) {
  *   and the failure marker that was displaced (so a caller that owns the
  *   runtime can log the transition rather than only the end state).
  */
-export function applyCatalogOutcome(runtime, outcome) {
+export function applyCatalogOutcome(
+  runtime: RefreshableRuntime,
+  outcome: CatalogOutcome,
+): { committed: boolean; previousFailure: RefreshFailure | undefined } {
   const previousFailure = runtime.refreshFailed
   if (outcome.ok !== true) {
     // Kept, not overwritten: a failed refresh is a statement about THIS fetch,
