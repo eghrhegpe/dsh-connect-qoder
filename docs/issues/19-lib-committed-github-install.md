@@ -58,10 +58,14 @@
 
 ## 验收标准
 
-- [ ] 落地提交同时含 `lib/`、`.gitignore`、`AGENTS.md`、`README.md`、本文件、`docs/issues/README.md` 与 CI 门禁
+- [x] 落地提交同时含 `lib/`、`.gitignore`、`AGENTS.md`、`README.md`、本文件、`docs/issues/README.md` 与 CI 门禁（`8c9dfad`，9 files）
 - [x] 本地 `npm run build` 两次 SHA256 一致（见上）
-- [ ] CI build job 新增的 "committed lib matches a fresh build" 步骤绿
+- [x] 落地提交后本地模拟 CI 门禁：重建 + `git diff --exit-code -- lib` 退出 0；`verify:bundle` 输出 `behaviour: IDENTICAL`
+- [x] pnpm 判据实测（按 pnpm 11.8 `exec/prepare-package` 逻辑模拟）：`main: ./lib/index.js` 存在 →
+      `packageShouldBeBuilt = false`——不触发构建、不需要 `allowBuilds` 审批；`git check-ignore lib/index.js` 退出 1（未被忽略）
+- [ ] CI build job 新增的 "The committed lib/ matches a fresh build" 步骤绿
 - [ ] DSH 市场粘 `github:eghrhegpe/dsh-connect-qoder` 安装：**无**构建脚本审批提示，卡片与模型路由正常
+      （待 push 后可测；push 前远端克隆仍无 `lib/`）
 - [ ] 再改一次 `src/` 只提交源码不提交 `lib/` → CI 新鲜度门禁红
 
 ## 与上游布局的关系
