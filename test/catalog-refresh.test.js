@@ -37,6 +37,7 @@ function makeCatalog(initial = [], now = 1_000) {
     entries: initial,
     fetchedAt: 500,
     replacements: [],
+    lastSaveError: undefined,
     replace(entries, at = now) {
       this.entries = entries
       this.fetchedAt = at
@@ -146,6 +147,35 @@ test('a successful refresh clears an earlier failure', () => {
   assert.ok(runtime.refreshFailed !== undefined)
   applyCatalogOutcome(runtime, { ok: true, entries: [ENTRY] })
   assert.strictEqual(runtime.refreshFailed, undefined, 'a good answer must clear the failure marker')
+})
+
+test('a swallowed disk write is surfaced as a persist failure, not cleared', () => {
+  // `CatalogStore.save()` records `lastSaveError` and returns instead of
+  // throwing — that swallow is load-bearing. But the in-memory roster has
+  // already advanced, and if the fold cleared the failure marker the card
+  // would stamp "已更新" on a catalog the disk does not have. The write error
+  // must become a failure class of its own, not a cleared one.
+  const runtime = makeRuntime({ entries: [] })
+  const writeError = new Error('EACCES: permission denied, open catalog.json')
+  runtime.catalog.lastSaveError = writeError
+  const result = applyCatalogOutcome(runtime, { ok: true, entries: [ENTRY] })
+
+  assert.strictEqual(result.committed, true, 'the answer still replaced the in-memory roster')
+  assert.deepStrictEqual(runtime.catalog.entries, [ENTRY])
+  assert.strictEqual(runtime.refreshFailed?.reason, 'persist')
+  assert.strictEqual(runtime.refreshFailed?.error, writeError, 'the recorded write error is the one reported')
+  assert.ok(REFRESH_FAILURE_REASONS.includes('persist'), 'persist must be a known reason, not an invented one')
+})
+
+test('a refresh whose write landed does not report a phantom persist failure', () => {
+  // The success path must clear the marker when the save actually landed —
+  // `save()` resets `lastSaveError` at the start of every write, so a
+  // successful `replace()` leaves it `undefined` and the fold clears.
+  const runtime = makeRuntime({ entries: [] })
+  applyCatalogOutcome(runtime, { ok: false, reason: 'fetch', error: new Error('boom') })
+  applyCatalogOutcome(runtime, { ok: true, entries: [ENTRY] })
+  assert.strictEqual(runtime.refreshFailed, undefined)
+  assert.strictEqual(runtime.catalog.lastSaveError, undefined)
 })
 
 test('a runtime with no invalidate hook does not throw', () => {

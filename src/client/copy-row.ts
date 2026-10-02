@@ -43,6 +43,7 @@ export const zhRow = {
 	// user through a ritual that cannot possibly work.
 	"row.refreshStale": "上次更新：{time}（刷新失败）",
 	"row.refreshFailed": "刷新失败：{reason}",
+	"row.refreshNotPersisted": "已刷新，但写盘失败——重启后会回到旧目录（下次刷新会自动重试）",
 	"row.protocolChanged": "Qoder 的接口返回了本插件不认识的格式——请更新插件（重新登录没有用）",
 	"row.offPeakOn": "错峰价",
 	"row.offPeakOff": "标准价",
@@ -96,6 +97,7 @@ export const enRow = {
 	"row.refreshed": "Updated ({time})",
 	"row.refreshStale": "Last updated: {time} (refresh failed)",
 	"row.refreshFailed": "Refresh failed: {reason}",
+	"row.refreshNotPersisted": "Refreshed, but the catalog could not be written — it will revert after a restart (the next refresh retries automatically)",
 	"row.protocolChanged": "Qoder replied in a format this plugin does not recognise — update the plugin (signing in again will not help)",
 	"row.offPeakOn": "off-peak",
 	"row.offPeakOff": "standard",

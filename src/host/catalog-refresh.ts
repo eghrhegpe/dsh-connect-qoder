@@ -38,6 +38,11 @@
  * "the network hiccuped" both keep the old rows, and the card must not tell a
  * user to update the plugin when the truth is to try again in a minute.
  *
+ * Committed is not the same as persisted: the store swallows disk-write
+ * failures by design, so a committed answer whose write was swallowed is
+ * reported as a `persist` failure — the rows on screen are the newest answer,
+ * but they will not survive a restart, and that has to be visible.
+ *
  * @module dsh-connect-qoder/catalog-refresh
  */
 import type { CatalogOutcome, RefreshableRuntime, RefreshFailure } from './domain.ts'
@@ -47,6 +52,7 @@ export const REFRESH_FAILURE_REASONS = [
   'credential',
   'no-credential',
   'fetch',
+  'persist',
   'protocol-shape-changed',
 ]
 
@@ -106,7 +112,19 @@ export function applyCatalogOutcome(
   // nowhere to put the answer; it still gets `refreshFailed` cleared and the
   // invalidation below, which is all the notification such a runtime can use.
   runtime.catalog?.replace(outcome.entries)
-  runtime.refreshFailed = undefined
+  // A `replace()` advances the in-memory roster even when the disk write was
+  // swallowed (`CatalogStore.save()` records the error and returns — a
+  // read-only Home must not kill the panel). That divergence has to stay
+  // visible: if the fold cleared the failure marker here, the card would stamp
+  // "已更新" on a catalog the disk does not have and a restart would silently
+  // revert it. The write error is surfaced as its own failure class — the rows
+  // stay (they are the correct roster for this process; only the disk lagged).
+  const persistError = runtime.catalog?.lastSaveError
+  if (persistError !== undefined) {
+    runtime.refreshFailed = { reason: 'persist', error: persistError }
+  } else {
+    runtime.refreshFailed = undefined
+  }
   // Called unconditionally, including for the empty result: a group that has to
   // disappear from the picker must be re-advertised as having disappeared, or
   // DSH keeps routing to a provider that now offers nothing.

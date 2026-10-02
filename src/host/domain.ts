@@ -197,6 +197,16 @@ export interface CatalogLike {
   current(): unknown[]
   replace(entries: unknown[], now?: number): void
   fetchedAt?: number
+  /**
+   * The error from the last failed `save()`, if any.
+   *
+   * The store records a swallowed write rather than throwing — a read-only
+   * Home must not kill the panel — and `replace()` advances the in-memory copy
+   * regardless. The refresh fold reads this to keep "what the disk holds"
+   * honest: when it is set, the catalog the process is serving will not
+   * survive a restart, and that has to be visible instead of cleared.
+   */
+  lastSaveError?: unknown
 }
 
 /**
@@ -204,7 +214,9 @@ export interface CatalogLike {
  *
  * `credential` and `no-credential` and `fetch` are transient; a protocol shape
  * change is not, which is why the reason travels with the record instead of
- * being collapsed into a boolean.
+ * being collapsed into a boolean. `persist` is a third class: the upstream
+ * answer landed in memory, but the disk write was swallowed — the rows on
+ * screen are the newest answer, yet they will not survive a restart.
  */
 export interface RefreshFailure {
   reason: string

@@ -17,14 +17,18 @@
  * reason: a hand-written copy in the test file would assert against itself.
  * Deleting or inverting the function in `lib/client.js` turns this file red.
  *
- * The card renders three states and the host sends the inputs:
+ * The card renders four states and the host sends the inputs:
  *   - no failures           → the "已更新（time）" stamp, rows are current;
  *   - a transient failure   → the stamp, marked stale, retry is the next move;
+ *   - persist               → "not persisted", rows are real but not durable;
  *   - protocol-shape-changed → "update the plugin", and no timestamp at all.
  *
  * The last one is the point: a plugin that reads an envelope it does not know
  * cannot be fixed by a login, and a time next to that message implies the rows
- * on screen are current when they are not.
+ * on screen are current when they are not. `persist` got its own verdict for
+ * the mirror reason: the rows ARE current, and stamping them "stale" (or
+ * "updated") would hide the one fact that matters — they will not survive a
+ * restart.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -90,6 +94,35 @@ test('a protocol shape change is its own verdict, never a transient one', () => 
   )
 })
 
+test('a swallowed disk write is its own verdict, never a transient one', () => {
+  // The rows are the newest answer; only their durability failed. Marking them
+  // stale ("retry") would send the user to refresh a roster that is already
+  // current, and stamping them updated would hide that a restart reverts them.
+  // Both would be wrong in the direction this file exists to stop.
+  assert.strictEqual(
+    refreshNoticeKey({
+      refreshedAt: 1,
+      refreshFailures: [{ region: 'qoder-cn', reason: 'persist' }],
+    }),
+    'persist',
+  )
+})
+
+test('persist wins over a transient failure in the same payload', () => {
+  // Two regions, one of each: CN's write was swallowed, the global edition
+  // merely 500-ed. The persist one names a condition the user can act on
+  // (retry/restart), so it is the one that shows.
+  assert.strictEqual(
+    refreshNoticeKey({
+      refreshFailures: [
+        { region: 'qoder', reason: 'fetch' },
+        { region: 'qoder-cn', reason: 'persist' },
+      ],
+    }),
+    'persist',
+  )
+})
+
 test('a protocol change wins over a transient failure in the same payload', () => {
   // Two regions, one of each: CN hit a shape change, the global edition merely
   // 500-ed. The actionable one is the protocol change, so that is what shows.
@@ -111,7 +144,7 @@ test('a malformed failures field cannot crash the card', () => {
   for (const value of [null, 0, '', 'x', {}, [null, 1, 'x'], [{ reason: 1 }], { refreshFailures: {} }]) {
     const verdict = refreshNoticeKey({ refreshedAt: 1, refreshFailures: value })
     assert.ok(
-      verdict === null || verdict === 'transient' || verdict === 'protocol-shape-changed',
+      verdict === null || verdict === 'transient' || verdict === 'persist' || verdict === 'protocol-shape-changed',
       `${JSON.stringify(value)} → ${JSON.stringify(verdict)}`,
     )
   }
@@ -121,7 +154,7 @@ test('the card copy for a protocol change points at a plugin update, not a login
   // The wording is part of the contract, so it is asserted as text: the strings
   // ship in the bundle, and a rewording that sends the user to re-authenticate
   // is the regression issue 10 named.
-  for (const key of ['row.protocolChanged', 'row.refreshStale', 'row.refreshFailed', 'row.refreshed']) {
+  for (const key of ['row.protocolChanged', 'row.refreshStale', 'row.refreshFailed', 'row.refreshed', 'row.refreshNotPersisted']) {
     assert.ok(BUNDLE.includes(key), `the card lost the ${key} string`)
   }
   const strings = [...BUNDLE.matchAll(/"row\.protocolChanged":\s*"([^"]*)"/g)].map((m) => m[1])
@@ -136,5 +169,13 @@ test('the card copy for a protocol change points at a plugin update, not a login
       /请(先)?重新登录。$|Please (re)?sign in\.?$/,
       `copy must not END by telling the user to sign in: ${text}`,
     )
+  }
+  // The persist copy is the whole point of the verdict: the rows on screen are
+  // current, so the wording must name the restart consequence rather than
+  // suggesting a refresh or pretending all is well.
+  const persistStrings = [...BUNDLE.matchAll(/"row\.refreshNotPersisted":\s*"([^"]*)"/g)].map((m) => m[1])
+  assert.ok(persistStrings.length >= 2, `expected a zh and an en string, found ${persistStrings.length}`)
+  for (const text of persistStrings) {
+    assert.match(text, /重启|restart/i, `persist copy does not name the restart consequence: ${text}`)
   }
 })

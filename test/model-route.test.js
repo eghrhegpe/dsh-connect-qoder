@@ -299,6 +299,22 @@ test('a stale region is named, with the reason, instead of being inferred from a
   assert.match(payload.refreshFailures[0].detail, /no `chat` group/)
 })
 
+test('a swallowed catalog write is reported as a persist failure, not a fresh stamp', () => {
+  // The fold turns a store whose write was swallowed into a `persist` failure
+  // record. It has to survive to the card: without it, the payload would carry
+  // a fresh `refreshedAt` for a catalog the disk does not have, and a restart
+  // would silently revert the rows the card just showed.
+  const runtime = runtimeOf('qoder-cn', [entryFor()])
+  runtime.runtime.catalog.fetchedAt = NOW.getTime()
+  runtime.runtime.refreshFailed = { reason: 'persist', error: new Error('EACCES: permission denied') }
+
+  const payload = build([runtime], {}, NOW)
+  assert.strictEqual(payload.refreshFailures.length, 1)
+  assert.strictEqual(payload.refreshFailures[0].region, 'qoder-cn')
+  assert.strictEqual(payload.refreshFailures[0].reason, 'persist')
+  assert.match(payload.refreshFailures[0].detail, /EACCES/)
+})
+
 test('a healthy payload reports no failures rather than omitting the field', () => {
   // Sent as an empty array, so the card's check is a comparison instead of an
   // `in` check on a key that may be missing.

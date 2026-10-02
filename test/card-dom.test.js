@@ -324,3 +324,55 @@ test('a protocol-shape change is shown as "update the plugin", not "re-sign in"'
     `the copy must lead with the update, got ${JSON.stringify(protocol)}`,
   )
 })
+
+test('a swallowed catalog write is shown as not-persisted, not as a fresh stamp', async () => {
+  // The persist verdict's whole job: the rows on screen ARE the newest answer,
+  // so the card must not stamp them "已更新（time）" (which would hide that a
+  // restart reverts them) and must not mark them stale (which would send the
+  // user to refresh a roster that is already current).
+  const { container } = await mount({
+    models: [
+      model({ id: 'm1', promotion: { active: false, windowStart: '22:00', windowEnd: '08:00' } }),
+    ],
+    fetch: (() => {
+      const json = (value) => ({ ok: true, status: 200, json: async () => value })
+      const models = [
+        { id: 'm1', region: 'qoder-cn', name: 'Alpha', isVL: false },
+      ]
+      return async (url) => {
+        const path = String(url)
+        if (path.includes('/models')) {
+          return json({
+            models,
+            imageOverrides: {},
+            enabledModelIds: {},
+            useMaximumContextWindow: false,
+            refreshedAt: 1750000000000,
+            refreshFailures: [{ reason: 'persist', detail: 'EACCES: permission denied' }],
+          })
+        }
+        if (path.includes('/account')) {
+          return json({
+            regions: [
+              { region: 'qoder-cn', regionName: 'Qoder CN', state: 'ok', enabled: true },
+            ],
+            enabledRegions: { 'qoder-cn': true },
+          })
+        }
+        if (path.includes('/usage')) return json({ regions: [] })
+        throw new Error(`unexpected fetch: ${path}`)
+      }
+    })(),
+  })
+
+  const states = [...container.querySelectorAll('.dsm-qoder-state')].map((n) => text(n))
+  const persist = states.find((s) => s.includes('写盘失败'))
+  assert.ok(
+    persist !== undefined,
+    `a swallowed write must be named, got ${JSON.stringify(states)}`,
+  )
+  assert.ok(
+    persist.includes('重启'),
+    `the persist copy must name the restart consequence, got ${JSON.stringify(persist)}`,
+  )
+})

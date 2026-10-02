@@ -348,7 +348,7 @@ function rateAt(model: CardModelRow, now: Date): number | undefined {
  * A pure function of `value` so the decision can be tested against the shipped
  * bundle (see test/protocol-shape-card.test.js) rather than only by reading JSX.
  *
- * The host sends `{ refreshedAt, refreshFailures }`. Three outcomes, kept apart
+ * The host sends `{ refreshedAt, refreshFailures }`. Four outcomes, kept apart
  * on purpose — collapsing them is the bug this replaces:
  *
  * - **no failure** → `null`: the rows shown are the last upstream answer, and
@@ -356,18 +356,24 @@ function rateAt(model: CardModelRow, now: Date): number | undefined {
  * - **a transient failure** (`fetch` / `credential` / `no-credential`) → the
  *   stamp still shows, marked stale, because the rows on screen are real, just
  *   old. The user's next move is to retry.
+ * - **`persist`** → the rows on screen are the newest answer, but the disk
+ *   write was swallowed, so they will not survive a restart. Nothing is wrong
+ *   with the data being shown — only with its durability — so this gets its
+ *   own wording instead of a misleading "stale" or a confident "updated".
  * - **`protocol-shape-changed`** → the envelope moved and the plugin is out of
  *   date. This is the case that used to be indistinguishable from a queue: the
  *   user was told to re-sign, or waited out a retry ladder that could not
  *   possibly help. Neither appears here — the copy points at a plugin update.
  *
  * The protocol verdict wins over a transient one in the same payload, since it
- * is the one that cannot resolve on its own.
+ * is the one that cannot resolve on its own; `persist` outranks a transient
+ * one because it names a different, actionable condition.
  */
 function refreshNoticeKey(value: unknown): string | null {
 	const failures = Array.isArray((value as { refreshFailures?: unknown } | null | undefined)?.refreshFailures) ? (value as { refreshFailures: unknown[] }).refreshFailures : [];
 	if (failures.length === 0) return null;
 	if (failures.some((f) => (f as { reason?: string } | null | undefined)?.reason === "protocol-shape-changed")) return "protocol-shape-changed";
+	if (failures.some((f) => (f as { reason?: string } | null | undefined)?.reason === "persist")) return "persist";
 	return "transient";
 }
 
@@ -1295,7 +1301,8 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	const [refreshing, setRefreshing] = (0, react.useState)(false);
 	const [refreshedAt, setRefreshedAt] = react.useState<number | undefined>(undefined);
 	// The host's own verdict about the last refresh, folded to one of
-	// `null` / "transient" / "protocol-shape-changed" by refreshNoticeKey.
+	// `null` / "transient" / "persist" / "protocol-shape-changed" by
+	// refreshNoticeKey.
 	// Kept apart from `notice` (which is the load-failure banner) so an
 	// upstream problem never borrows the save banner's styling, and from
 	// `status` (which is about whether the ROUTE answered at all).
@@ -1751,12 +1758,15 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 							children: t(regionAllTicked ? "row.disableAll" : "row.enableAll")
 						}), refreshedAt !== undefined && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
 							className: "dsm-qoder-state",
-							// Three shapes, one slot. A protocol change replaces the
+							// Four shapes, one slot. A protocol change replaces the
 							// timestamp entirely rather than decorating it: the time
 							// of a last successful fetch is not useful next to "your
 							// plugin is out of date", and offering a time there
-							// invites the user to believe the rows are current.
-							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : t(refreshFailure === "transient" ? "row.refreshStale" : "row.refreshed", { time: new Date(refreshedAt).toLocaleTimeString() })
+							// invites the user to believe the rows are current. A
+							// persist failure does the same — the rows are real,
+							// but a "已更新（time）" stamp would hide that they will
+							// not survive a restart.
+							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : refreshFailure === "persist" ? t("row.refreshNotPersisted") : t(refreshFailure === "transient" ? "row.refreshStale" : "row.refreshed", { time: new Date(refreshedAt).toLocaleTimeString() })
 						}) : refreshFailure !== null && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
 							// No fetch has ever succeeded for this profile, so there is
 							// no time to show — but the failure is still true and still
@@ -1765,7 +1775,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 							// would restore the original "everything looks fine"
 							// reading for exactly the case that matters.
 							className: "dsm-qoder-state",
-							title: refreshFailure === "protocol-shape-changed" ? undefined : t("row.refreshFailed", { reason: refreshFailure }),
+							title: refreshFailure === "protocol-shape-changed" || refreshFailure === "persist" ? undefined : t("row.refreshFailed", { reason: refreshFailure }),
 							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : t("row.refreshFailed", { reason: refreshFailure })
 						}) : null]
 					}),
