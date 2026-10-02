@@ -9,7 +9,7 @@
 | Qwen3.8-Max  | 0.5x     | 无折扣                   | 0.2x（4 折）             |
 | Qwen3.7-Plus | 0.1x     | 无折扣                   | 0.04x（4 折）            |
 
-&amp;lt;!-- Temporarily hidden on 2026-09-18 during the all-day free promotion. Keep for restoration.
+<!-- Temporarily hidden on 2026-09-18 during the all-day free promotion. Keep for restoration.
 | Qwen3.8-Flash | 0.1x | 无折扣 | 0.04x（4 折） | -->
 
 时段以北京时间为准，含周末及公共假日。选用上述模型以外的其他模型，按标准费率计费。折扣仅影响 Credits 计价，模型质量不受影响。Service Account 的错峰时段为每日 01:00–07:00（北京时间），折扣倍率与上表相同；其余产品仍为 22:00–08:00。
@@ -23,7 +23,7 @@
 | Qwen3.7-Max 错峰 2 折  | 2026 年 6 月 23 日      | 2026 年 9 月 30 日 22:00 |
 | Qwen3.8-Max 错峰 5 折  | 2026 年 8 月 3 日       | 2026 年 9 月 4 日 22:00  |
 
-&amp;lt;!-- Temporarily hidden on 2026-09-18 during the all-day free promotion. Keep for restoration.
+<!-- Temporarily hidden on 2026-09-18 during the all-day free promotion. Keep for restoration.
 | Qwen3.8-Flash 错峰折扣 | 2026 年 9 月 4 日 22:00 | 暂未公布，将提前通知 | -->
 
 ## 参与条件

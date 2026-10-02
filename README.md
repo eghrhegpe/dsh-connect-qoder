@@ -230,6 +230,11 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/routes.ts` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
 | `src/host/index.ts` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
 
+`docs/docs-qoder-cn/` 是从 Qoder CN 官方文档抓回并清洗的资料（**纯 Markdown，源 `.txt` 已删**），
+由根目录的 `convert-qoder-docs.ps1` 一次性转换而成——它**只处理这一批抓取件**，不是常规构建步骤；
+产物由 `test/docs-markdown.test.js` 守着，改动转换规则后重跑该测试即可。文档与代码的对应关系
+（哪条系数/活动/签到事实落在哪个模块）记录在该目录的 `Qoder CN 文档与插件设计佐证.md`。
+
 卡片侧的源码在 `src/client/`（产物是 `lib/client.js`，`react` 由宿主提供，产物不打包它）：
 
 | `src/client/paths.ts` | 卡片用到的五条插件路由 |
@@ -394,6 +399,14 @@ PowerShell，这些在别的平台上行为不同。
   已在文件头写明。
 - `test/upstream-messages.test.js` —— 消息与工具调用翻译，注释里自称
   「最重要的一件事」，此前零覆盖。
+- `test/docs-markdown.test.js` —— `docs/docs-qoder-cn/*.md` 是**一次性转换的产物**：
+  `convert-qoder-docs.ps1` 把抓回的原始资料洗成纯 Markdown，随后**原始 `.txt` 被删除**，
+  于是「转换是否忠实」在事后无法从内容本身判断，而 `docs-facts.test.js` 只管散文断言、
+  不读这个目录。2026-10 因此放过去两类静默污染：转义顺序写反（先 `<` 后 `&`，把刚生成的
+  `&lt;` 二次转成 `&amp;lt;`）让两段「Temporarily hidden … Keep for restoration」的隐藏
+  注释渲染成可见文本，同一 bug 又把链接里的 `\&` 转成 `\&amp;`、弄坏三个订阅链接。
+  门禁只查转换器真能损坏的形状（双重转义、注释开合、围栏配对、MDX 残留），并带**存活守卫**
+  （文件数与最小长度）——否则目录被改名或清空时，循环跑零次、门禁照样全绿。
 
 尚未覆盖的部分集中登记在 `docs/KNOWN_GAPS.md`，不在各文件里重复叙述——
 重复三处正是「手抄副本」那类问题的文档版。

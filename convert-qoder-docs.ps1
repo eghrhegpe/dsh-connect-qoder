@@ -6,7 +6,8 @@
 #  4) MDX 注释 {/* */} 转 HTML 注释
 #  5) 内联 <b>/<i>/<ul>/<li> 转 Markdown
 #  6) 逐行 strip 标题(#)和列表项(-)的前导空格（代码围栏内除外）
-#  7) 压缩多余空行
+#  7) 转义裸 < 与 &（代码围栏与 HTML 注释内除外；& 先于 <，且不碰已有实体）
+#  8) 压缩多余空行
 
 $srcDir = Join-Path $PSScriptRoot 'docs\docs-qoder-cn'
 
@@ -68,13 +69,38 @@ function Convert-ToMarkdown([string]$text) {
     $text = $result -join "`n"
 
     # 7) 转义裸 < 与 &（仅代码围栏外，避免误判为 HTML / 破坏代码块内的 URL）
+    #
+    # 这一轮出过两类事故，两条规则都是拿真实产物换来的（见
+    # docs/docs-qoder-cn 里 3 处被污染的站点）：
+    #
+    #   a) **& 必须先于 < 转义**。反过来先转 `<` 会**新造出** `&`
+    #      （`<` -> `&lt;`），下一条规则再把它二次转义成 `&amp;lt;` ——
+    #      第 4 步刚生成的 HTML 注释会因此变成可见的乱码文本。
+    #   b) **HTML 注释是本步的输入而非待转义文本**。第 4 步把 MDX 注释
+    #      `{/* */}` 转成 `<!-- -->` 的**目的**就是让它保持隐藏（上游原话
+    #      "Temporarily hidden … Keep for restoration"）；转义它等于把
+    #      "留着以后恢复"变成一行渲染出来的字面量。
+    #
+    # 另外只转**裸** `&`：源文里 `\&` 是合法的 Markdown 转义（URL 查询分隔
+    # 符常这么写），`&amp;` 已是实体，两者再转一次就成了 `\&amp;` / `&amp;amp;`。
     $inFence = $false
+    $inComment = $false
     $escOut = @()
     foreach ($ln in [regex]::Split($text, '\r?\n')) {
         if ($ln -match '^\s*```') { $inFence = -not $inFence; $escOut += $ln; continue }
         if ($inFence) { $escOut += $ln; continue }
+        if ($inComment) {
+            if ($ln -match '-->') { $inComment = $false }
+            $escOut += $ln
+            continue
+        }
+        if ($ln -match '<!--') {
+            if ($ln -notmatch '-->') { $inComment = $true }
+            $escOut += $ln
+            continue
+        }
+        $ln = $ln -replace '(?<!\\)&(?![a-zA-Z]+;|#\d+;)', '&amp;'
         $ln = $ln -replace '<', '&lt;'
-        $ln = $ln -replace '&', '&amp;'
         $escOut += $ln
     }
     $text = $escOut -join "`n"
