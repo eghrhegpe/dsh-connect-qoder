@@ -23,7 +23,7 @@ import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { classifyUpstreamError, ProtocolShapeChangedError } from './errors.ts'
+import { classifyUpstreamError, describeThrown, errorMessage, ProtocolShapeChangedError, thrownFlag } from './errors.ts'
 import { windowIsOpen } from './offpeak.ts'
 import { toEpochMs } from './time.ts'
 import { checkinStateFrom } from './claim.ts'
@@ -884,7 +884,7 @@ export async function fetchUsage(
   let source = 'presentation'
   try {
     payload = await read(usagePresentationUrl(region))
-  } catch (error: any) {
+  } catch (error) {
     if (signal?.aborted) throw error
     source = 'quota'
     payload = await read(usageUrl(region))
@@ -912,7 +912,7 @@ export async function fetchUsage(
     const raw = await readCampaigns(region, credential, signal)
     campaigns = projectCampaignRows(raw)
     checkin = checkinStateFrom(raw)
-  } catch (error: any) {
+  } catch (error) {
     if (signal?.aborted) throw error
   }
 
@@ -1509,7 +1509,7 @@ export async function* streamChat(
         redirect: 'error',
         signal: attemptSignal,
       })
-    } catch (error: any) {
+    } catch (error) {
       // A caller abort is the user's own doing and must surface unchanged.
       if (signal?.aborted) throw error
       // A deadline that fired is a stuck attempt, not a code bug. It is
@@ -1524,15 +1524,23 @@ export async function* streamChat(
       // Network-level failures (ECONNRESET, DNS, proxy timeout, undici socket
       // errors) are transient and safe to retry before the first frame. The
       // caller's `queueWaitFor` will apply the escalation ladder.
-      const cause = error?.cause
-      const code = cause?.code ?? error?.code ?? ''
+      // `cause` is an undici `Error` wrapping the socket failure, and its `code`
+      // is where the real diagnosis lives; `error.code` is the fallback for a
+      // throw that carried no cause. Both reads are narrowed rather than
+      // assumed, so a non-object throw answers `undefined` for each and falls
+      // through to the `message` test below instead of matching a code by luck.
+      const cause = thrownFlag(error, 'cause')
+      const code = thrownFlag(cause, 'code') ?? thrownFlag(error, 'code') ?? ''
       if (
         code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'EPIPE' ||
         code === 'ENOTFOUND' || code === 'UND_ERR_SOCKET' ||
         code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'UND_ERR_HEADERS_TIMEOUT' ||
-        error?.message?.includes?.('fetch failed')
+        String(thrownFlag(error, 'message') ?? '').includes('fetch failed')
       ) {
-        throw new QueueRejection(0, `network: ${cause?.message ?? error?.message ?? error}`)
+        // Prefer the cause's own message — it names the socket failure — and
+        // fall back to the wrapper's when the throw carried no usable cause.
+        const detail = errorMessage(cause) !== '' ? errorMessage(cause) : describeThrown(error)
+        throw new QueueRejection(0, `network: ${detail}`)
       }
       // A bare `TypeError` used to land in that list, on the theory that undici
       // wraps transport failures in one. It does not: `TypeError` is also what a
@@ -1610,7 +1618,7 @@ export async function* streamChat(
       // rejection surfaces here rather than mid-stream where it could not be
       // retried without duplicating output.
       first = await stream.next()
-    } catch (error: any) {
+    } catch (error) {
       waitedMs += Date.now() - attemptStartedAt
       const queueWaitMs = queueWaitFor(error, waitedMs, attempt)
       if (queueWaitMs === undefined) throw error

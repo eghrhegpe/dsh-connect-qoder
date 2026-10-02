@@ -48,6 +48,7 @@ import { join, basename } from 'node:path'
 import { createDecipheriv } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type { Region } from './domain.ts'
+import { describeThrown } from './errors.ts'
 
 /**
  * One entry of the OSCrypt key cache: the key plus the identity of the
@@ -661,14 +662,14 @@ function runUnwrap(
       zeroOutFile(join(dir, 'key.b64'))
       try {
         rmSync(dir, { recursive: true, force: true })
-      } catch (error: any) {
+      } catch (error) {
         // Blocked only while some handle on the file is still open — in
         // practice a killed child whose kernel teardown has not caught up
         // (see `zeroOutFile`). Reported rather than thrown, so a surviving
         // directory is a logged hazard whose remaining owner is the next
         // startup sweep — which is a plugin start away, not a timer.
         reportCleanupFailure(
-          `could not remove the credential temp dir ${dir}: ${error?.message ?? error}`,
+          `could not remove the credential temp dir ${dir}: ${describeThrown(error)}`,
         )
       }
     }
@@ -721,7 +722,7 @@ function runUnwrap(
     const read = readUnwrappedKey(outFile)
     if (read.failure !== undefined) lastFailure = read.failure
     return finishUnwrap(appDir, settle(read.key), lastFailure, identity)
-  } catch (error: any) {
+  } catch (error) {
     // Keep enough of the cause to be diagnosable. This used to be a bare
     // `catch {}`, which made a missing app, a DPAPI failure, an absent
     // PowerShell and a changed `Local State` format all look identical from
@@ -932,7 +933,7 @@ function zeroOutFile(file: string, attempts = 4): boolean {
     let fd: number
     try {
       fd = openSync(file, 'r+')
-    } catch (error: any) {
+    } catch (error) {
       // A file that vanished between the stat and the open is a success, not a
       // failure; anything else is a lock we may be able to win on the retry.
       if (!existsSync(file)) return true
@@ -948,7 +949,7 @@ function zeroOutFile(file: string, attempts = 4): boolean {
         offset += length
       }
       return true
-    } catch (error: any) {
+    } catch (error) {
       lastError = error
     } finally {
       try {
@@ -1546,13 +1547,13 @@ export function sweepStaleOscryptDirs(maxAgeMs = 5 * 60 * 1000) {
       zeroOutFile(join(dir, OSCRYPT_MARKER))
       rmSync(dir, { recursive: true, force: true })
       reclaimed += 1
-    } catch (error: any) {
+    } catch (error) {
       // Still held by a live process, or the dir vanished under us; its own
       // cleanup (or the next sweep) takes it. Reported, because this directory
       // holds a master key in plain text and the next sweep is a plugin start
       // away — possibly days.
       reportCleanupFailure(
-        `could not reclaim the stale credential temp dir ${dir}: ${error?.message ?? error}`,
+        `could not reclaim the stale credential temp dir ${dir}: ${describeThrown(error)}`,
       )
     }
   }

@@ -28,6 +28,7 @@
  * @module dsh-connect-qoder/routes
  */
 import { sendJson } from './http-utils.ts'
+import { describeThrown, thrownFlag } from './errors.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /** The result of a guarded body read: a parsed body, or a 400 already sent. */
@@ -96,14 +97,14 @@ export async function readJsonBodyOr400(
 ): Promise<JsonBodyResult> {
   try {
     return { ok: true, body: await readJsonBody(req, maxBytes) }
-  } catch (error: any) {
+  } catch (error) {
     sendJson(
       res,
       400,
       {
         error: 'invalid request body',
-        errorName: error?.name ?? 'Error',
-        detail: String(error?.message ?? error).slice(0, 200),
+        errorName: thrownFlag(error, 'name') ?? 'Error',
+        detail: describeThrown(error).slice(0, 200),
       },
       { Allow: 'POST' },
     )

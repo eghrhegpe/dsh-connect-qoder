@@ -161,6 +161,31 @@ function imageModeOf(overrides: unknown, modelId: string): string {
 	return typeof saved === "string" && IMAGE_MODES.includes(saved) ? saved : "auto";
 }
 
+/**
+ * A readable description of a thrown value, for the two `catch` blocks in this
+ * card that show a failure reason to the user.
+ *
+ * A catch binding is `unknown` (`useUnknownInCatchVariables`), so `.message` is
+ * not readable without narrowing. The spelling this replaces —
+ * `String(error?.message ?? error)` — had a real defect beyond the type error:
+ * for a non-`Error` throw with no `message` (a bare object, or a rejection
+ * carrying only a code) it produces the literal text `"undefined"`, which is
+ * how a failed save could show the user a message that says nothing at all.
+ *
+ * This is a LOCAL copy of `host/errors.ts#describeThrown` on purpose. The card
+ * is a separate bundle built by `scripts/build-client.mjs`, and no client file
+ * imports from `src/host/`, so sharing one implementation would mean either
+ * bundling host code into the browser card or hoisting this helper into the
+ * generated `lib/client.js`. The duplication is two lines of narrowing against
+ * a stable language rule; the coupling is not worth that price.
+ */
+function describeThrown(error: unknown): string {
+	const message = (error as { message?: unknown } | null | undefined)?.message;
+	if (typeof message === "string" && message !== "") return message;
+	if (typeof error === "string") return error;
+	return String(error);
+}
+
 /** Fill a `{date}` placeholder in a translated string. */
 function withDate(template: string, at: number | undefined): string {
 	if (typeof at !== "number" || !Number.isFinite(at) || at <= 0) return "";
@@ -670,7 +695,7 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 			setRegions(Array.isArray(value.regions) ? value.regions : []);
 			setStatus("ready");
 			setNotice(undefined);
-		} catch (error: any) {
+		} catch (error) {
 			if (!mounted.current) return;
 			setStatus("error");
 			setNotice(error instanceof Error ? error.message : String(error));
@@ -701,7 +726,7 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 				amount: typeof value?.amount === "number" ? value.amount : void 0
 			});
 			await load(true);
-		} catch (error: any) {
+		} catch (error) {
 			if (mounted.current) setClaimNotice({
 				kind: "error",
 				message: error instanceof Error ? error.message : String(error)
@@ -934,13 +959,13 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 					detail: value.detail
 				}
 			}));
-		} catch (error: any) {
+		} catch (error) {
 			if (!mounted.current) return;
 			setConfirmState((current) => ({
 				...current,
 				[regionId]: {
 					kind: "unavailable",
-					detail: String(error?.message ?? error)
+					detail: describeThrown(error)
 				}
 			}));
 		} finally {
@@ -966,9 +991,9 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 			await writeSettingsField(settingsScope, "enabledRegions", next);
 			if (onReconciled !== void 0) onReconciled();
 			await load();
-		} catch (error: any) {
+		} catch (error) {
 			setEnabledRegions((current) => ({ ...current, [regionId]: !nextOn }));
-			if (mounted.current) setOfferError(String(error?.message ?? error));
+			if (mounted.current) setOfferError(describeThrown(error));
 		} finally {
 			if (mounted.current) setToggling(false);
 		}
@@ -1401,7 +1426,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 			setRefreshedAt(typeof value.refreshedAt === "number" ? value.refreshedAt : undefined);
 			setRefreshFailure(refreshNoticeKey(value));
 			setStatus("ready");
-		} catch (error: any) {
+		} catch (error) {
 			if (!mounted.current || signal?.aborted === true) return;
 			setStatus("error");
 			setNotice(error instanceof Error ? error.message : String(error));
@@ -1502,7 +1527,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 			setSavedMaxWindow(maxWindow);
 			setSavedEnabledIds(enabledIds);
 			setNotice(t("row.saved"));
-		} catch (error: any) {
+		} catch (error) {
 			setNotice(`${t("row.failed")}: ${error instanceof Error ? error.message : String(error)}`);
 		} finally {
 			if (mounted.current) setSaving(false);

@@ -111,7 +111,7 @@ export class CatalogStore {
       mkdirSync(dirname(this.path), { recursive: true })
       writeFileSync(tmp, JSON.stringify({ version: CATALOG_FORMAT_VERSION, fetchedAt: this.fetchedAt, entries: this.entries }, null, 2), 'utf8')
       renameSync(tmp, this.path)
-    } catch (error: any) {
+    } catch (error) {
       this.lastSaveError = error
       // A failed rename leaves the temp file behind; clean it up so the next
       // `save()` can write to it again.

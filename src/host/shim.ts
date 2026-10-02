@@ -17,7 +17,7 @@ import { createServer } from 'node:http'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { streamChat, toQoderMessages, toQoderTools } from './upstream.ts'
 import { filterByEnabled } from './catalog-entry.ts'
-import { isStaleCredentialError } from './errors.ts'
+import { describeThrown, isStaleCredentialError, thrownFlag } from './errors.ts'
 import { writeError, sendJson } from './http-utils.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type {
@@ -312,7 +312,7 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
     let credential: ShimCredential | null | undefined
     try {
       credential = await resolveCredential()
-    } catch (error: any) {
+    } catch (error) {
       writeError(res, 401, 'not_signed_in', String(error))
       return
     }
@@ -330,8 +330,8 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
     let body: ChatRequestBody
     try {
       body = JSON.parse((await readBody(req)).toString('utf8')) as ChatRequestBody
-    } catch (error: any) {
-      if (error?.name === 'BodyTooLargeError') {
+    } catch (error) {
+      if (thrownFlag(error, 'name') === 'BodyTooLargeError') {
         writeError(res, 413, 'payload_too_large', 'request body exceeds the 20 MiB limit')
         return
       }
@@ -381,7 +381,7 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
       // Pull the first chunk before committing to a status code, so an auth or
       // quota failure surfaces as an HTTP error rather than a broken stream.
       first = await iterator.next()
-    } catch (error: any) {
+    } catch (error) {
       logger?.warn?.(`dsh-connect-qoder: ${region.displayName} upstream failed`, error)
       // Queueing is transient, so it must not look like a rejection. DSH
       // retries a 503 (RATE_LIMIT/SERVER); it refuses to retry a 403, and the
@@ -395,13 +395,13 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
       if (signInStale) {
         invalidateCredential?.()
       }
-      if (error?.retryable === true) {
+      if (thrownFlag(error, 'retryable') === true) {
         // The queue hint travels as a header as well as in the body: the host
         // honours an HTTP `Retry-After` (capped at 20 s), and the plugin's own
         // queue wait may already be spent — handing the number over costs
         // nothing and lets the host's retry land inside the queue window
         // instead of on a blind backoff.
-        writeError(res, 503, 'rate_limit', String(error?.message ?? error), retryAfterHeader(error))
+        writeError(res, 503, 'rate_limit', describeThrown(error), retryAfterHeader(error))
         return
       }
       // A spent daily allowance is not an upstream malfunction, so it is not
@@ -411,11 +411,11 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
       // deliberately carries NO `Retry-After`, because advertising an hour-long
       // delay on something that must not be retried is what produced the
       // original symptom ("重试延迟：7350 毫秒" on a request no retry could fix).
-      if (error?.dailyLimit === true) {
-        writeError(res, 429, 'daily_limit_exceeded', String(error?.message ?? error))
+      if (thrownFlag(error, 'dailyLimit') === true) {
+        writeError(res, 429, 'daily_limit_exceeded', describeThrown(error))
         return
       }
-      writeError(res, 502, 'upstream_error', String(error?.message ?? error))
+      writeError(res, 502, 'upstream_error', describeThrown(error))
       return
     }
 
@@ -504,16 +504,16 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
           choices: [{ index: 0, delta: out, finish_reason: finish ?? null }],
         })
       }
-    } catch (error: any) {
+    } catch (error) {
       // Never end a broken stream with [DONE]: that tells the client the
       // response finished normally, so a half-written answer is shown as a
       // complete turn. Emitting the failure lets DSH retry or report it.
       logger?.warn?.(`dsh-connect-qoder: ${region.displayName} stream broke`, error)
-      const retryable = error?.retryable === true
+      const retryable = thrownFlag(error, 'retryable') === true
       // A spent daily allowance gets its own kind so the in-band frame says so,
       // rather than being lumped in with genuine upstream faults.
-      const kind = retryable ? 'rate_limit' : error?.dailyLimit === true ? 'daily_limit_exceeded' : 'upstream_error'
-      const message = String(error?.message ?? error)
+      const kind = retryable ? 'rate_limit' : thrownFlag(error, 'dailyLimit') === true ? 'daily_limit_exceeded' : 'upstream_error'
+      const message = describeThrown(error)
       // A sign-in rejection means the cached credential is stale; force the
       // next resolveCredential to re-read the app's store so a re-sign-in is
       // picked up without a DSH restart. The error carries `signInExpired`

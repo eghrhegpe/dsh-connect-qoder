@@ -1,4 +1,76 @@
 /**
+ * The `message` of a thrown value, as a string, or `''` when it has none.
+ *
+ * A catch block's binding is `unknown` (`useUnknownInCatchVariables` is on), so
+ * `.message` is not readable without narrowing first. This is that narrowing,
+ * written once instead of as `String((error as { message?: unknown })?.message ?? error)`
+ * at each of the two dozen catch sites — a spelling that also quietly loses the
+ * non-Error throw (a bare string, a rejected non-object) by stringifying
+ * `undefined` into the word "undefined".
+ *
+ * Deliberately narrow: it reads ONE field off a value it does not trust, and
+ * answers `''` rather than inventing a description. Callers that need the
+ * original value stringified should use {@link describeThrown}.
+ *
+ * @param error - the thrown value.
+ * @returns its `message` when that is a string, otherwise `''`.
+ */
+export function errorMessage(error: unknown): string {
+  const message = (error as { message?: unknown } | null | undefined)?.message
+  return typeof message === 'string' ? message : ''
+}
+
+/**
+ * A human-readable description of a thrown value, whatever it turned out to be.
+ *
+ * The three cases that actually occur, in the order that reads best:
+ *
+ * 1. an `Error` (or anything with a string `message`) — its message;
+ * 2. a bare string thrown by hand — the string itself;
+ * 3. anything else (a rejection carrying an object, `undefined`) — `String()`.
+ *
+ * The reason this is not just `String(error)` is that it turns an `Error` into
+ * `"Error: the real reason"`, prefixing the noise the caller is trying to read
+ * past. The reason it is not just `error.message` is that a non-Error throw
+ * then arrives as the literal text `"undefined"`, which is how a bare string
+ * rejection reached the account panel as an empty-looking message.
+ *
+ * @param error - the thrown value.
+ * @returns a non-empty description; `'undefined'` only for an actual `undefined` throw.
+ */
+export function describeThrown(error: unknown): string {
+  const message = errorMessage(error)
+  if (message !== '') return message
+  if (typeof error === 'string') return error
+  return String(error)
+}
+
+/**
+ * Read a flag or field off a thrown value, without trusting its shape.
+ *
+ * The shim and the classifier both hang their own flags on errors
+ * (`retryable`, `dailyLimit`, `signInExpired`, `protocolShapeChanged`) precisely
+ * because the value crosses a throw boundary and may lose its prototype on the
+ * way. Reading those flags off an `unknown` binding is the same narrowing every
+ * time, so it is written once here.
+ *
+ * `key` is one of the known flag names, NOT an arbitrary string: a helper that
+ * accepts any key would let a typo (`'retryble'`) compile and read `undefined`
+ * forever, which is the failure mode this whole file exists to avoid.
+ *
+ * @param error - the thrown value.
+ * @param key - the field to read.
+ * @returns the field's value, still `unknown` — callers compare it, never
+ *   assume it. An absent field and a `null` one both answer `undefined`.
+ */
+export function thrownFlag(error: unknown, key: ThrownFlag): unknown {
+  return (error as Record<string, unknown> | null | undefined)?.[key]
+}
+
+/** The flag names {@link thrownFlag} will read. A literal union, so typos fail to compile. */
+export type ThrownFlag = 'name' | 'message' | 'cause' | 'code' | 'retryable' | 'dailyLimit' | 'signInExpired' | 'protocolShapeChanged' | 'retryAfterSeconds' | 'status'
+
+/**
  * Read a Qoder error frame and decide what it actually is.
  *
  * Codes that arrive here have very different meanings, and conflating them sent

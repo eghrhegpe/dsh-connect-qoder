@@ -54,7 +54,7 @@ import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
 import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
 import { exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.ts'
 import type { UsageSnapshot } from './upstream.ts'
-import { classifyUpstreamError, isProtocolShapeChangedError } from './errors.ts'
+import { classifyUpstreamError, describeThrown, isProtocolShapeChangedError } from './errors.ts'
 import {
   campaignIsClaimed,
   checkinStateFrom,
@@ -423,7 +423,7 @@ class RegionRuntime {
     let credential
     try {
       credential = await this.resolveCredential()
-    } catch (error: any) {
+    } catch (error) {
       this.logger?.warn?.(`dsh-connect-qoder: ${this.region.displayName} credential resolution failed`, error)
       this.applyOutcome({ ok: false, reason: 'credential', error })
       return
@@ -452,7 +452,7 @@ class RegionRuntime {
       // one that gives it a shape — rather than pretending `fetchModels`
       // already validated fields it deliberately passes through untouched.
       this.applyOutcome({ ok: true, entries: raw.map((entry) => normalizeEntry(entry as FetchedEntry)) })
-    } catch (error: any) {
+    } catch (error) {
       // A dispose mid-fetch is not a failure worth reporting: the runtime is
       // gone, there is nobody left to tell, and logging it would put a warning
       // in the log of every disable/reload.
@@ -561,7 +561,7 @@ async function startRegion(
   let credential
   try {
     credential = await runtime.resolveCredential()
-  } catch (error: any) {
+  } catch (error) {
     const refusal = unreadableSignInDecision(region)
     ctx.logger[refusal.level]?.(refusal.message, error)
     return undefined
@@ -587,7 +587,7 @@ async function startRegion(
   })
   try {
     await shim.ready
-  } catch (error: any) {
+  } catch (error) {
     ctx.logger.error?.(`dsh-connect-qoder: ${region.displayName} loopback endpoint failed to start`, error)
     return undefined
   }
@@ -616,7 +616,7 @@ async function startRegion(
 export async function apply(ctx: HostContext, config: Record<string, unknown> = {}) {
   try {
     await activate(ctx, config)
-  } catch (error: any) {
+  } catch (error) {
     ctx.logger.error?.('dsh-connect-qoder: activation failed; Qoder models will be unavailable', error)
   }
 }
@@ -703,7 +703,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     if (reclaimed > 0) {
       ctx.logger.info?.(`dsh-connect-qoder: reclaimed ${reclaimed} stale credential temp dir(s)`)
     }
-  } catch (error: any) {
+  } catch (error) {
     // Housekeeping only: failing to sweep must never stop the plugin from
     // starting, and the directories are inert without a reader.
     ctx.logger.warn?.('dsh-connect-qoder: stale credential temp sweep failed', error)
@@ -857,7 +857,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
       releaseDirectory = ctx.llm.registerConfigurableProviders(
         started.map(({ runtime }) => providerRowFor(runtime)),
       )
-    } catch (error: any) {
+    } catch (error) {
       // Release anything the failed registration managed to install.
       releaseAdapter?.()
       releaseDirectory?.()
@@ -973,7 +973,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           },
         })
       }
-    } catch (error: any) {
+    } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: settings section unavailable', error)
     }
   })
@@ -1019,7 +1019,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
             for (const { runtime } of started) {
               try {
                 await runtime.refreshCatalog(true)
-              } catch (error: any) {
+              } catch (error) {
                 // A refresh failure must not blank the card: the last good
                 // catalog is still served below.
                 ctx.logger.warn?.(
@@ -1044,7 +1044,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           )
         },
       }))
-    } catch (error: any) {
+    } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: model route unavailable', error)
     }
   })
@@ -1105,17 +1105,16 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
             // make the snapshot disagree with the document.
             refreshPicker()
             return sendJson(res, outcome.status, outcome.body)
-          } catch (error: any) {
-            const err = error
+          } catch (error) {
             sendJson(res, 500, {
               ok: false,
-              errorName: err?.name ?? 'unknown',
-              error: err?.message ?? String(error),
+              errorName: (error as { name?: unknown } | undefined)?.name ?? 'unknown',
+              error: describeThrown(error),
             })
           }
         },
       }))
-    } catch (error: any) {
+    } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: save route unavailable', error)
     }
   })
@@ -1150,7 +1149,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
               try {
                 const usage = await runtime.readUsage(force)
                 return usage === undefined ? { ...base, available: false } : { ...base, available: true, ...usage }
-              } catch (error: any) {
+              } catch (error) {
                 ctx.logger.warn?.(
                   `dsh-connect-qoder: ${runtime.region.displayName} usage read failed`,
                   error,
@@ -1162,7 +1161,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           sendJson(res, 200, { regions })
         },
       }))
-    } catch (error: any) {
+    } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: usage route unavailable', error)
     }
   })
@@ -1191,7 +1190,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           if (entry === undefined) return sendJson(res, 404, { error: 'unknown-region' })
           try {
             sendJson(res, 200, await claimToday(entry.runtime))
-          } catch (error: any) {
+          } catch (error) {
             // The one route where failure must name itself: an unusable sign-in,
             // a round that ended minutes ago, and a rejected claim are three
             // different problems wearing the same "nothing happened".
@@ -1200,7 +1199,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           }
         },
       }))
-    } catch (error: any) {
+    } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: check-in route unavailable', error)
     }
   })
@@ -1361,12 +1360,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           // stack where it can be read.
           try {
             sendJson(res, 200, await accountPayload())
-          } catch (error: any) {
+          } catch (error) {
             ctx.logger.error?.('dsh-connect-qoder: account state read failed', error)
             sendJson(res, 500, {
               error: 'account state read failed',
-              errorName: error?.name ?? 'Error',
-              detail: String(error?.message ?? error).slice(0, 300),
+              errorName: (error as { name?: unknown } | undefined)?.name ?? 'Error',
+              detail: describeThrown(error).slice(0, 300),
             })
           }
         },
@@ -1410,7 +1409,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           // undiagnosable from the card, and it hid the whole panel.
           try {
             await startStoppedRegions(wanted)
-          } catch (error: any) {
+          } catch (error) {
             ctx.logger.error?.('dsh-connect-qoder: account re-read failed to start a stopped region', error)
           }
           // `force: true` is deliberate and unlike the GET above: this is the
@@ -1460,12 +1459,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
               confirmed: true,
               identity: { name: info.name, email: info.email },
             })
-          } catch (error: any) {
+          } catch (error) {
             // Classify the way the shim does: a sign-in rejection is the one
             // answer that changes what the user should do (re-sign in, then
             // re-read), so it is named; everything else is a plain "could
             // not confirm" with the transport detail.
-            const message = String(error?.message ?? error)
+            const message = describeThrown(error)
             const kind = classifyUpstreamError({ message }, '', message).kind
             if (kind === 'sign-in-expired' && runtime !== undefined) {
               // The upstream said this credential is dead: treat it as the
@@ -1483,7 +1482,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           }
         },
       }))
-    } catch (error: any) {
+    } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: account routes unavailable', error)
     }
   })

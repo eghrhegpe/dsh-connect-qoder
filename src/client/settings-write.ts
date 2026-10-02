@@ -76,7 +76,7 @@ async function saveFieldViaHost(field: string, value: unknown): Promise<unknown>
 			credentials: "same-origin",
 			body: JSON.stringify({ field, value })
 		});
-	} catch (error: any) {
+	} catch (error) {
 		throw new QoderSettingsWriteError(field, `Host save endpoint unreachable: ${String(error)}`);
 	}
 	// The endpoint's answers are unvalidated JSON from the Host, so each is
@@ -130,7 +130,7 @@ export async function writeSettingsField(scope: SettingsScope, field: string, va
 			// Mirror only; the endpoint already persisted the value.
 		}
 		return authoritative;
-	} catch (error: any) {
+	} catch (error) {
 		hostError = error;
 	}
 	let scopeDelivered = false;
