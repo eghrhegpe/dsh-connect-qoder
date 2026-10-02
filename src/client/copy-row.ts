@@ -15,6 +15,9 @@ export const zhRow = {
 	"row.save": "保存",
 	"row.saving": "保存中…",
 	"row.saved": "已保存",
+	// The 404-legacy save: the value reached the settings scope's own snapshot
+	// but the host endpoint did not confirm it, so "已保存" would be a lie.
+	"row.savedUnconfirmed": "已保存（未确认）",
 	"row.discard": "撤销更改",
 	"row.unsaved": "有未保存的更改",
 	"row.failed": "保存失败",
@@ -97,6 +100,9 @@ export const enRow = {
 	"row.save": "Save",
 	"row.saving": "Saving…",
 	"row.saved": "Saved",
+	// The 404-legacy save: only the scope's snapshot saw the value, so the
+	// host did not confirm it and a clean "Saved" would be a lie.
+	"row.savedUnconfirmed": "Saved (unconfirmed)",
 	"row.discard": "Discard changes",
 	"row.unsaved": "Unsaved changes",
 	"row.failed": "Save failed",

@@ -29,6 +29,7 @@ import {
   mergeForShape,
   readField,
   SAVE_FIELDS,
+  saveFieldOutcome,
   settingsNamespaceOf,
 } from '../src/host/settings-save.ts'
 import { unwrapVolatile } from '../src/host/volatile.ts'
@@ -384,4 +385,56 @@ test('a mutate that throws is not a success', async () => {
     () => save(settings, 'imageOverrides', { M: 'on' }),
     /host is on fire/,
   )
+})
+
+// --- saveFieldOutcome: the route-level verdict --------------------------------
+//
+// This is the guard that the `__save` route delegates to. Its whole reason for
+// existing is docs/issues/06: when the route was registered under
+// `inject(['webServer','settings'])` it never mounted without the settings
+// service, so a client got a 404 and fell into an unverified scope snapshot.
+// Factoring the service-absent answer out of the handler lets this file prove
+// the 503 the route now owes, and that a live service is the one that decides
+// the rest.
+
+const outcome = (settings, rawBody) =>
+  saveFieldOutcome(settings, rawBody, { candidates: CANDIDATES, equals: isDeepStrictEqual })
+
+test('a missing settings service is a 503 with a body, not a 404', async () => {
+  // `undefined` is what `ctx.get('settings')` answers when the service is not
+  // ready for this fiber. The client distinguishes THIS (a reachable route,
+  // definitive failure) from a 404 (no route at all) — that distinction is
+  // what stops the card from showing a "已保存" it cannot prove.
+  for (const missing of [undefined, null]) {
+    const result = await outcome(missing, { field: 'imageOverrides', value: { M: 'on' } })
+    assert.strictEqual(result.status, 503, `${String(missing)} settings service must be a 503`)
+    assert.match(result.body.error, /settings service unavailable/)
+    assert.strictEqual(result.body.ok, undefined, 'a 503 carries an error, not an ok:false')
+  }
+})
+
+test('an empty body on a live service is a 400, not a crash', async () => {
+  // `readJsonBody` answers `undefined` for an empty body; `saveFieldOutcome`
+  // must treat that as a missing field rather than index into `undefined`.
+  const settings = makeSettings({ value: { imageOverrides: {} } })
+  const result = await outcome(settings, undefined)
+  assert.strictEqual(result.status, 400)
+  assert.match(result.body.error, /field must be one of/)
+  assert.strictEqual(settings.mutations.length, 0, 'an empty body must not write anything')
+})
+
+test('a live service delegates field validation to the save pipeline', async () => {
+  const settings = makeSettings({ value: { imageOverrides: {} } })
+  const result = await outcome(settings, { field: 'imageOverrides', value: { M: 'off' } })
+  assert.strictEqual(result.status, 200)
+  assert.strictEqual(result.body.ok, true)
+  assert.deepStrictEqual(result.body.value, { M: 'off' })
+})
+
+test('a live service with a silently-dropped write reports the mismatch', async () => {
+  const settings = makeSettings({ value: { imageOverrides: {} }, dropWrites: true })
+  const result = await outcome(settings, { field: 'imageOverrides', value: { M: 'off' } })
+  assert.strictEqual(result.status, 200, 'the verdict stays a 200; ok:false carries the truth')
+  assert.strictEqual(result.body.ok, false)
+  assert.strictEqual(result.body.errorName, 'read-back-mismatch')
 })

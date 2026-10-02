@@ -242,6 +242,47 @@ export async function applySettingsSave({
 }
 
 /**
+ * The `__save` route's verdict, factored out of the handler so the service-
+ * absent case is assertable in a test.
+ *
+ * {@link applySettingsSave} assumes a live settings service. This is the OTHER
+ * failure: the host has no `settings` service at all for this fiber, so there is
+ * nothing to write through. Answering it a 503 (a body the client can read)
+ * rather than letting the route simply not exist is the point — see
+ * docs/issues/06: when the route was registered under
+ * `inject(['webServer','settings'])` it never mounted without `settings`, the
+ * client got a 404, and fell back to an unverified scope snapshot that then
+ * showed a false "已保存". The route is now registered under `webServer` alone
+ * (so it is present whether or not `settings` is), and this is the guard it
+ * delegates to.
+ *
+ * @param settings - the settings service, or `undefined`/`null` when absent.
+ * @param rawBody - the parsed request body; `field` and `value` are read off it
+ *   as `unknown`, exactly as the handler does.
+ * @param options.candidates - the namespaces to try, in priority order.
+ * @param options.equals - deep equality, injected so the module stays peer-free.
+ * @returns `{ status, body }` — the HTTP status and JSON payload the route sends.
+ */
+export async function saveFieldOutcome(
+  settings: SettingsService | null | undefined,
+  rawBody: unknown,
+  { candidates, equals }: { candidates: string[]; equals?: EqualityFn },
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (settings === undefined || settings === null) {
+    // The service is gone, not just the namespace: there is no document to write
+    // through at all. A 503 with a body is what the client distinguishes from a
+    // 404 (a host that does not serve the route at all) and refuse to paper over.
+    return { status: 503, body: { error: 'settings service unavailable to this fiber' } }
+  }
+  // `rawBody` is whatever the route's body reader produced: a parsed JSON value,
+  // or `undefined` for an empty body. `(rawBody ?? {})` gives a fresh object for
+  // the empty case so `posted.field` / `posted.value` read as `undefined` and fall
+  // into `applySettingsSave`'s 400, never a crash.
+  const posted = (rawBody ?? {}) as { field?: unknown; value?: unknown }
+  return applySettingsSave({ settings, field: posted.field, value: posted.value, candidates, equals })
+}
+
+/**
  * A structural deep-equality, used when the caller injects none.
  *
  * `node:util`'s `isDeepStrictEqual` is the real implementation used in

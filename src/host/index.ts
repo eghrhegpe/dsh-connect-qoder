@@ -35,7 +35,7 @@ import {
 import { buildAccountPayload } from './account-payload.ts'
 import { CredentialCache } from './credential-cache.ts'
 import { FileThrottleStore } from './throttle-store.ts'
-import { applySettingsSave, settingsNamespaceOf } from './settings-save.ts'
+import { saveFieldOutcome, settingsNamespaceOf } from './settings-save.ts'
 import type { SettingsService } from './settings-save.ts'
 import { createSingleFlight } from './single-flight.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -1092,9 +1092,13 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   // state, and returns success anyway. A read-back check catches that, but
   // the only writer that actually lands the value there is a mutate executed
   // inside the Host process.
-  ctx.inject(['webServer', 'settings'], (webCtx: HostContext) => {
-    // Both names in the list are present when this runs; see the note on the
-    // other `inject(['webServer'], …)` callbacks.
+  ctx.inject(['webServer'], (webCtx: HostContext) => {
+    // `webServer` alone is the point: the route mounts whether or not the
+    // settings service exists, so the service-absent 503 is a real answer the
+    // client can distinguish from a 404 (a host that does not serve this route
+    // at all) — the false-"已保存" this closed, docs/issues/06. `webServer` is
+    // guaranteed present by the injection; see the note on the other
+    // `inject(['webServer'], …)` callbacks.
     const webServer = injected(webCtx.webServer, 'webServer')
     try {
       rememberRouteRelease(routeReleases, webServer.register({
@@ -1103,28 +1107,19 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'POST')) return
           if (!originAllowed(req, res)) return
-          // `ctx.get` answers `unknown` (see `HostContext.get`): the name is a
-          // string, so nothing ties it to a type. This asserts the two methods
-          // `applySettingsSave` actually calls rather than trusting an `any`.
-          // The `undefined` case is still the real "service not ready" path and
-          // keeps its own 503.
+          // `webCtx.get` answers `unknown` (see `HostContext.get`): the name is
+          // a string, so nothing ties it to a type. `saveFieldOutcome` narrows it
+          // to the two methods `applySettingsSave` actually calls rather than
+          // trusting an `any`, and owns the service-absent 503 — a body the
+          // client can read, not the 404 that used to paper over it.
           const settings = webCtx.get?.('settings') as SettingsService | undefined
-          if (settings === undefined) {
-            return sendJson(res, 503, { error: 'settings service unavailable to this fiber' })
-          }
           try {
             const body = await readJsonBody(req)
             // `readJsonBody` is a raw reader — it parses JSON and nothing else,
-            // so the shape is whatever the client sent. Both fields are handed
-            // over as `unknown` on purpose: `applySettingsSave` does the
-            // validating (a non-string `field` is a 400 there, not a crash
-            // here), and reading `body.field` directly off `unknown` is exactly
-            // the unchecked access this narrowing replaces.
-            const posted = (body ?? {}) as { field?: unknown; value?: unknown }
-            const outcome = await applySettingsSave({
-              settings,
-              field: posted.field,
-              value: posted.value,
+            // so the shape is whatever the client sent. `saveFieldOutcome`
+            // validates it (a non-string `field` is a 400 there, not a crash
+            // here) and answers the whole verdict.
+            const outcome = await saveFieldOutcome(settings, body, {
               // The live namespace first: on the 0.2 line `settingsNs` is the
               // Loader entry id (`llm-qoder`), and the constant is the
               // fallback for a host that mounts this plugin without a Loader

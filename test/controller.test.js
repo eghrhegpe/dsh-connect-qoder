@@ -71,6 +71,29 @@ test('a save that succeeds promotes staged to saved and reports ok', async () =>
   assert.deepEqual(state.lastSave, { ok: true })
 })
 
+test('a save the settings scope alone delivered is unconfirmed, not a clean save', async () => {
+  // docs/issues/06: the endpoint answered 404 and the value reached only the
+  // scope's own snapshot, so `writeSettingsField` resolves with an unconfirmed
+  // marker. The edit is still promoted to saved (nothing the user did is lost),
+  // but `lastSave` is marked so the card shows "已保存（未确认）" rather than a
+  // confident "已保存" the host did not actually prove.
+  const controller = fresh()
+  controller.setMaxWindow(true)
+  await controller.save(async () => ({ unconfirmed: true, value: true }))
+  const state = controller.getSnapshot()
+  assert.equal(state.dirty, false, 'an unconfirmed save still promotes staged to saved')
+  assert.deepEqual(state.lastSave, { ok: true, confirmed: false })
+})
+
+test('a confirmed endpoint save carries no unconfirmed marker', async () => {
+  const controller = fresh()
+  controller.setMaxWindow(true)
+  // The endpoint read the value back out of the document: it resolves with the
+  // authoritative value, no marker, so the card shows the clean "已保存".
+  await controller.save(async () => true)
+  assert.deepEqual(controller.getSnapshot().lastSave, { ok: true })
+})
+
 test('a refused write surfaces a failure and keeps the edits', async () => {
   const controller = fresh()
   controller.setMode('qwen3-max', 'on')

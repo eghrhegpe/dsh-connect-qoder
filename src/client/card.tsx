@@ -901,7 +901,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 									    `notice`, on the error panel) — a failed fetch must
 									    not overwrite "已保存" here. */}
 									{snap.lastSave.ok === true
-										? t("row.saved")
+										? snap.lastSave.confirmed === false ? t("row.savedUnconfirmed") : t("row.saved")
 										: `${t("row.failed")}: ${snap.lastSave.reason}`}
 								</span>
 							) : dirty ? (

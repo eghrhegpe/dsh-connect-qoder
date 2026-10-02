@@ -31,7 +31,7 @@
  * and dragging them in would defeat the point of extracting this layer.
  */
 import { writeSettingsField } from "./settings-write.ts";
-import type { SettingsScope } from "./settings-write.ts";
+import type { SettingsScope, UnconfirmedSave } from "./settings-write.ts";
 import { describeThrown } from "./card-model.ts";
 
 /** The three per-model image choices this card writes. */
@@ -85,8 +85,13 @@ export function enabledIdsFor<M extends ControllerModelRow>(models: M[], saved: 
  *
  * Deliberately not a translated string: the controller must not know the copy,
  * and the card's "已保存" / "保存失败" wording is a rendering decision.
+ *
+ * `confirmed` (only present as `false`) marks the one save that must not be
+ * shown as a clean "已保存": the endpoint was absent (404) and the value
+ * delivered only through the settings scope's own snapshot, which cannot prove
+ * the document changed. Absent (i.e. confirmed) is the normal case.
  */
-export type SaveOutcome = { ok: true } | { ok: false; reason: string };
+export type SaveOutcome = { ok: true; confirmed?: false } | { ok: false; reason: string };
 
 /** The snapshot the JSX reads each render. */
 export interface CardSnapshot<M extends ControllerModelRow = ControllerModelRow> extends EditableState {
@@ -281,16 +286,24 @@ export class QoderCardController<M extends ControllerModelRow = ControllerModelR
 		this.saving = true;
 		this.lastSave = undefined;
 		this.publish();
+		const results: unknown[] = [];
 		try {
-			await persist("enabledModelIds", this.staged.enabledIds);
-			await persist("imageOverrides", this.staged.imageOverrides);
-			await persist("useMaximumContextWindow", this.staged.maxWindow);
+			results.push(await persist("enabledModelIds", this.staged.enabledIds));
+			results.push(await persist("imageOverrides", this.staged.imageOverrides));
+			results.push(await persist("useMaximumContextWindow", this.staged.maxWindow));
 			this.saved = {
 				imageOverrides: { ...this.staged.imageOverrides },
 				maxWindow: this.staged.maxWindow,
 				enabledIds: { ...this.staged.enabledIds },
 			};
-			this.lastSave = { ok: true };
+			// A clean "已保存" is owed only for a value the endpoint read back out
+			// of the document. The 404-legacy scope fallback instead resolves with
+			// an UnconfirmedSave marker (only the scope's own snapshot saw it), and
+			// that is the one save the card must label "已保存（未确认）".
+			const unconfirmed = results.some(
+				(result) => result !== null && typeof result === "object" && (result as UnconfirmedSave).unconfirmed === true,
+			);
+			this.lastSave = unconfirmed ? { ok: true, confirmed: false } : { ok: true };
 		} catch (error) {
 			this.lastSave = { ok: false, reason: describeThrown(error) };
 		} finally {
