@@ -36,7 +36,7 @@ import {
   resolveContextWindow,
   thinkingLevelMapFor,
   toPiModel,
-} from '../lib/pi-model.js'
+} from '../src/host/pi-model.ts'
 
 const BASE_URL = 'http://127.0.0.1:51999/v1'
 const NOW = new Date('2026-09-26T12:00:00+08:00') // midday: outside the window

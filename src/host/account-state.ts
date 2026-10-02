@@ -42,7 +42,7 @@ import {
   loadEnvCredential,
   describeUnwrapFailure as readUnwrapFailure,
   appDataRootFor,
-} from './credentials.js'
+} from './credentials.ts'
 
 /** The four states {@link readAccountState} can return. */
 export const ACCOUNT_STATES = ['ok', 'expired', 'needs-app', 'signed-out']
@@ -92,7 +92,15 @@ function probeDirs(region, appDataRoot) {
  *   where `identity` is `{ name, email, expiresAt? }` or `undefined`, and
  *   carries no credential material of any kind.
  */
-export function readAccountState(region, appDataRoot, options = {}) {
+export interface ReadAccountStateOptions {
+  force?: boolean
+  cachedOnly?: boolean
+  loadCredential?: (region: any, appDataRoot: string, options?: { force?: boolean; cachedOnly?: boolean }) => any
+  loadEnvCredential?: (region: any) => any
+  describeUnwrapFailure?: (region: any, appDataRoot: string) => any
+}
+
+export function readAccountState(region: any, appDataRoot?: any, options: ReadAccountStateOptions = {}): Promise<any> {
   const loadCred =
     options.loadCredential ??
     (options.cachedOnly === true
@@ -137,7 +145,7 @@ export function readAccountState(region, appDataRoot, options = {}) {
  *   `loadCredential` may return a promise.
  * @returns a promise of the state record.
  */
-export function readAccountStateAsync(region, appDataRoot, options = {}) {
+export function readAccountStateAsync(region: any, appDataRoot?: any, options: ReadAccountStateOptions = {}) {
   return readAccountState(region, appDataRoot, {
     ...options,
     loadCredential:

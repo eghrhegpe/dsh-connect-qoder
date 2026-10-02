@@ -38,8 +38,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { classifyUpstreamError } from '../lib/errors.js'
-import { queueWaitFor } from '../lib/upstream.js'
+import { classifyUpstreamError } from '../src/host/errors.ts'
+import { queueWaitFor } from '../src/host/upstream.ts'
 
 /**
  * The frame as it arrives, at the nesting the gateway actually uses.

@@ -70,7 +70,7 @@ function queueSeconds(text) {
   return 0
 }
 
-function classifyUpstreamError(chunk, code, detail) {
+function classifyUpstreamError(_chunk: unknown, code: unknown, detail: string) {
   // `code` may arrive as a JSON number from a gateway that stopped quoting it
   // (the unwrap layer normalises, but this stays defensive), so normalise
   // before comparing instead of strict-string-matching.
@@ -152,10 +152,17 @@ export function isStaleCredentialError(error) {
  * re-wrapped error) — the same reason `signInExpired` is a flag.
  */
 export class ProtocolShapeChangedError extends Error {
+  /** Whether this is a protocol-shape change rather than a refusal (see class doc). */
+  protocolShapeChanged: boolean
+  /** Always false: waiting cannot fix a shape (see class doc). */
+  retryable: boolean
+  /** What was received, in a form a human can act on. */
+  detail: unknown
+
   /**
    * @param detail - what was received, in a form a human can act on.
    */
-  constructor(detail) {
+  constructor(detail: unknown) {
     super(
       `Qoder replied in a shape this plugin does not recognise (${detail}) — ` +
         'the client API it mirrors has probably changed and the plugin needs an update',

@@ -33,7 +33,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 
-import { decryptOscrypt } from '../lib/credentials.js'
+import { decryptOscrypt } from '../src/host/credentials.ts'
 
 /**
  * A fixed 32-byte key: the SHA-256 of a constant.

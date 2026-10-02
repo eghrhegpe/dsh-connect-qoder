@@ -47,13 +47,13 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 `QODER_PAT`（国际版），插件会用它换取 job token。
 
 **平台边界：零配置路径只在 Windows 成立。** 解密链路是 PowerShell + DPAPI（`Crypt32.dll`），
-`lib/` 里没有任何 macOS / Linux 解包分支——在其它平台上应用目录**找得到**（应用数据根目录
+`src/host/` 里没有任何 macOS / Linux 解包分支——在其它平台上应用目录**找得到**（应用数据根目录
 已按平台解析，见下），但凭据读不出来（`loadCredential` 返回 `undefined`，该区域不注册），
 只剩上面的 PAT 兜底。
 
 **这不是"没有跨平台客户端"，而是客户端已跨平台、插件尚未跟上**：Qoder 桌面版在
 macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上都有下载（[qoder.com.cn/download](https://qoder.com.cn/download)），
-但 `lib/` 只实现了 Windows 这一条解密链。缺口在两处，全部登记在
+但 `src/host/` 只实现了 Windows 这一条解密链。缺口在两处，全部登记在
 [docs/KNOWN_GAPS.md 第 6 条（跨平台凭据链未实现）](docs/KNOWN_GAPS.md)：
 
 1. **OS keystore 封装（含 key 派生）**：Windows 走 DPAPI；macOS 需 Keychain（`security`），
@@ -126,7 +126,7 @@ dsh plugin --profile web add <本仓库路径>
   不重试、不显示误导性的延迟，明确告知约几小时后重置，并指出仍然有效的两条路：
   **22:00-08:00 的错峰价**（折后价，通常不计入或少计日次数）与**每日签到**。
   状态码也从此前的 502（"Qoder 坏了"）改为 429（"今天用完了"）。判别点在
-  [lib/errors.js](lib/errors.js) 的 classifyUpstreamError：**先认 110、再认队列标记**——
+  [src/host/errors.ts](src/host/errors.ts) 的 classifyUpstreamError：**先认 110、再认队列标记**——
   顺序是承重的，因为这个报文本身带着全部队列标记，由 test/daily-limit.test.js 钉住。
 - **国际版额度**：国际版的试用额度可能已用尽（`isQuotaExceeded`），此时目录请求会返回
   403 `Login expired`，该区域就不会显示模型；国内版不受影响。
@@ -135,7 +135,7 @@ dsh plugin --profile web add <本仓库路径>
   区域一个胶囊——状态点（`ok` 绿 / `expired` 红 / `needs-app` 琥珀 / `signed-out` 中性）+
   区域名 +「模型」开关；点哪个胶囊，账号详情、用量与模型列表都只看那一版，区域名因此
   在卡片上只出现一次（模型行的区域 badge 已随之移除）。身份详情只带 name / email /
-  到期日，**不带任何凭据**（判定在 `lib/account-state.js`，纯本地证据、可注入可直测）。
+  到期日，**不带任何凭据**（判定在 `src/host/account-state.ts`，纯本地证据、可注入可直测）。
   两个按钮各管一件事：「重读登录」
   让宿主丢弃凭据缓存、重读应用存储，并把启动时未能上线的区域**现在就上线**（重建并重新
   注册 adapter，失败时回滚到原注册，不影响已在服务的区域）——重新登录后不必再重启 DSH；
@@ -166,7 +166,7 @@ dsh plugin --profile web add <本仓库路径>
   本机"判断，因此**本机任意端口上的任意 HTTP 服务**都能让它的网页代为调用（浏览器会挡跨域
   读响应，但操作已经发生）。现在要求来源的**地址与端口**与请求实际拨到的地址一致
   （比对请求自己的 `Host` 头，所以不写死端口、DSH 换端口也不用改），且必须是回环地址。
-  判定在 [`lib/routes.js`](lib/routes.js) 的 `loopbackRequest`，由 `test/route-gates.test.js` 覆盖。
+  判定在 [`src/host/routes.ts`](src/host/routes.ts) 的 `loopbackRequest`，由 `test/route-gates.test.js` 覆盖。
 - 依赖 Qoder 客户端接口（非官方开放 API），Qoder 更新后插件可能需要随之调整。
 - **设置命名空间由宿主决定，不能自选**（0.1.7 起）：`describe()` 用 Loader 条目
   id 作为 `ns`（本 bundle 是 `llm-qoder`，不是 `dsh-connect-qoder`），而「设置 → 模型」
@@ -199,34 +199,33 @@ dsh plugin --profile web add <本仓库路径>
 
 | 文件 | 作用 |
 | --- | --- |
-| `lib/credentials.js` | 从 Qoder 应用读取并解密登录凭据（密钥缓存与 `Local State` 绑定、失败窗口 60 s、只读缓存的变体、**不阻塞的异步解包**） |
-| `lib/upstream.js` | COSY 签名、请求体编码、目录与对话流 |
-| `lib/shim.js` | 面向 pi-ai 的 OpenAI 兼容回环端点 |
-| `lib/adapter.js` | pi-ai provider 与 `PiAiAdapter` profile（被关的 provider 以零模型组呈现，由 DSH 自行隐藏） |
-| `lib/catalog-entry.js` | 目录条目的归一化、模型过滤（含按区域开关）与卡片行投影（无 peer 依赖） |
-| `lib/catalog-store.js` | 目录的磁盘缓存与原子落盘（无 peer 依赖） |
-| `lib/catalog-refresh.js` | 一次目录刷新的结果如何落地：**空目录也是结果**（照实清空并推进 `fetchedAt`），只有失败才保留上一份，且失败按 `credential` / `no-credential` / `fetch` / `protocol-shape-changed` 分档（无 peer 依赖） |
-| `lib/credential-cache.js` | 凭据缓存与「登录失效后重读」规则（无 peer 依赖） |
-| `lib/account-payload.js` | 账号面板三条路由共用的那份应答：逐区域状态 + 开关映射，以及「渲染读缓存 / 重读登录读真」这一个开关（从 `index.js` 抽出以便直测，无 peer 依赖） |
-| `lib/account-state.js` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖）；三种读取模式（默认 / `cachedOnly` 不解包 / `force` 忽略失败窗口） |
-| `lib/settings-save.js` | 设置命名空间的解析（0.1.7 由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
-| `lib/pi-model.js` | pi-ai 模型描述符的构造（纯函数，无 peer 依赖） |
-| `lib/adapter-models.js` | 单个区域向 DSH 提供的模型列表：区域开关（只认显式 `true`）、勾选过滤、最大上下文开关、逐模型图像模式（从 `adapter.js` 抽出以便直测，无 peer 依赖） |
-| `lib/region-gate.js` | 一个区域能否作为 provider 上线：三档拒绝（无登录 / 已过期 / 读不到）各自的判定与日志级别（从 `index.js` 抽出以便直测，无 peer 依赖） |
-| `lib/lifecycle.js` | 插件 fiber 退出时要撤销的东西：路由注册的注销句柄收集与释放（宿主是否随 fiber 回收无法从插件侧确认，故两种语义都正确；无 peer 依赖） |
-| `lib/preferences.js` | 四个设置项的读取与 volatile 解包（`enabledRegions` 区域开关：缺失/非对象一律读作开启，只有显式 `false` 才关） |
-| `lib/offpeak.js` | 错峰窗口与费率算术（无 peer 依赖） |
-| `lib/single-flight.js` | 同类异步任务的并发合并：刷新在途时，后来的调用并入同一次请求（目录/用量刷新用，无 peer 依赖） |
-| `lib/claim.js` | 每日签到：当轮活动的挑选、可领状态判定与领取结果的归一化（纯函数，无 peer 依赖） |
-| `lib/errors.js` | 上游错误帧的判定：105（登录没了）与 10605（在排队）的分诊，队列提示的提取，以及**协议形状变化**这一档（`ProtocolShapeChangedError`，`retryable: false` 所以它不会被当成"排队"慢慢等）（无 peer 依赖） |
-| `lib/time.js` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
-| `lib/volatile.js` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
-| `lib/http-utils.js` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
-| `lib/routes.js` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
-| `lib/index.js` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
+| `src/host/credentials.ts` | 从 Qoder 应用读取并解密登录凭据（密钥缓存与 `Local State` 绑定、失败窗口 60 s、只读缓存的变体、**不阻塞的异步解包**） |
+| `src/host/upstream.ts` | COSY 签名、请求体编码、目录与对话流 |
+| `src/host/shim.ts` | 面向 pi-ai 的 OpenAI 兼容回环端点 |
+| `src/host/adapter.ts` | pi-ai provider 与 `PiAiAdapter` profile（被关的 provider 以零模型组呈现，由 DSH 自行隐藏） |
+| `src/host/catalog-entry.ts` | 目录条目的归一化、模型过滤（含按区域开关）与卡片行投影（无 peer 依赖） |
+| `src/host/catalog-store.ts` | 目录的磁盘缓存与原子落盘（无 peer 依赖） |
+| `src/host/catalog-refresh.ts` | 一次目录刷新的结果如何落地：**空目录也是结果**（照实清空并推进 `fetchedAt`），只有失败才保留上一份，且失败按 `credential` / `no-credential` / `fetch` / `protocol-shape-changed` 分档（无 peer 依赖） |
+| `src/host/credential-cache.ts` | 凭据缓存与「登录失效后重读」规则（无 peer 依赖） |
+| `src/host/account-payload.ts` | 账号面板三条路由共用的那份应答：逐区域状态 + 开关映射，以及「渲染读缓存 / 重读登录读真」这一个开关（从 `index.ts` 抽出以便直测，无 peer 依赖） |
+| `src/host/account-state.ts` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖）；三种读取模式（默认 / `cachedOnly` 不解包 / `force` 忽略失败窗口） |
+| `src/host/settings-save.ts` | 设置命名空间的解析（0.1.7 由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
+| `src/host/pi-model.ts` | pi-ai 模型描述符的构造（纯函数，无 peer 依赖） |
+| `src/host/adapter-models.ts` | 单个区域向 DSH 提供的模型列表：区域开关（只认显式 `true`）、勾选过滤、最大上下文开关、逐模型图像模式（从 `adapter.ts` 抽出以便直测，无 peer 依赖） |
+| `src/host/region-gate.ts` | 一个区域能否作为 provider 上线：三档拒绝（无登录 / 已过期 / 读不到）各自的判定与日志级别（从 `index.ts` 抽出以便直测，无 peer 依赖） |
+| `src/host/lifecycle.ts` | 插件 fiber 退出时要撤销的东西：路由注册的注销句柄收集与释放（宿主是否随 fiber 回收无法从插件侧确认，故两种语义都正确；无 peer 依赖） |
+| `src/host/preferences.ts` | 四个设置项的读取与 volatile 解包（`enabledRegions` 区域开关：缺失/非对象一律读作开启，只有显式 `false` 才关） |
+| `src/host/offpeak.ts` | 错峰窗口与费率算术（无 peer 依赖） |
+| `src/host/single-flight.ts` | 同类异步任务的并发合并：刷新在途时，后来的调用并入同一次请求（目录/用量刷新用，无 peer 依赖） |
+| `src/host/claim.ts` | 每日签到：当轮活动的挑选、可领状态判定与领取结果的归一化（纯函数，无 peer 依赖） |
+| `src/host/errors.ts` | 上游错误帧的判定：105（登录没了）与 10605（在排队）的分诊，队列提示的提取，以及**协议形状变化**这一档（`ProtocolShapeChangedError`，`retryable: false` 所以它不会被当成"排队"慢慢等）（无 peer 依赖） |
+| `src/host/time.ts` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
+| `src/host/volatile.ts` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
+| `src/host/http-utils.ts` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
+| `src/host/routes.ts` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
+| `src/host/index.ts` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
 
-`lib/client.js` 是注入到宿主设置页的那张卡片的构建产物（`react` 由宿主提供，产物不打包它）。
-它的源码在 `src/client/`，`npm run build` 从源码重建它：
+卡片侧的源码在 `src/client/`（产物是 `lib/client.js`，`react` 由宿主提供，产物不打包它）：
 
 | `src/client/paths.ts` | 卡片用到的五条插件路由 |
 | `src/client/styles.ts` | 卡片样式与 `installStyles`（`dsm-*` 一套与 `dsh-connect-workbuddy` 逐字一致，原因见文件头） |
@@ -235,6 +234,16 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/copy-row.ts` `copy-usage.ts` `copy-account.ts` | 按面板拆分的三段文案：模型行与错峰、用量与签到、账号与区域标签条 |
 | `src/client/card.ts` | 卡片的纯函数与五个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `QuotaBlock`） |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
+
+## 构建产物：`lib/` 不是源码
+
+**源码全在 `src/`，`lib/` 是纯构建产物，不进版本库**（`.gitignore` 里有 `/lib/`；发到 registry
+的那一份由 `prepack` 现场构建）。`npm run build` 从 `src/` 重建出两个文件：
+
+| 产物 | 由谁构建 | 内容 |
+| --- | --- | --- |
+| `lib/index.js` | `tsdown -c tsdown.config.mjs`（`npm run build:host`） | 上面那张表里全部 `src/host/*.ts` 打成的**单个** ESM bundle——发布面就是 `package.json#main` 一个入口，peer 包一律外置 |
+| `lib/client.js` | `node scripts/build-client.mjs`（`npm run build:client`） | 注入到宿主设置页的那张卡片，外面套着 `window.__ModuleLoader__.load(...)` 的加载器外壳 |
 
 **这些源码不是原始手稿，是还原出来的**：2026-09 用 `docs/history/restore-client-src.mjs` 把当时的
 产物按 `//#region` 标记机械切分而成，模块边界来自产物，`card.ts` 那一段在产物里没有标记、
@@ -245,6 +254,9 @@ dsh plugin --profile web add <本仓库路径>
 产物是构建输出：**改源码重建，不要手改产物**。`test/client-bundle.test.js` 从产物里**提取并
 执行**卡片的纯函数，所以产物一改那里的断言就得跟着看一眼。
 
+`test/*.test.js` 直接 import `src/host/*.ts`（Node 原生剥类型），**不经过 `lib/`**——所以一套
+测试跑的是源码，产物陈旧与否由 `npm run verify:host` 单独把关。
+
 `probe/` 下是一次性只读探针，每个文件头写明 WHY 与 Run，不参与构建、也不被测试收集。
 其中 `probe/host-compat.mjs` 回答的是「本机装的 DSH 是什么版本、本仓库的 peer 声明它还认不认」——
 宿主把代码打在 `app.asar` 里，这件事从仓库内部看不出来。手法与三个会浪费时间的坑记在
@@ -253,32 +265,39 @@ dsh plugin --profile web add <本仓库路径>
 ## 测试
 
 ```sh
-npm run verify          # 下面三条串起来，全过才算过
+npm run verify          # 下面五条串起来，全过才算过
+npm run typecheck       # tsc -p tsconfig.json，源码全量类型检查（0 error）
 npm test                # node --test "test/*.test.js"
 npm run test:coverage   # 同上 + 覆盖率门槛（行 68 / 分支 85 / 函数 66，跌破即失败）
 npm run verify:deploy   # 比对已部署副本与本仓库，报告漂移
-npm run build           # 从 src/client 重建 lib/client.js
+npm run build           # 从 src/ 重建 lib/（宿主 bundle + 卡片产物）
 ```
 
-`npm run verify` 跑三件事，每件回答一个不同的问题：
+`npm run verify` 跑五件事，每件回答一个不同的问题：
 
 | 步骤 | 回答什么 | 全过时的输出 |
 |---|---|---|
+| `typecheck` | `src/**` 的每个 `.ts` 都过类型检查 | `tsc` 退出 0、无输出 |
 | `npm test` | 卡片逻辑与宿主半边没被改坏 | 最后一行 `# fail 0` |
-| `build --tsdown`（不写） | `lib/client.js` **确实**由 `src/client/` 生成 | `MATCH: … byte-for-byte identical` |
-| `verify:bundle` | 重建产物与 HEAD 的行为一致 | `behaviour: IDENTICAL` |
+| `build`（宿主 + 卡片） | `lib/index.js` 与 `lib/client.js` 确实由 `src/` 生成 | `MATCH: … byte-for-byte identical` |
+| `verify:host` | 宿主 bundle 不陈旧、公开面与 peer 外置都还在 | `all 11 checks passed` |
+| `verify:bundle` | 重建产物与上一份已发布产物的行为一致 | `behaviour: IDENTICAL` |
 
-中间那条是最要紧的：它不写产物，只比较。它过了，就说明产物不是手抄进来的副本——改
-`src/` 而产物不变的情况会在这里红。
+中间那条是最要紧的：宿主与卡片两步都**只比较、不认账**。它过了，就说明产物不是手抄进来的
+副本——改 `src/` 而产物不变的情况会在这里红。`verify:host` 补的是迁移带来的新缺口：源码
+在 `src/host/`、产物在 `lib/` 之后，「改了源码忘了重建」第一次成为可能的错误，而 `lib/`
+不进版本库，没有别的检查会看见它。
 
-**绿灯不等于门禁有效。** 这三道门禁每条都用故意的破坏验过：`build` 缺关键串时会拒绝写入
-（第一次构建摇掉全部模块、只剩 84 行，bundler 仍然退出 0）；`verify:bundle` 把探针下界从
-`Math.max(0, …)` 改成 `1`，就会在 `formatCountdown|undefined|0` 上报出 `00:00:00` →
-`00:00:01` 并以非 0 退出。怀疑门禁时照这个法子再破一次，比看它绿不绿有用。
+**绿灯不等于门禁有效。** 这几道门禁每条都用故意的破坏验过：`build` 缺关键串时会拒绝写入
+（第一次构建摇掉全部模块、只剩 84 行，bundler 仍然退出 0）；`verify:host` 往 `lib/index.js`
+尾上追加一行就让 `fresh` 那条红（`the artifact is stale`）并以非 0 退出；`verify:bundle` 把
+探针下界从 `Math.max(0, …)` 改成 `1`，就会在 `formatCountdown|undefined|0` 上报出
+`00:00:00` → `00:00:01` 并以非 0 退出。怀疑门禁时照这个法子再破一次，比看它绿不绿有用。
 
 `npm run build` 需要构建器（`tsdown`），它是 devDependency，跑之前先 `npm install`。
-**测试仍然不需要安装任何东西**（裸 `node --test`），两者是 CI 里分开的两个 job：一个证明
-测试无依赖，一个证明产物可重建。
+**测试与 `typecheck` 都不需要 `lib/`**：测试直接 import `src/**` 的源码（Node 原生剥类型），
+`verify:host` 在没有 `tsdown` 时打印一声响亮的 SKIP 并以 0 退出。两者是 CI 里分开的 job：
+一个证明源码自足，一个证明产物可重建。
 
 对拍覆盖不到渲染：JSX 被 stub 成 `null`，所以**改了 UI 仍然要在浏览器里看一眼**（展开卡片 →
 切区域 → 改图像档位 → 保存 → 看错峰倒计时）。
@@ -299,7 +318,7 @@ Windows 不是冗余：shim 绑定回环监听、目录缓存依赖 rename 覆�
 PowerShell，这些在别的平台上行为不同。
 
 测试只用 Node 内置的 `node:test`，不需要安装任何依赖——**也不需要安装 peer 依赖**，
-这是刻意的：`lib/` 中凡是纯逻辑的部分都放在无 peer 依赖的模块里（见上表），
+这是刻意的：`src/host/` 中凡是纯逻辑的部分都放在无 peer 依赖的模块里（见上表），
 这样它们才能被直接 import 并断言真实的实现，而不是在测试里手抄一份。
 
 几个文件存在的理由，都是因为曾经出过问题：
@@ -315,7 +334,7 @@ PowerShell，这些在别的平台上行为不同。
 - `test/credential-cache.test.js` —— 「重新登录无需重启」这条卖点的完整链路：
   网关拒绝 → 谓词判定 → 置失效标志 → 下次请求重读。此前只有两端被测。
 - `test/credential-invalidation.test.js` —— 上面那条链路上的两个纯谓词。
-- `test/account-state.test.js` —— 账号状态四档判定（`lib/account-state.js`）：
+- `test/account-state.test.js` —— 账号状态四档判定（`src/host/account-state.ts`）：
   全注入的存储读器 + 真实临时目录跑目录存在性检查，钉住「判定只信本地证据」
   与「状态记录不含任何凭据材料」两条不变量。
 - `test/errors-classify.test.js` —— 105 与 10605 的优先级决定了「提示用户重新登录」

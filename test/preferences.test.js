@@ -29,8 +29,8 @@ import {
   preferMaximumContext,
   regionEnabledFor,
   resolvePreferences,
-} from '../lib/preferences.js'
-import { unwrapVolatile } from '../lib/volatile.js'
+} from '../src/host/preferences.ts'
+import { unwrapVolatile } from '../src/host/volatile.ts'
 
 /** A 0.1.7 volatile field: a `{ get() }` shell rather than a value. */
 const ref = (value) => ({ get: () => value })

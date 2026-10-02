@@ -17,7 +17,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { toQoderMessages, toQoderTools } from '../lib/upstream.js'
+import { toQoderMessages, toQoderTools } from '../src/host/upstream.ts'
 
 test('a developer role becomes system, and never disappears', () => {
   // pi-ai emits `role: "developer"` for a reasoning model unless the provider

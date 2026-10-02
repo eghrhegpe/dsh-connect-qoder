@@ -9,9 +9,9 @@
  * This file merges them into the single `{ zh, en }` shape the card expects,
  * so `index.ts` and `card.ts` import from one place.
  */
-import { zhRow, enRow } from "./copy-row"
-import { zhUsage, enUsage } from "./copy-usage"
-import { zhAccount, enAccount } from "./copy-account"
+import { zhRow, enRow } from "./copy-row.ts"
+import { zhUsage, enUsage } from "./copy-usage.ts"
+import { zhAccount, enAccount } from "./copy-account.ts"
 
 /** Simplified Chinese copy. */
 export const zh = { ...zhRow, ...zhUsage, ...zhAccount }

@@ -23,8 +23,8 @@ import {
   offPeakRemaining,
   offPeakRemainingSeconds,
   rateNow,
-} from '../lib/offpeak.js'
-import { normalizePromotion } from '../lib/upstream.js'
+} from '../src/host/offpeak.ts'
+import { normalizePromotion } from '../src/host/upstream.ts'
 
 /**
  * An entry with the 22:00-08:00 window Qoder actually publishes.

@@ -8,7 +8,7 @@
  * the connection between them was not. `isStaleCredentialError` and
  * `isCredentialUsable` each had assertions, but the flag that turns a sign-in
  * rejection into a re-read lived inside `RegionRuntime`, which cannot be
- * imported — lib/index.js pulls in the Cordis peer dependencies. Two tested
+ * imported — src/host/index.ts pulls in the Cordis peer dependencies. Two tested
  * parts and one untested wire is still no test: a change that dropped the
  * `invalidate` call, or set the flag without clearing the cache, would have
  * passed everything else in this directory.
@@ -28,8 +28,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { CredentialCache } from '../lib/credential-cache.js'
-import { isStaleCredentialError } from '../lib/errors.js'
+import { CredentialCache } from '../src/host/credential-cache.ts'
+import { isStaleCredentialError } from '../src/host/errors.ts'
 
 /**
  * A stand-in for the Qoder app's credential store.

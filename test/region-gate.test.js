@@ -8,7 +8,7 @@
  * the user selects it, the gateway answers 403, and the UI blames their
  * account for a channel this plugin should never have offered.
  *
- * The decision lived inside `startRegion` (lib/index.js), which no test can
+ * The decision lived inside `startRegion` (src/host/index.ts), which no test can
  * import. What makes it worth pinning is not the boolean — it is that the
  * THREE refusals are different, carry different log levels, and each points at
  * a different user action:
@@ -25,7 +25,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { regionPublishDecision, unreadableSignInDecision } from '../lib/region-gate.js'
+import { regionPublishDecision, unreadableSignInDecision } from '../src/host/region-gate.ts'
 
 const REGION = { id: 'qoder-cn', displayName: 'Qoder CN' }
 

@@ -30,8 +30,8 @@ import {
   readField,
   SAVE_FIELDS,
   settingsNamespaceOf,
-} from '../lib/settings-save.js'
-import { unwrapVolatile } from '../lib/volatile.js'
+} from '../src/host/settings-save.ts'
+import { unwrapVolatile } from '../src/host/volatile.ts'
 
 const CANDIDATES = ['dsh-connect-qoder', 'llm-qoder']
 

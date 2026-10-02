@@ -24,15 +24,19 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"test/*.test.js\"",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=68 --test-coverage-branches=85 --test-coverage-functions=66 \"test/*.test.js\"",
-    "verify": "npm test && node scripts/build-client.mjs --tsdown && npm run verify:bundle",
+    "verify": "npm run typecheck && npm test && npm run build && npm run verify:host && npm run verify:bundle",
     "verify:deploy": "node scripts/check-deploy-drift.mjs",
+    "verify:host": "node scripts/verify-host-bundle.mjs",
     "verify:bundle": "node scripts/verify-bundle-behaviour.mjs",
-    "build": "node scripts/build-client.mjs --tsdown --write",
+    "build:host": "node scripts/clean-host-bundle.mjs && tsdown -c tsdown.config.mjs",
+    "build:client": "node scripts/build-client.mjs --tsdown --write",
+    "build": "npm run build:host && npm run build:client",
     "prepack": "npm run build"
   },
-  "main": "lib/index.js",
+  "main": "./lib/index.js",
   "exports": {
     ".": {
       "default": "./lib/index.js"
@@ -48,7 +52,9 @@
     "CHANGELOG.md"
   ],
   "devDependencies": {
-    "tsdown": "^0.23.0"
+    "@types/node": "^26.6.4",
+    "tsdown": "^0.23.0",
+    "typescript": "^5.9.3"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -71,14 +77,14 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.2 <5.0.0",
-    "@deepseek-ai/dsh-llm": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-settings": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-client-locale": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-client-ui-settings": ">=0.1.5 <0.3",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-llm": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.3",
+    "@deepseek-ai/dsh-settings": ">=0.1.5 <0.3",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@earendil-works/pi-ai": "^0.85.1"
   },

@@ -16,8 +16,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildModelRowsPayload, normalizeEntry, projectModelRow } from '../lib/catalog-entry.js'
-import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../lib/offpeak.js'
+import { buildModelRowsPayload, normalizeEntry, projectModelRow } from '../src/host/catalog-entry.ts'
+import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../src/host/offpeak.ts'
 
 const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakRemaining }
 const NOW = new Date('2026-09-26T23:30:00+08:00')

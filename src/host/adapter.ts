@@ -17,8 +17,7 @@ import { createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
-import { buildModelsFor } from './adapter-models.js'
-import { offPeakActive, offPeakRemaining, rateNow } from './offpeak.js'
+import { buildModelsFor } from './adapter-models.ts'
 
 /**
  * The model descriptor builder, re-exported from lib/pi-model.js.
@@ -30,7 +29,7 @@ import { offPeakActive, offPeakRemaining, rateNow } from './offpeak.js'
  * error while DSH retries forever. Re-exported so the adapter keeps presenting
  * one module's surface.
  */
-export { toPiModel } from './pi-model.js'
+export { toPiModel } from './pi-model.ts'
 
 /** Idle ceiling while one stream read is outstanding. */
 const STREAM_IDLE_TIMEOUT_MS = 300000
@@ -82,7 +81,7 @@ const INERT_AUTH = {
  * countdown the Qoder client does, computed from the same catalog entry rather
  * than re-derived.
  */
-export { offPeakActive, offPeakRemaining, rateNow } from './offpeak.js'
+export { offPeakActive, offPeakRemaining, rateNow } from './offpeak.ts'
 
 /**
  * Narrow a catalog to the models the user enabled.
@@ -101,7 +100,7 @@ export { offPeakActive, offPeakRemaining, rateNow } from './offpeak.js'
  * is what lets lib/shim.js use it without dragging adapter.js's peer
  * dependencies along.
  */
-export { filterByEnabled } from './catalog-entry.js'
+export { filterByEnabled } from './catalog-entry.ts'
 
 /**
  * Assemble one adapter covering every region.

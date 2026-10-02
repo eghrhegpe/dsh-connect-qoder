@@ -17,7 +17,7 @@
  *
  * @module dsh-connect-qoder/settings-save
  */
-import { unwrapVolatile } from './volatile.js'
+import { unwrapVolatile } from './volatile.ts'
 
 /**
  * The fields a save may write, and the merge rule each one uses.

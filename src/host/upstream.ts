@@ -23,10 +23,10 @@ import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { classifyUpstreamError, ProtocolShapeChangedError } from './errors.js'
-import { windowIsOpen } from './offpeak.js'
-import { toEpochMs } from './time.js'
-import { checkinStateFrom } from './claim.js'
+import { classifyUpstreamError, ProtocolShapeChangedError } from './errors.ts'
+import { windowIsOpen } from './offpeak.ts'
+import { toEpochMs } from './time.ts'
+import { checkinStateFrom } from './claim.ts'
 
 /** Public key the gateway expects the per-request AES key to be wrapped with. */
 const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -86,8 +86,8 @@ export const QUEUE_WAIT_MIN_SLEEP_MS = 1000
 const ATTEMPT_TIMEOUT_MS = 60000
 
 /** Abortable sleep; resolves early (without throwing) when the signal aborts. */
-function sleep(ms, signal) {
-  return new Promise((resolve) => {
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve) => {
     if (signal?.aborted) {
       resolve()
       return
@@ -400,9 +400,6 @@ let umidInfo
  * parsed block, `null`, `undefined`, a partial object, or throws — the
  * header builder must treat all of those as "no block" rather than crash.
  */
-function umidProbe() {
-  return globalThis.__dshQoderUmidProbe
-}
 
 /**
  * The app's umid machine-identity header block, or `{}` when it cannot be
@@ -576,7 +573,7 @@ async function readJson(response, context) {
  *
  * @returns the parsed campaigns document.
  */
-export async function readCampaigns(region, credential, signal) {
+export async function readCampaigns(region: any, credential: any, signal?: AbortSignal) {
   const response = await fetch(campaignsUrl(region), {
     method: 'GET',
     headers: openApiHeaders(credential, region),
@@ -645,7 +642,7 @@ export function claimCampaignUrl(region, campaignId) {
  *
  * @returns the parsed claim response.
  */
-export async function claimCampaign(region, credential, campaignId, signal) {
+export async function claimCampaign(region: any, credential: any, campaignId: string, signal?: AbortSignal) {
   if (typeof campaignId !== 'string' || campaignId.length === 0) {
     throw new Error('Qoder check-in failed: no campaign id to claim')
   }
@@ -743,7 +740,7 @@ function normalizeDedicatedPackage(value) {
  *   dedicatedPackages, campaigns, checkin, isQuotaExceeded, source }`, or
  *   `undefined` when neither route answered.
  */
-export async function fetchUsage(region, credential, signal) {
+export async function fetchUsage(region: any, credential: any, signal?: AbortSignal) {
   const headers = openApiHeaders(credential, region)
 
   const read = async (url) => {
@@ -756,7 +753,7 @@ export async function fetchUsage(region, credential, signal) {
   let source = 'presentation'
   try {
     payload = await read(usagePresentationUrl(region))
-  } catch (error) {
+  } catch (error: any) {
     if (signal?.aborted) throw error
     source = 'quota'
     payload = await read(usageUrl(region))
@@ -784,7 +781,7 @@ export async function fetchUsage(region, credential, signal) {
     const raw = await readCampaigns(region, credential, signal)
     campaigns = projectCampaignRows(raw)
     checkin = checkinStateFrom(raw)
-  } catch (error) {
+  } catch (error: any) {
     if (signal?.aborted) throw error
   }
 
@@ -846,7 +843,7 @@ export async function fetchUsage(region, credential, signal) {
  * @returns the `chat` array of raw rows.
  * @throws {ProtocolShapeChangedError} for either drift shape.
  */
-export function readModelCatalogShape(data, region = { displayName: 'Qoder' }) {
+export function readModelCatalogShape(data: any, _region: any = { displayName: 'Qoder' }) {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     throw new ProtocolShapeChangedError(
       `top level is ${Array.isArray(data) ? 'an array' : typeof data}, not a group envelope`,
@@ -922,11 +919,11 @@ export async function fetchModels(region, credential, signal) {
     //   long reasoned reply then ends with `finish: max-tokens` — the visible
     //   text is cut off mid-sentence. Leaving it undeclared lets the harness
     //   use its own default instead.
-    const windows = entry.context_config
+    const windows: any = entry.context_config
     const contextOptions = []
     let defaultContextWindow = 0
     if (windows !== null && typeof windows === 'object') {
-      for (const value of Object.values(windows)) {
+      for (const value of Object.values(windows) as any[]) {
         const tokens = Number(value?.token_count)
         if (!Number.isFinite(tokens) || tokens <= 0) continue
         contextOptions.push(tokens)
@@ -1025,7 +1022,7 @@ export function normalizePromotion(value, now = new Date()) {
  *
  * @returns `{ token, refreshToken, expiresAt }`.
  */
-export async function exchangePat(region, pat, signal) {
+export async function exchangePat(region: any, pat: any, signal?: AbortSignal) {
   const response = await fetch(exchangeUrl(region), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -1065,7 +1062,7 @@ export async function exchangePat(region, pat, signal) {
  *
  * @returns `{ userID, name, email }`.
  */
-export async function fetchUserInfo(region, credential, signal) {
+export async function fetchUserInfo(region: any, credential: any, signal?: AbortSignal) {
   const response = await fetch(userInfoUrl(region), {
     method: 'GET',
     headers: openApiHeaders(credential, region),
@@ -1114,7 +1111,7 @@ export async function* streamChat(region, credential, request, signal) {
   // reintroduce the very truncation that omission avoids: reasoning and the
   // answer share this budget upstream, so an over-large value is not harmless
   // and an absent one lets Qoder apply its own.
-  const parameters = {}
+  const parameters: any = {}
   if (Number.isSafeInteger(request.maxTokens) && request.maxTokens > 0) {
     parameters.max_tokens = request.maxTokens
   }
@@ -1244,7 +1241,7 @@ export async function* streamChat(region, credential, request, signal) {
             throw new QueueRejection(failure.retryAfterSeconds, failure.detail)
           }
           const message = failureMessage(failure, region)
-          const error = new Error(message)
+          const error: any = new Error(message)
           if (failure.kind === 'sign-in-expired') error.signInExpired = true
           throw error
         }
@@ -1291,7 +1288,7 @@ export async function* streamChat(region, credential, request, signal) {
         redirect: 'error',
         signal: attemptSignal,
       })
-    } catch (error) {
+    } catch (error: any) {
       // A caller abort is the user's own doing and must surface unchanged.
       if (signal?.aborted) throw error
       // A deadline that fired is a stuck attempt, not a code bug. It is
@@ -1364,7 +1361,7 @@ export async function* streamChat(region, credential, request, signal) {
       if (failure.kind === 'daily-limit') throw new DailyLimitRejection(failure.detail, failure.retryAfterSeconds)
       if (failure.kind === 'rate-limit') throw new QueueRejection(failure.retryAfterSeconds, failure.detail)
       const message = failureMessage(failure, region, response.status, response.statusText)
-      const error = new Error(message)
+      const error: any = new Error(message)
       if (failure.kind === 'sign-in-expired') error.signInExpired = true
       throw error
     }
@@ -1392,7 +1389,7 @@ export async function* streamChat(region, credential, request, signal) {
       // rejection surfaces here rather than mid-stream where it could not be
       // retried without duplicating output.
       first = await stream.next()
-    } catch (error) {
+    } catch (error: any) {
       waitedMs += Date.now() - attemptStartedAt
       const queueWaitMs = queueWaitFor(error, waitedMs, attempt)
       if (queueWaitMs === undefined) throw error
@@ -1438,7 +1435,14 @@ export async function* streamChat(region, credential, request, signal) {
  * already understood.
  */
 class QueueRejection extends Error {
-  constructor(retryAfterSeconds, detail) {
+  /** Always true: waiting can clear a queue. */
+  retryable: boolean
+  /** Seconds to wait before retrying. */
+  retryAfterSeconds: number
+  /** The upstream detail, in a form a human can act on. */
+  upstreamDetail: unknown
+
+  constructor(retryAfterSeconds: number, detail: unknown) {
     super(
       `Qoder is busy — the request was queued` +
         `${retryAfterSeconds > 0 ? ` (retry in ~${retryAfterSeconds}s)` : ''}`,
@@ -1471,7 +1475,16 @@ class QueueRejection extends Error {
  * check-in.
  */
 class DailyLimitRejection extends Error {
-  constructor(detail, retryAfterSeconds = 0) {
+  /** Always false: waiting within the session cannot fix a daily limit. */
+  retryable: boolean
+  /** Marks this as a daily-limit (not queue) failure. */
+  dailyLimit: boolean
+  /** Seconds until the counter resets (from the gateway, else 0). */
+  retryAfterSeconds: number
+  /** The upstream detail, in a form a human can act on. */
+  upstreamDetail: unknown
+
+  constructor(detail: unknown, retryAfterSeconds = 0) {
     super(
       `Qoder's daily request allowance for this account is used up` +
         `${retryAfterSeconds > 0 ? ` — it resets in about ${Math.round(retryAfterSeconds / 3600)}h` : ''}. ` +
@@ -1535,7 +1548,7 @@ export function queueWaitFor(error, waitedMs, attempt) {
 }
 
 /** Build the readable sentence for a non-queue failure. */
-function failureMessage(failure, region, status, statusText) {
+function failureMessage(failure: any, region: any, status?: number, statusText?: string) {
   if (failure.kind === 'sign-in-expired') {
     return (
       `${region.displayName} sign-in is no longer valid — open the ${region.displayName} app ` +
@@ -1748,7 +1761,7 @@ export function toQoderMessages(messages) {
 
       // An assistant turn that only called tools carries no content; the
       // endpoint rejects a null content field, so an empty string is sent.
-      const entry = { role: 'assistant', content: text }
+      const entry: any = { role: 'assistant', content: text }
       if (toolCalls.length > 0) entry.tool_calls = toolCalls
       out.push(entry)
       continue

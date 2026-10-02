@@ -12,7 +12,7 @@
  *
  * @module dsh-connect-qoder/preferences
  */
-import { unwrapVolatile } from './volatile.js'
+import { unwrapVolatile } from './volatile.ts'
 
 /** The per-model image modes a saved override may hold. */
 const IMAGE_MODES = ['on', 'off', 'auto']

@@ -52,7 +52,7 @@ import {
   encodeBody,
   queueWaitFor,
   signaturePath,
-} from '../lib/upstream.js'
+} from '../src/host/upstream.ts'
 
 /**
  * An independent implementation of the `Encode=1` transform, written from the

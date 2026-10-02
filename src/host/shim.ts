@@ -15,10 +15,10 @@
  */
 import { createServer } from 'node:http'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { streamChat, toQoderMessages, toQoderTools } from './upstream.js'
-import { filterByEnabled } from './catalog-entry.js'
-import { isStaleCredentialError } from './errors.js'
-import { writeError, sendJson } from './http-utils.js'
+import { streamChat, toQoderMessages, toQoderTools } from './upstream.ts'
+import { filterByEnabled } from './catalog-entry.ts'
+import { isStaleCredentialError } from './errors.ts'
+import { writeError, sendJson } from './http-utils.ts'
 
 /** Reject anything that is not addressed to the loopback interface. */
 function hostIsLoopback(host) {
@@ -194,7 +194,7 @@ export function createQoderShim(options) {
     })
   })
 
-  const ready = new Promise((resolve, reject) => {
+  const ready = new Promise<void>((resolve, reject) => {
     server.once('listening', () => resolve())
     server.once('error', reject)
   })
@@ -251,7 +251,7 @@ export function createQoderShim(options) {
     let credential
     try {
       credential = await resolveCredential()
-    } catch (error) {
+    } catch (error: any) {
       writeError(res, 401, 'not_signed_in', String(error))
       return
     }
@@ -268,8 +268,8 @@ export function createQoderShim(options) {
 
     let body
     try {
-      body = JSON.parse((await readBody(req)).toString('utf8'))
-    } catch (error) {
+      body = JSON.parse((await readBody(req) as Buffer).toString('utf8'))
+    } catch (error: any) {
       if (error?.name === 'BodyTooLargeError') {
         writeError(res, 413, 'payload_too_large', 'request body exceeds the 20 MiB limit')
         return
@@ -316,7 +316,7 @@ export function createQoderShim(options) {
       // Pull the first chunk before committing to a status code, so an auth or
       // quota failure surfaces as an HTTP error rather than a broken stream.
       var first = await iterator.next()
-    } catch (error) {
+    } catch (error: any) {
       logger?.warn?.(`dsh-connect-qoder: ${region.displayName} upstream failed`, error)
       // Queueing is transient, so it must not look like a rejection. DSH
       // retries a 503 (RATE_LIMIT/SERVER); it refuses to retry a 403, and the
@@ -364,7 +364,7 @@ export function createQoderShim(options) {
         if (step.value?.usage !== undefined && step.value.usage !== null) usage = step.value.usage
         absorb(step.value, content, toolCalls, (f) => { finish = f })
       }
-      const message = { role: 'assistant', content: content.join('') }
+      const message: any = { role: 'assistant', content: content.join('') }
       if (toolCalls.size > 0) message.tool_calls = [...toolCalls.values()]
       sendJson(res, 200, {
         id: `chatcmpl-${randomBytes(8).toString('hex')}`,
@@ -416,7 +416,7 @@ export function createQoderShim(options) {
         const choice = chunk?.choices?.[0]
         if (choice === undefined) continue
         const delta = choice.delta ?? choice.message ?? {}
-        const out = { role: 'assistant' }
+        const out: any = { role: 'assistant' }
         if (typeof delta.content === 'string' && delta.content.length > 0) out.content = delta.content
         // pi-ai reads reasoning from any of these fields.
         const reasoning = delta.reasoning_content ?? delta.reasoning
@@ -436,7 +436,7 @@ export function createQoderShim(options) {
           choices: [{ index: 0, delta: out, finish_reason: finish ?? null }],
         })
       }
-    } catch (error) {
+    } catch (error: any) {
       // Never end a broken stream with [DONE]: that tells the client the
       // response finished normally, so a half-written answer is shown as a
       // complete turn. Emitting the failure lets DSH retry or report it.
@@ -512,9 +512,9 @@ export function createQoderShim(options) {
     close: () => {
       if (closed) return closedPromise
       closed = true
-      closedPromise = new Promise((resolve, reject) => {
+      closedPromise = new Promise<void>((resolve, reject) => {
         server.closeAllConnections()
-        server.close((err) => {
+        server.close((err: any) => {
           if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') reject(err)
           else resolve()
         })

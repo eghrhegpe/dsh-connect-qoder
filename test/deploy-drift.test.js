@@ -18,15 +18,25 @@ import { dirname, join } from 'node:path'
 
 import { MARKERS, compareInstall, hashFile, installNamesFor, installsIn, profilesIn } from '../scripts/check-deploy-drift.mjs'
 
-/** The three marker files, in the shape MARKERS describes. */
+/**
+ * The marker files, in the shape MARKERS describes.
+ *
+ * `lib/` is a pure build artifact and holds exactly two files now: the client
+ * card, and the single host bundle that every `src/host/*.ts` module is
+ * compiled into — so the account-state marker and the account-route marker
+ * both live inside `INDEX`, exactly as they do in the real bundle.
+ */
 const CLIENT = `function offPeakState(model) {
   const promo = model.promotion;
   if (promo === null || typeof promo !== "object") return undefined;
   if (promo.active !== true) return undefined;
   return { active: true };
 }`
-const ACCOUNT_STATE = `export function readAccountState() { return 'ok' }`
-const INDEX = `const path = '/plugins/dsh-connect-qoder/account';\nexport { path }`
+const INDEX = [
+  `async function readAccountStateAsync(region) { return 'ok' }`,
+  `const accountPath = '/plugins/dsh-connect-qoder/account';`,
+  `export { readAccountStateAsync, accountPath }`,
+].join('\n')
 
 const temporaries = []
 
@@ -37,7 +47,6 @@ function makeRepo() {
   mkdirSync(join(root, 'lib'), { recursive: true })
   writeFileSync(join(root, 'package.json'), JSON.stringify({ version: '0.2.0' }))
   writeFileSync(join(root, 'lib', 'client.js'), CLIENT)
-  writeFileSync(join(root, 'lib', 'account-state.js'), ACCOUNT_STATE)
   writeFileSync(join(root, 'lib', 'index.js'), INDEX)
   return root
 }
@@ -77,22 +86,28 @@ test('a changed file is drift, and the version trap is reported not hidden', () 
   assert.strictEqual(report.sameVersion, true)
 })
 
-test('a deploy that lost a marker file is called out by what it lost', () => {
+test('a deploy that lost a marker is called out by what it lost', () => {
   const repo = makeRepo()
   const install = makeInstall(repo, (dir) => {
-    rmSync(join(dir, 'lib', 'account-state.js'))
-    // Keep client.js present but strip the gate — the shape the real deploy had.
+    // Two independent losses in the two marker files, both of the shape a real
+    // stale deploy had: client.js present but stripped of the gate, and
+    // index.js present but built from sources that predate the account-state
+    // fix (so the bundle kept the route and lost the panel).
     writeFileSync(join(dir, 'lib', 'client.js'), 'function offPeakState(model) { return { active: true } }')
+    writeFileSync(join(dir, 'lib', 'index.js'), `const accountPath = '/plugins/dsh-connect-qoder/account';\nexport { accountPath }`)
   })
   const report = compareInstall({ repoRoot: repo, installRoot: install })
   assert.strictEqual(report.kind, 'drift')
   const markers = report.differences.filter((d) => d.kind === 'marker')
-  assert.strictEqual(markers.length, MARKERS.length - 1, 'client.js lost its gate; account-state.js is gone; index.js still has its route')
+  assert.strictEqual(markers.length, MARKERS.length - 1, 'client.js lost its gate and index.js lost the account-state panel; the account route is still there')
   assert.ok(
     markers.some((d) => d.file === 'lib/client.js' && /discount/.test(d.meaning ?? '')),
     'the report must say what the missing marker means, not only that a file differs',
   )
-  assert.ok(markers.some((d) => d.file === 'lib/account-state.js'))
+  assert.ok(
+    markers.some((d) => d.file === 'lib/index.js' && /account-state/.test(d.meaning ?? '')),
+    'a bundle that kept the route but lost the panel must be reported as exactly that',
+  )
 })
 
 test('a deploy carrying files the checkout no longer has is drift', () => {

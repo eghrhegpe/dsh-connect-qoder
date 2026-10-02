@@ -45,7 +45,7 @@
  *
  * @module dsh-connect-qoder/claim
  */
-import { toEpochMs } from './time.js'
+import { toEpochMs } from './time.ts'
 
 /** MIME-free label for the one campaign type that actually pays out. */
 export const CLAIM_BENEFIT_ACTION = 'CLAIM_BENEFIT'

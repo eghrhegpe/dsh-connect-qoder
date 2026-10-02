@@ -20,8 +20,8 @@ import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import z from '@deepseek-ai/schemastery'
 import { resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
-import { createQoderAdapter, offPeakActive, offPeakRemaining, rateNow } from './adapter.js'
-import { createQoderShim } from './shim.js'
+import { createQoderAdapter, offPeakActive, offPeakRemaining, rateNow } from './adapter.ts'
+import { createQoderShim } from './shim.ts'
 import {
   REGIONS,
   loadCredential,
@@ -30,37 +30,37 @@ import {
   sweepStaleOscryptDirs,
   setCredentialDiagnosticSink,
   appDataRootFor,
-} from './credentials.js'
-import { buildAccountPayload } from './account-payload.js'
-import { CredentialCache } from './credential-cache.js'
-import { applySettingsSave, settingsNamespaceOf } from './settings-save.js'
-import { createSingleFlight } from './single-flight.js'
+} from './credentials.ts'
+import { buildAccountPayload } from './account-payload.ts'
+import { CredentialCache } from './credential-cache.ts'
+import { applySettingsSave, settingsNamespaceOf } from './settings-save.ts'
+import { createSingleFlight } from './single-flight.ts'
 import {
   enabledIdsFor as resolveEnabledIds,
   imageModeFor as resolveImageMode,
   preferMaximumContext as prefersMaximumContext,
   regionEnabledFor as resolveRegionEnabled,
   resolvePreferences,
-} from './preferences.js'
-import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.js'
-import { normalizeEntry, projectModelRow, buildModelRowsPayload } from './catalog-entry.js'
-import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.js'
-import { rememberRouteRelease, releaseRoutes } from './lifecycle.js'
-import { exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.js'
-import { classifyUpstreamError, isProtocolShapeChangedError } from './errors.js'
+} from './preferences.ts'
+import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.ts'
+import { normalizeEntry, projectModelRow, buildModelRowsPayload } from './catalog-entry.ts'
+import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
+import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
+import { exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.ts'
+import { classifyUpstreamError, isProtocolShapeChangedError } from './errors.ts'
 import {
   campaignIsClaimed,
   checkinStateFrom,
   claimableCampaignOf,
   normalizeClaimResult,
-} from './claim.js'
-import { sendJson } from './http-utils.js'
+} from './claim.ts'
+import { sendJson } from './http-utils.ts'
 // The request gates every card route passes through, moved out so they can be
 // tested: `lib/index.js` is not importable without the Cordis peer
 // dependencies, and the authentication surface is exactly the kind of thing
 // that must not be able to be wrong while the suite is green.
-import { readJsonBody, readJsonBodyOr400, methodAllowed, originAllowed } from './routes.js'
-import { regionPublishDecision, unreadableSignInDecision } from './region-gate.js'
+import { readJsonBody, readJsonBodyOr400, methodAllowed, originAllowed } from './routes.ts'
+import { regionPublishDecision, unreadableSignInDecision } from './region-gate.ts'
 
 /** Loader row id; also the plugin's identity in the composition. */
 export const name = 'llm-qoder'
@@ -274,7 +274,34 @@ export function qoderCatalogPath(filename = '.qoder-catalog.json') {
  * Owns one region: its credential, catalog, shim, adapter, and registration.
  */
 class RegionRuntime {
-  constructor(region, ctx) {
+  /** The region descriptor this runtime owns. */
+  region: any
+  /** The Cordis context this runtime was activated with. */
+  ctx: any
+  /** The plugin logger. */
+  logger: any
+  /** The on-disk catalog cache for this region. */
+  catalog: any
+  /** The per-region credential cache. */
+  credentials: any
+  /** The refresh interval handle, or `undefined` when stopped. */
+  refreshTimer: any
+  /** The last usage reading, or `undefined` before the first read. */
+  usage: any
+  /** Epoch ms of the last usage reading. */
+  usageAt: number
+  /** One live catalog run, shared across triggers. */
+  catalogFlight: (force?: boolean) => Promise<void>
+  /** One live usage run, shared across triggers. */
+  usageFlight: (force?: boolean) => Promise<unknown>
+  /** Whether this runtime has been disposed. */
+  disposed: boolean
+  /** The controller for the catalog fetch currently in flight. */
+  refreshAbort: AbortController | undefined
+  /** Why the last refresh did not produce a catalog, or `undefined`. */
+  refreshFailed: { reason: string; error?: unknown } | undefined
+
+  constructor(region: any, ctx: any) {
     this.region = region
     this.ctx = ctx
     this.logger = ctx.logger
@@ -378,7 +405,7 @@ class RegionRuntime {
     let credential
     try {
       credential = await this.resolveCredential()
-    } catch (error) {
+    } catch (error: any) {
       this.logger?.warn?.(`dsh-connect-qoder: ${this.region.displayName} credential resolution failed`, error)
       this.applyOutcome({ ok: false, reason: 'credential', error })
       return
@@ -401,7 +428,7 @@ class RegionRuntime {
       const raw = await fetchModels(this.region, credential, signal)
       if (isRefreshObsolete(this)) return
       this.applyOutcome({ ok: true, entries: raw.map(normalizeEntry) })
-    } catch (error) {
+    } catch (error: any) {
       // A dispose mid-fetch is not a failure worth reporting: the runtime is
       // gone, there is nobody left to tell, and logging it would put a warning
       // in the log of every disable/reload.
@@ -506,7 +533,7 @@ async function startRegion(region, ctx, enabledIdsFor) {
   let credential
   try {
     credential = await runtime.resolveCredential()
-  } catch (error) {
+  } catch (error: any) {
     const refusal = unreadableSignInDecision(region)
     ctx.logger[refusal.level]?.(refusal.message, error)
     return undefined
@@ -532,7 +559,7 @@ async function startRegion(region, ctx, enabledIdsFor) {
   })
   try {
     await shim.ready
-  } catch (error) {
+  } catch (error: any) {
     ctx.logger.error(`dsh-connect-qoder: ${region.displayName} loopback endpoint failed to start`, error)
     return undefined
   }
@@ -561,7 +588,7 @@ async function startRegion(region, ctx, enabledIdsFor) {
 export async function apply(ctx, config = {}) {
   try {
     await activate(ctx, config)
-  } catch (error) {
+  } catch (error: any) {
     ctx.logger.error('dsh-connect-qoder: activation failed; Qoder models will be unavailable', error)
   }
 }
@@ -588,7 +615,7 @@ async function activate(ctx, config) {
   let preferences = { ...config }
   const livePreferences = () => {
     const next = { ...config }
-    for (const [key, value] of Object.entries(next)) {
+    for (const [key, value] of Object.entries(next) as [string, any][]) {
       if (value !== null && typeof value === 'object' && typeof value.get === 'function') {
         next[key] = value.get()
       }
@@ -643,7 +670,7 @@ async function activate(ctx, config) {
     if (reclaimed > 0) {
       ctx.logger.info(`dsh-connect-qoder: reclaimed ${reclaimed} stale credential temp dir(s)`)
     }
-  } catch (error) {
+  } catch (error: any) {
     // Housekeeping only: failing to sweep must never stop the plugin from
     // starting, and the directories are inert without a reader.
     ctx.logger.warn('dsh-connect-qoder: stale credential temp sweep failed', error)
@@ -769,7 +796,7 @@ async function activate(ctx, config) {
           declared: false,
         })),
       )
-    } catch (error) {
+    } catch (error: any) {
       // Release anything the failed registration managed to install.
       releaseAdapter?.()
       releaseDirectory?.()
@@ -826,7 +853,7 @@ async function activate(ctx, config) {
     if (released > 0) {
       ctx.logger.debug?.(`dsh-connect-qoder: released ${released} card route registration(s)`)
     }
-    for (const { runtime, shim } of started) {
+    for (const { runtime } of started) {
       // Mark the runtime dead before clearing anything: an in-flight
       // `refreshCatalog().then` that races this dispose can still run and
       // would otherwise install a fresh `setInterval` onto the dead runtime.
@@ -886,7 +913,7 @@ async function activate(ctx, config) {
           },
         })
       }
-    } catch (error) {
+    } catch (error: any) {
       ctx.logger.warn('dsh-connect-qoder: settings section unavailable', error)
     }
   })
@@ -927,7 +954,7 @@ async function activate(ctx, config) {
             for (const { runtime } of started) {
               try {
                 await runtime.refreshCatalog(true)
-              } catch (error) {
+              } catch (error: any) {
                 // A refresh failure must not blank the card: the last good
                 // catalog is still served below.
                 ctx.logger.warn(
@@ -952,7 +979,7 @@ async function activate(ctx, config) {
           )
         },
       }))
-    } catch (error) {
+    } catch (error: any) {
       ctx.logger.warn('dsh-connect-qoder: model route unavailable', error)
     }
   })
@@ -1003,7 +1030,7 @@ async function activate(ctx, config) {
             // make the snapshot disagree with the document.
             refreshPicker()
             return sendJson(res, outcome.status, outcome.body)
-          } catch (error) {
+          } catch (error: any) {
             const err = error
             sendJson(res, 500, {
               ok: false,
@@ -1013,7 +1040,7 @@ async function activate(ctx, config) {
           }
         },
       }))
-    } catch (error) {
+    } catch (error: any) {
       ctx.logger.warn('dsh-connect-qoder: save route unavailable', error)
     }
   })
@@ -1043,7 +1070,7 @@ async function activate(ctx, config) {
               try {
                 const usage = await runtime.readUsage(force)
                 return usage === undefined ? { ...base, available: false } : { ...base, available: true, ...usage }
-              } catch (error) {
+              } catch (error: any) {
                 ctx.logger.warn(
                   `dsh-connect-qoder: ${runtime.region.displayName} usage read failed`,
                   error,
@@ -1055,7 +1082,7 @@ async function activate(ctx, config) {
           sendJson(res, 200, { regions })
         },
       }))
-    } catch (error) {
+    } catch (error: any) {
       ctx.logger.warn('dsh-connect-qoder: usage route unavailable', error)
     }
   })
@@ -1079,7 +1106,7 @@ async function activate(ctx, config) {
           if (entry === undefined) return sendJson(res, 404, { error: 'unknown-region' })
           try {
             sendJson(res, 200, await claimToday(entry.runtime))
-          } catch (error) {
+          } catch (error: any) {
             // The one route where failure must name itself: an unusable sign-in,
             // a round that ended minutes ago, and a rejected claim are three
             // different problems wearing the same "nothing happened".
@@ -1088,7 +1115,7 @@ async function activate(ctx, config) {
           }
         },
       }))
-    } catch (error) {
+    } catch (error: any) {
       ctx.logger.warn('dsh-connect-qoder: check-in route unavailable', error)
     }
   })
@@ -1237,7 +1264,7 @@ async function activate(ctx, config) {
           // stack where it can be read.
           try {
             sendJson(res, 200, await accountPayload())
-          } catch (error) {
+          } catch (error: any) {
             ctx.logger.error('dsh-connect-qoder: account state read failed', error)
             sendJson(res, 500, {
               error: 'account state read failed',
@@ -1281,7 +1308,7 @@ async function activate(ctx, config) {
           // undiagnosable from the card, and it hid the whole panel.
           try {
             await startStoppedRegions(wanted)
-          } catch (error) {
+          } catch (error: any) {
             ctx.logger.error('dsh-connect-qoder: account re-read failed to start a stopped region', error)
           }
           // `force: true` is deliberate and unlike the GET above: this is the
@@ -1327,7 +1354,7 @@ async function activate(ctx, config) {
               confirmed: true,
               identity: { name: info.name, email: info.email },
             })
-          } catch (error) {
+          } catch (error: any) {
             // Classify the way the shim does: a sign-in rejection is the one
             // answer that changes what the user should do (re-sign in, then
             // re-read), so it is named; everything else is a plain "could
@@ -1350,7 +1377,7 @@ async function activate(ctx, config) {
           }
         },
       }))
-    } catch (error) {
+    } catch (error: any) {
       ctx.logger.warn('dsh-connect-qoder: account routes unavailable', error)
     }
   })

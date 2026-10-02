@@ -20,7 +20,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { CatalogStore, CATALOG_FORMAT_VERSION } from '../lib/catalog-store.js'
+import { CatalogStore, CATALOG_FORMAT_VERSION } from '../src/host/catalog-store.ts'
 
 const created = []
 

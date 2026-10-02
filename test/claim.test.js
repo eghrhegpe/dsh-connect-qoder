@@ -23,7 +23,7 @@ import {
   checkinStateFrom,
   claimableCampaignOf,
   normalizeClaimResult,
-} from '../lib/claim.js'
+} from '../src/host/claim.ts'
 
 /**
  * The daily 100-Credit round, as the upstream published it.

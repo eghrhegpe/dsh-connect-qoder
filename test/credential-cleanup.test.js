@@ -47,7 +47,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { sweepStaleOscryptDirs, setCredentialDiagnosticSink } from '../lib/credentials.js'
+import { sweepStaleOscryptDirs, setCredentialDiagnosticSink } from '../src/host/credentials.ts'
 
 /** A fixed, obviously-fake 32-byte key body, base64'd — the sweep's content
  *  check demands exactly a master key's size, so a wrong-length body would be

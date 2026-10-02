@@ -109,6 +109,14 @@ function listFiles(dir) {
  * They are literal source strings rather than hashes so the report can say
  * *what* is stale instead of only *that* something is — "the off-peak gate is
  * missing" is actionable, "client.js differs" is not.
+ *
+ * `lib/` is now a pure build artifact: the host module that used to sit at
+ * `lib/account-state.js` is bundled into `lib/index.js`, so that marker moved
+ * with it and keys on `readAccountStateAsync` — a symbol nothing else in the
+ * bundle defines. A deployed copy built from before the TS migration carries
+ * the per-module layout instead, which the file-presence comparison above
+ * already reports as drift; the marker is what still catches a copy that has
+ * the right files but lost the panel's fix.
  */
 export const MARKERS = [
   {
@@ -117,8 +125,8 @@ export const MARKERS = [
     meaning: 'the off-peak gate (the card would render a discount for a promotion Qoder switched off)',
   },
   {
-    file: 'lib/account-state.js',
-    needle: 'export',
+    file: 'lib/index.js',
+    needle: 'readAccountStateAsync',
     meaning: 'the account-state panel (a region that failed at activation can only be fixed by restarting)',
   },
   {

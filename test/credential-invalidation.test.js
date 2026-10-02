@@ -1,24 +1,24 @@
 /**
- * Test the credential re-read pattern behind `RegionRuntime` (lib/index.js):
+ * Test the credential re-read pattern behind `RegionRuntime` (src/host/index.ts):
  * a cached app credential whose token expires at runtime must be re-read, or
  * every request 401s until DSH restarts.
  *
  * The fix marks the cache invalid when the shim reports a sign-in failure
- * (`isStaleCredentialError`, in lib/errors.js), and the re-read is gated by
- * `isCredentialUsable` (in lib/credentials.js).
+ * (`isStaleCredentialError`, in src/host/errors.ts), and the re-read is gated by
+ * `isCredentialUsable` (in src/host/credentials.ts).
  *
  * SCOPE — read this before trusting a green run.
  *
  * Both files were originally re-implemented inside this test. That version
  * could not fail: rewording, or outright breaking, the detection regex in
- * lib/shim.js left the test green, because the test was asserting against its
+ * src/host/shim.ts left the test green, because the test was asserting against its
  * own copy. That was verified by mutation, not assumed. Both predicates now
  * live in dependency-free modules and are imported for real; a mutation that
  * breaks either one turns this file red.
  *
  * What is still NOT covered here: `RegionRuntime` itself, and the
  * `credentialInvalid` flag that connects the two predicates. That class lives
- * in lib/index.js, which imports peer dependencies this checkout does not
+ * in src/host/index.ts, which imports peer dependencies this checkout does not
  * install, so the wiring between "the shim saw a sign-in error" and "the next
  * request re-reads the store" remains unasserted.
  *
@@ -27,8 +27,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { isStaleCredentialError } from '../lib/errors.js'
-import { isCredentialUsable } from '../lib/credentials.js'
+import { isStaleCredentialError } from '../src/host/errors.ts'
+import { isCredentialUsable } from '../src/host/credentials.ts'
 
 test('isCredentialUsable gates the cache on the source-specific expiry rule', () => {
   // This is the rule `RegionRuntime.resolveCredential` uses to decide whether a
@@ -62,7 +62,7 @@ test('isCredentialUsable gates the cache on the source-specific expiry rule', ()
 })
 
 test('isStaleCredentialError recognises a sign-in failure', () => {
-  // The flag the upstream classifier sets (lib/upstream.js sets this on a
+  // The flag the upstream classifier sets (src/host/upstream.ts sets this on a
   // `sign-in-expired` classification), and the message shapes the real errors
   // carry. The long form is the one `failureMessage` produces.
   const signInErrors = [

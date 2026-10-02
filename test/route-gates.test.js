@@ -3,11 +3,11 @@
  *
  * Run: node --test test/route-gates.test.js
  *
- * These four functions lived inside `lib/index.js`, which no test can import —
+ * These four functions lived inside `src/host/index.ts`, which no test can import —
  * it pulls in the Cordis peer dependencies. That left the ENTIRE request
  * authentication surface able to be wrong while the suite stayed green: a
  * removed origin check, a body cap that never fires, a 405 that lies about
- * what is allowed. They now live in `lib/routes.js`, dependency-free, and this
+ * what is allowed. They now live in `src/host/routes.ts`, dependency-free, and this
  * file asserts them for real.
  *
  * The origin rule is asserted as WHAT IT IS rather than as what it should
@@ -19,7 +19,7 @@
  * (The alternative to this move was `--experimental-test-module-mocks`. It was
  * implemented and measured: it does not work in this repository, because
  * `mock.module()` requires the specifier to be resolvable and the whole point
- * is that these packages are absent. See docs/KNOWN_GAPS.md item 1（`adapter.js` 的 Cordis 接线与 profile 构造）.)
+ * is that these packages are absent. See docs/KNOWN_GAPS.md item 1（`adapter.ts` 的 Cordis 接线与 profile 构造）.)
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -32,7 +32,7 @@ import {
   isLoopbackAuthority,
   methodAllowed,
   originAllowed,
-} from '../lib/routes.js'
+} from '../src/host/routes.ts'
 
 /** A response stand-in recording what the gate wrote. */
 function fakeRes() {
@@ -295,6 +295,42 @@ test('an over-cap body is refused the same way, not thrown', async () => {
   assert.strictEqual(read.ok, false)
   assert.strictEqual(res.status, 400)
   assert.match(JSON.parse(res.body).detail, /exceeds 100 bytes/)
+})
+
+test('omitting the cap defers to readJsonBody, so the 64 KiB default is not shadowed', async () => {
+  // The regression this pins: adding `= 1024 * 1024` to this layer's `maxBytes`
+  // while giving it a type silently raised the body cap on both card POST routes
+  // 16x. Nothing failed, because every other test here either passes an explicit
+  // cap or sends a tiny body — the default itself was never asserted. A body
+  // just under the real cap must pass, and one over it must be refused with
+  // `readJsonBody`'s own number in the message.
+  //
+  // The filler has to be valid JSON, or the 400 would come from `JSON.parse`
+  // instead of from the cap and the test would pass for the wrong reason. Size
+  // is asserted on the Buffer, never on the character count: quoting the filler
+  // is what makes "N characters" and "N bytes" disagree.
+  const CAP = 64 * 1024
+  const jsonOfBytes = (bytes) => {
+    const prefix = '{"pad":"'
+    const suffix = '"}'
+    const body = Buffer.from(prefix + 'a'.repeat(bytes - prefix.length - suffix.length) + suffix, 'utf8')
+    assert.strictEqual(body.length, bytes, `fixture must be exactly ${bytes} bytes`)
+    return body
+  }
+
+  const under = fakeRes()
+  const ok = await readJsonBodyOr400(bodyRequest([jsonOfBytes(CAP - 1)]), under)
+  assert.strictEqual(ok.ok, true, 'a body under 64 KiB must still be accepted')
+
+  const over = fakeRes()
+  const refused = await readJsonBodyOr400(bodyRequest([jsonOfBytes(CAP + 1)]), over)
+  assert.strictEqual(refused.ok, false)
+  assert.strictEqual(over.status, 400)
+  assert.match(
+    JSON.parse(over.body).detail,
+    /exceeds 65536 bytes/,
+    "the cap that applies must be readJsonBody's own 64 KiB default, not a shadowing one",
+  )
 })
 
 test('an empty body is still a success, because the reload route accepts it', async () => {

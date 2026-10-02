@@ -20,8 +20,8 @@
  *
  * @module dsh-connect-qoder/adapter-models
  */
-import { filterByEnabled } from './catalog-entry.js'
-import { toPiModel } from './pi-model.js'
+import { filterByEnabled } from './catalog-entry.ts'
+import { toPiModel } from './pi-model.ts'
 
 /**
  * Build the model list a region offers.

@@ -28,7 +28,7 @@
  *
  * @module dsh-connect-qoder/pi-model
  */
-import { offPeakActive, rateNow } from './offpeak.js'
+import { offPeakActive, rateNow } from './offpeak.ts'
 
 /** No per-token price is knowable for a subscription quota; report zero. */
 export const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }

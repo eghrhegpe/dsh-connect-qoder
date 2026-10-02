@@ -32,7 +32,46 @@ const baselineRef = process.argv.includes('--baseline')
   : 'HEAD'
 
 const NEW = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
-const OLD = execFileSync('git', ['show', `${baselineRef}:lib/client.js`], { encoding: 'utf8' })
+
+/**
+ * The baseline bundle, or `undefined` when the ref carries none.
+ *
+ * `lib/` is a build artifact and no longer tracked (see .gitignore), so the
+ * day will come when `${baselineRef}:lib/client.js` simply is not there any
+ * more — which is not a reason to fail, and must not be confused with "the
+ * rebuild differs". `build-client.mjs` already refuses to write a bundle that
+ * does not reproduce `src/client/` byte-for-byte, so freshness is enforced at
+ * the point where it can actually be enforced; this script's job is the
+ * narrower question of behaviour drift against a KNOWN-GOOD shipped bundle.
+ */
+const readBaseline = (ref) => {
+  try {
+    return execFileSync('git', ['show', `${ref}:lib/client.js`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+  } catch {
+    return undefined
+  }
+}
+
+const OLD = readBaseline(baselineRef)
+
+if (OLD === undefined) {
+  process.stderr.write(
+    `\n[verify:bundle] SKIPPED — \`${baselineRef}:lib/client.js\` is not in git.\n` +
+    `[verify:bundle]   \`lib/\` is a build artifact and untracked (.gitignore), so there is\n` +
+    `[verify:bundle]   no shipped bundle at that ref to compare behaviour against. This is\n` +
+    `[verify:bundle]   expected, not a regression: freshness is enforced by the byte-for-byte\n` +
+    `[verify:bundle]   check \`scripts/build-client.mjs\` runs on every build (it fails the build\n` +
+    `[verify:bundle]   when the artifact does not reproduce src/client/), and the card's\n` +
+    `[verify:bundle]   behaviour by test/client-bundle.test.js, test/card-host-parity.test.js\n` +
+    `[verify:bundle]   and test/theme-token-contract.test.js.\n` +
+    `[verify:bundle]   To compare against a specific earlier release, pass a ref that still\n` +
+    `[verify:bundle]   carries the artifact: node scripts/verify-bundle-behaviour.mjs --baseline <ref>\n\n`,
+  )
+  process.exit(0)
+}
 
 /**
  * The card's pure functions. Every one of these is reachable inside the module

@@ -5,7 +5,7 @@
  *
  * This is the model list DSH's picker is built from, and it was previously
  * inside `createQoderAdapter` — which no test can import, because it pulls in
- * pi-ai (docs/KNOWN_GAPS.md item 1（`adapter.js` 的 Cordis 接线与 profile 构造）).
+ * pi-ai (docs/KNOWN_GAPS.md item 1（`adapter.ts` 的 Cordis 接线与 profile 构造）).
  * So every curation decision the user makes — the per-region switch, the
  * allow-list, the maximum-context preference, the per-model image mode — was
  * made in code with no test over it, in a file outside the coverage
@@ -24,8 +24,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildModelsFor } from '../lib/adapter-models.js'
-import { normalizeEntry } from '../lib/catalog-entry.js'
+import { buildModelsFor } from '../src/host/adapter-models.ts'
+import { normalizeEntry } from '../src/host/catalog-entry.ts'
 
 const REGION = { id: 'qoder-cn', displayName: 'Qoder CN' }
 const BASE = 'http://127.0.0.1:1234/v1'

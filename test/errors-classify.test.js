@@ -19,7 +19,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { classifyUpstreamError } from '../lib/errors.js'
+import { classifyUpstreamError } from '../src/host/errors.ts'
 
 test('an exact 10605 is a queue, whatever the body contains', () => {
   // Rule 1. The code decides, not the text — a gateway that mislabels the body

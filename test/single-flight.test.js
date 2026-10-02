@@ -17,7 +17,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createSingleFlight } from '../lib/single-flight.js'
+import { createSingleFlight } from '../src/host/single-flight.ts'
 
 /** A task whose completion the test controls. */
 function deferredTask() {

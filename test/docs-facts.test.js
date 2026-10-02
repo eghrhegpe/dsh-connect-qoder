@@ -39,7 +39,9 @@ const LIVE_FILES = [
   'README.md',
   'package.json',
   'docs/KNOWN_GAPS.md',
-  ...readdirSync(join(root, 'lib')).map((f) => `lib/${f}`),
+  // `lib/` is a pure build artifact (git-ignored); the live host sources are
+  // `src/host/*.ts`, so the doc-fact guard reads those instead.
+  ...readdirSync(join(root, 'src', 'host')).map((f) => `src/host/${f}`),
   ...readdirSync(join(root, 'src', 'client')).map((f) => `src/client/${f}`),
   ...readdirSync(join(root, 'scripts')).map((f) => `scripts/${f}`),
   ...readdirSync(join(root, 'test'))
@@ -135,12 +137,10 @@ function readmeCatalog() {
   return section[1]
 }
 
-test('every lib module and every src/client source is named in the README 目录', () => {
+test('every host module and every src/client source is named in the README 目录', () => {
   const table = readmeCatalog()
-  for (const f of readdirSync(join(root, 'lib'))) {
-    // lib/client.js is the generated artifact; the README names it in prose.
-    if (f === 'client.js') continue
-    assert.ok(table.includes(f), `lib/${f} has no row in the README 目录 table`)
+  for (const f of readdirSync(join(root, 'src', 'host'))) {
+    assert.ok(table.includes(f), `src/host/${f} has no row in the README 目录 table`)
   }
   for (const f of readdirSync(join(root, 'src', 'client'))) {
     assert.ok(table.includes(f), `src/client/${f} has no row in the README 目录 table`)

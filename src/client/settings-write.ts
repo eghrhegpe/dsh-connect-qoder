@@ -58,7 +58,7 @@ async function saveFieldViaHost(field, value) {
 			credentials: "same-origin",
 			body: JSON.stringify({ field, value })
 		});
-	} catch (error) {
+	} catch (error: any) {
 		throw new QoderSettingsWriteError(field, `Host save endpoint unreachable: ${String(error)}`);
 	}
 	if (!response.ok) {
@@ -109,18 +109,19 @@ export async function writeSettingsField(scope, field, value) {
 			// Mirror only; the endpoint already persisted the value.
 		}
 		return authoritative;
-	} catch (error) {
+	} catch (error: any) {
 		hostError = error;
 	}
 	let scopeDelivered = false;
+	// `enabledModelIds` is per-region on the Host, so its scope mirror
+	// must keep the regions the card did not edit — every other field
+	// is posted whole and replaces the field outright. Declared here so the
+	// read-back confirmation below can compare against it too.
+	const nextValue =
+		field === "enabledModelIds"
+			? { ...fieldSnapshot(scope, field), ...value }
+			: value;
 	try {
-		// `enabledModelIds` is per-region on the Host, so its scope mirror
-		// must keep the regions the card did not edit — every other field
-		// is posted whole and replaces the field outright.
-		const nextValue =
-			field === "enabledModelIds"
-				? { ...fieldSnapshot(scope, field), ...value }
-				: value;
 		// The scope stores the value verbatim (no server-side merge on
 		// this path).
 		scopeDelivered = (await scope.set(field, nextValue)) !== false;

@@ -1,27 +1,30 @@
 {
-  // Type declarations were erased when the card was rebuilt from its bundle
-  // (docs/issues/17): the sources are faithful, but they carry no annotations
-  // because a build artifact has none. `strict` is therefore off and
-  // `checkJs` off — turning either on today produces hundreds of errors that
-  // say nothing about correctness.
-  //
-  // This file still earns its place: it pins `jsx` to the automatic runtime,
-  // which is what makes the bundle import `react/jsx-runtime` instead of
-  // reaching for a global `React`, and it gives editors the same settings the
-  // build uses. Tighten it as annotations are added back by hand.
+  "$comment": "Source is TypeScript now (src/host/*.ts, src/client/*.ts), and every .ts file is type-checked unconditionally — `checkJs` only governs plain .js files, of which src/ has none. strict/noImplicitAny stay false (for now), so untyped parameters are implicit-any and pass: the ONE shape that does not is a parameter WITH a default initializer, which is typed from that initializer — give it an explicit annotation instead of JSDoc (@param/@type are comments in a .ts file). noEmit:true means this check never produces artifacts — the build is tsdown's job. Run it with `npm run typecheck`.",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "allowJs": false,
+    "checkJs": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "strict": false,
     "noImplicitAny": false,
-    "allowJs": true,
-    "checkJs": false,
+    "noImplicitThis": true,
+    "useUnknownInCatchVariables": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
-    "noEmit": true,
-    "types": []
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
   },
-  "include": ["src/client/**/*.ts"]
+  "include": ["src/host", "src/client", "types/*.d.ts"],
+  "exclude": ["node_modules", "lib", "test"]
 }

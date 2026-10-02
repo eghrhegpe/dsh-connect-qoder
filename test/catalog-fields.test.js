@@ -9,10 +9,10 @@
  * window countdown, the `错峰` name suffix, and the `before × discount` rate
  * could never fire.
  *
- * It imports the real `normalizeEntry` (lib/catalog-entry.js). It used to keep
+ * It imports the real `normalizeEntry` (src/host/catalog-entry.ts). It used to keep
  * a hand-written MIRROR of that function and assert against the mirror, which
  * is why the same class of bug got through a second time: the host projection in
- * `lib/index.js` dropped `promotion.active` and `promotion.timezone`, the card's
+ * `src/host/index.ts` dropped `promotion.active` and `promotion.timezone`, the card's
  * clock gate `promotion?.active === true` was therefore permanently false, and
  * the interval was never installed — so the 22:00 rate flip still never
  * happened, while this test stayed green throughout. A mirror asserts that the
@@ -21,11 +21,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { normalizeEntry } from '../lib/catalog-entry.js'
-import { HIDE_ALL_MODELS } from '../lib/preferences.js'
+import { normalizeEntry } from '../src/host/catalog-entry.ts'
+import { HIDE_ALL_MODELS } from '../src/host/preferences.ts'
 
 // A raw catalog row as `fetchModels` pushes it into `models[]`
-// (lib/upstream.js), with the `promotion` block already shaped by
+// (src/host/upstream.ts), with the `promotion` block already shaped by
 // `normalizePromotion` — the fields adapter.js and the card consume:
 //   active, windowStart, windowEnd, timezone,
 //   discountFactor, beforePromotionPriceFactor, badge, description

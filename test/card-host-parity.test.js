@@ -30,14 +30,14 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { normalizeEntry, projectModelRow } from '../lib/catalog-entry.js'
+import { normalizeEntry, projectModelRow } from '../src/host/catalog-entry.ts'
 import {
   resolveContextWindow,
   contextWindowLabelFor,
   contextWindowIsReal,
   formatContextWindow,
-} from '../lib/pi-model.js'
-import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../lib/offpeak.js'
+} from '../src/host/pi-model.ts'
+import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../src/host/offpeak.ts'
 
 const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakRemaining }
 const REGION = { id: 'qoder-cn', displayName: 'Qoder CN' }

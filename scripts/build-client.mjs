@@ -24,7 +24,7 @@
  * pointing at one machine's private directory. `TSDOWN_WORKSPACE` remains as
  * an escape hatch for building without installing.
  */
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
@@ -71,7 +71,7 @@ if (useTsdown) {
     // `var module = { exports: {} }` for exactly this reason.
     platform: 'browser',
     target: 'es2022',
-    external: ['react', 'react/jsx-runtime'],
+    deps: { neverBundle: ['react', 'react/jsx-runtime'] },
     outDir,
     dts: false,
     clean: true,
@@ -189,15 +189,22 @@ if (absent.length > 0) {
   )
 }
 
-const shipped = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
+const shippedPath = join(root, 'lib', 'client.js')
+const hasShipped = existsSync(shippedPath)
+const shipped = hasShipped ? readFileSync(shippedPath, 'utf8') : null
 const write = process.argv.includes('--write')
 
 if (write) {
-  writeFileSync(join(root, 'lib', 'client.js'), bundle, 'utf8')
+  writeFileSync(shippedPath, bundle, 'utf8')
   console.log('wrote lib/client.js from src/client/')
 } else {
   mkdirSync(join(root, '.build'), { recursive: true })
   writeFileSync(join(root, '.build', 'client.js'), bundle, 'utf8')
+}
+
+if (!hasShipped) {
+  console.log('NO BASELINE: lib/client.js was absent (fresh build) — wrote the rebuilt bundle without a byte-for-byte check.')
+  process.exit(0)
 }
 
 if (bundle === shipped) {

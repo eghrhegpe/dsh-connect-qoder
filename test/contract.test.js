@@ -1,17 +1,19 @@
 /**
  * Frontend-backend contract test.
  *
- * The client (TypeScript) and host (JavaScript) must agree on two things:
+ * The client (`src/client/`) and host (`src/host/`) halves — both TypeScript —
+ * must agree on two things:
  *
  * 1. **Route paths** — the client's `paths.ts` defines the paths it fetches;
- *    the host's `index.js` registers them. A mismatch is a silent 404.
+ *    the host's `index.ts` registers them. A mismatch is a silent 404.
  * 2. **Settings field names** — the client's `settings-write.ts` posts fields
- *    to `__save`; the host's `settings-save.js` whitelists them. A mismatch
+ *    to `__save`; the host's `settings-save.ts` whitelists them. A mismatch
  *    is a silent 400.
  *
  * This test reads both source files as text and extracts the constants. It
- * does not import either (the client is TypeScript; the host has peer
- * dependencies), so it checks the declarations rather than the runtime values.
+ * does not import either (the host pulls in the Cordis peer dependencies, so
+ * it cannot be imported by a test), so it checks the declarations rather than
+ * the runtime values.
  *
  * Run: node --test test/contract.test.js
  */
@@ -46,7 +48,7 @@ const extractObjectKeys = (source, name) => {
 // --- Route paths ----------------------------------------------------------
 
 const clientPaths = read('src/client/paths.ts')
-const hostIndex = read('lib/index.js')
+const hostIndex = read('src/host/index.ts')
 
 test('route paths: client and host agree on the model route', () => {
   const client = extractString(clientPaths, 'QODER_MODELS_PATH')
@@ -95,7 +97,7 @@ test('route paths: client and host agree on the save route', () => {
 // --- Settings field names ---------------------------------------------------
 
 const clientWrite = read('src/client/settings-write.ts')
-const hostSave = read('lib/settings-save.js')
+const hostSave = read('src/host/settings-save.ts')
 
 test('settings fields: client and host agree on the field names', () => {
   // The client posts fields by string literal; the host whitelists them.

@@ -14,15 +14,15 @@
  *   "is this endpoint there" probe there is.
  *
  * `sendJson` is importable (no peer dependencies), so the writer is tested for
- * real against a response stand-in. The 405 path itself lives in lib/index.js,
+ * real against a response stand-in. The 405 path itself lives in src/host/index.ts,
  * which cannot be imported — that half is pinned textually by
  * test/account-route-wiring.test.js's approach, here in a smaller form.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { sendJson } from '../lib/http-utils.js'
-import { methodAllowed, originAllowed, loopbackRequest, readJsonBody } from '../lib/routes.js'
+import { sendJson } from '../src/host/http-utils.ts'
+import { methodAllowed, originAllowed, loopbackRequest, readJsonBody } from '../src/host/routes.ts'
 
 /**
  * A Node response stand-in that records exactly what was written.
@@ -98,8 +98,8 @@ test('a response object without a `req` still gets its body', () => {
 })
 
 test('the 405 path advertises Allow and treats HEAD as GET', () => {
-  // This half used to be a source-text assertion against lib/index.js. The
-  // gates now live in lib/routes.js, which has no peer dependencies and is
+  // This half used to be a source-text assertion against src/host/index.ts. The
+  // gates now live in src/host/routes.ts, which has no peer dependencies and is
   // imported here, so it is asserted for real instead — the text version could
   // only ever prove a string was present.
   for (const method of ['POST', 'PUT', 'DELETE']) {

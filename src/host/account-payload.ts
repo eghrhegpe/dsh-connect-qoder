@@ -25,9 +25,9 @@
  *
  * @module dsh-connect-qoder/account-payload
  */
-import { readAccountStateAsync } from './account-state.js'
-import { appDataRootFor } from './credentials.js'
-import { regionEnabledFor } from './preferences.js'
+import { readAccountStateAsync } from './account-state.ts'
+import { appDataRootFor } from './credentials.ts'
+import { regionEnabledFor } from './preferences.ts'
 
 /**
  * Build the account panel's answer for every region.
@@ -56,6 +56,22 @@ import { regionEnabledFor } from './preferences.js'
  *   opt-out predicate.
  * @returns a promise of `{ regions, enabledRegions }`.
  */
+export interface BuildAccountPayloadOptions {
+  // Lenient shapes: the callers (lib/index.js) pass the plugin's own region
+  // descriptors and the live preferences snapshot, both richer than any type
+  // this extracted module should pin.
+  regions: any[]
+  settings: any
+  force?: boolean
+  readAccountState?: (
+    region: any,
+    appDataRoot: string,
+    options?: { force?: boolean; cachedOnly?: boolean },
+  ) => Promise<unknown>
+  appDataRoot?: string
+  regionEnabled?: (preferences: any, regionId: string) => boolean
+}
+
 export async function buildAccountPayload({
   regions,
   settings,
@@ -63,7 +79,7 @@ export async function buildAccountPayload({
   readAccountState = readAccountStateAsync,
   appDataRoot = appDataRootFor(),
   regionEnabled = regionEnabledFor,
-} = {}) {
+}: BuildAccountPayloadOptions = {} as BuildAccountPayloadOptions) {
   const enabledRegions = Object.fromEntries(
     regions.map((region) => [region.id, regionEnabled(settings, region.id)]),
   )
@@ -72,7 +88,7 @@ export async function buildAccountPayload({
   const mode = force === true ? { force: true } : { cachedOnly: true }
   const states = await Promise.all(
     regions.map(async (region) => ({
-      ...(await readAccountState(region, appDataRoot, mode)),
+      ...(await readAccountState(region, appDataRoot, mode) as any),
       enabled: enabledRegions[region.id],
     })),
   )

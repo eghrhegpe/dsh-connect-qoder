@@ -33,8 +33,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { readModelCatalogShape, MACHINE_OS, queueWaitFor } from '../lib/upstream.js'
-import { ProtocolShapeChangedError, isProtocolShapeChangedError } from '../lib/errors.js'
+import { readModelCatalogShape, MACHINE_OS, queueWaitFor } from '../src/host/upstream.ts'
+import { ProtocolShapeChangedError, isProtocolShapeChangedError } from '../src/host/errors.ts'
 
 const CN = { id: 'qoder-cn', displayName: 'Qoder CN' }
 const GLOBAL = { id: 'qoder', displayName: 'Qoder' }

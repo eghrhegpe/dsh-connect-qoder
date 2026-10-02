@@ -5,7 +5,7 @@
  *
  * WHY THIS FILE EXISTS
  *
- * `lib/index.js` cannot be imported here: it pulls in the host's Cordis peer
+ * `src/host/index.ts` cannot be imported here: it pulls in the host's Cordis peer
  * dependencies (schemastery, dsh-home-paths, dsh-llm), which only the DSH host
  * resolves at activation time. So this guard works on the source text, the way
  * `test/client-bundle.test.js` works on the shipped bundle.
@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const SOURCE = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'index.js'),
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'host', 'index.ts'),
   'utf8',
 )
 
@@ -45,7 +45,7 @@ const SOURCE = readFileSync(
  */
 function objectValueOf(binder) {
   const anchor = SOURCE.indexOf(binder)
-  assert.ok(anchor !== -1, `could not find \`${binder}\` in lib/index.js`)
+  assert.ok(anchor !== -1, `could not find \`${binder}\` in src/host/index.ts`)
   const open = SOURCE.indexOf('z.object({', anchor)
   assert.ok(open !== -1, `no z.object({ after \`${binder}\``)
   const start = SOURCE.indexOf('{', open)
@@ -67,7 +67,7 @@ function objectValueOf(binder) {
  */
 function volatileBodyOf(name) {
   const anchor = new RegExp(`const ${name} = asVolatile\\(`).exec(SOURCE)
-  assert.ok(anchor !== null, `lib/index.js no longer declares \`${name}\` as a volatile field`)
+  assert.ok(anchor !== null, `src/host/index.ts no longer declares \`${name}\` as a volatile field`)
   const start = SOURCE.indexOf('(', anchor.index + anchor[0].length - 1)
   let depth = 0
   for (let i = start; i < SOURCE.length; i++) {
@@ -129,17 +129,17 @@ test('the pre-existing fields are still declared', () => {
 })
 
 test('the save whitelist and the schema agree on the field name', () => {
-  // `lib/settings-save.js` white-lists the fields `__save` may write. If the
+  // `src/host/settings-save.ts` white-lists the fields `__save` may write. If the
   // schema and the whitelist ever drift apart (one side renamed, the other
   // not), the save passes the plugin's guard and dies at the host's, or vice
   // versa. Keep the two spellings in lockstep.
   const config = objectValueOf('export const Config')
   const save = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'settings-save.js'),
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'host', 'settings-save.ts'),
     'utf8',
   )
   const SAVE_FIELDS_START = save.indexOf('export const SAVE_FIELDS')
-  assert.ok(SAVE_FIELDS_START !== -1, 'lib/settings-save.js lost its SAVE_FIELDS whitelist')
+  assert.ok(SAVE_FIELDS_START !== -1, 'src/host/settings-save.ts lost its SAVE_FIELDS whitelist')
   // Walk the braces of the object: the object's own comment mentions a `}`,
   // so a first-`}` slice would end inside the comment, before the whitelist
   // entries it is trying to guard.

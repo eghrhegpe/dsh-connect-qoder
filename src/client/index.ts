@@ -1,6 +1,6 @@
-import { installStyles } from "./styles"
-import { zh, en } from "./copy"
-import { QoderPluginCard } from "./card"
+import { installStyles } from "./styles.ts"
+import { zh, en } from "./copy.ts"
+import { QoderPluginCard } from "./card.ts"
 /** Stable browser-plugin name. */
 const name = "dsh-connect-qoder-client";
 /**
@@ -88,7 +88,7 @@ function apply(ctx) {
 					settingsScope
 				}
 			}, QoderPluginCard));
-		} catch (error) {
+		} catch (error: any) {
 			console.error(`[dsh-connect-qoder] card slot "${slotName}" failed to register (host provider unaffected):`, error);
 		}
 	};
@@ -97,7 +97,7 @@ function apply(ctx) {
 		registerCard("plugins.row.config", `${bundle}#llm-qoder`);
 	}
 	registerCard("settings.plugin.item", "qoder");
-	} catch (error) {
+	} catch (error: any) {
 		console.error("[dsh-connect-qoder] client card failed to load (host provider unaffected):", error);
 	}
 }

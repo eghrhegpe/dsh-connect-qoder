@@ -15,7 +15,7 @@
  * 22:00 rate flip and countdown never happen without a manual card refresh. The
  * window and the rate still rendered, so nothing looked broken.
  *
- * The projection now lives in `lib/catalog-entry.js` as a pure function so it
+ * The projection now lives in `src/host/catalog-entry.ts` as a pure function so it
  * can be asserted directly; the test imports it for the same reason the sibling
  * test stopped mirroring: a hand-written copy cannot catch a bug in the code it
  * is a copy of.
@@ -23,8 +23,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { normalizeEntry, projectModelRow } from '../lib/catalog-entry.js'
-import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../lib/offpeak.js'
+import { normalizeEntry, projectModelRow } from '../src/host/catalog-entry.ts'
+import { isOffPeakActive, offPeakRemaining, effectiveRate } from '../src/host/offpeak.ts'
 
 const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakRemaining }
 
@@ -143,7 +143,7 @@ const NOW = new Date('2026-09-26T23:30:00+08:00')
  * made the file unfalsifiable in the way its siblings used to be: nothing
  * checked the stand-in against the shipped `rateNow`, so "the rate flips at
  * 22:00" was being asserted against a fiction. The helpers were then moved into
- * lib/offpeak.js, which has no pi-ai dependency, so the real ones can be
+ * src/host/offpeak.ts, which has no pi-ai dependency, so the real ones can be
  * imported here.
  *
  * The fixture's `priceFactor` is deliberately different from

@@ -21,7 +21,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 
-import { appDataRootFor } from '../lib/credentials.js'
+import { appDataRootFor } from '../src/host/credentials.ts'
 
 const HOME = '/home/ada'
 const WINDOWS_ENV = { APPDATA: 'C:\\Users\\Ada\\AppData\\Roaming' }

@@ -1,6 +1,6 @@
 /**
  * Unit tests for the umid machine-identity block's effect on
- * `openApiHeaders` in `lib/upstream.js`.
+ * `openApiHeaders` in `src/host/upstream.ts`.
  *
  * The international campaigns endpoint serves the daily CLAIM_BENEFIT round
  * only to requests carrying the desktop app's umid values; when the block
@@ -20,7 +20,7 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { openApiHeaders, __dshQoderUmidCacheReset } = await import('../lib/upstream.js')
+const { openApiHeaders, __dshQoderUmidCacheReset } = await import('../src/host/upstream.ts')
 
 beforeEach(() => {
   globalThis.__dshQoderUmidProbe = null

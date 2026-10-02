@@ -27,9 +27,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { applyCatalogOutcome, REFRESH_FAILURE_REASONS, isRefreshObsolete } from '../lib/catalog-refresh.js'
-import { normalizeEntry } from '../lib/catalog-entry.js'
-import { ProtocolShapeChangedError, isProtocolShapeChangedError } from '../lib/errors.js'
+import { applyCatalogOutcome, REFRESH_FAILURE_REASONS, isRefreshObsolete } from '../src/host/catalog-refresh.ts'
+import { normalizeEntry } from '../src/host/catalog-entry.ts'
+import { ProtocolShapeChangedError, isProtocolShapeChangedError } from '../src/host/errors.ts'
 
 /** A catalog stand-in that records what was committed and when. */
 function makeCatalog(initial = [], now = 1_000) {
@@ -223,11 +223,11 @@ test('the refresh consults dispose on BOTH the success and the failure path', ()
   // longer exists. Both halves are pinned, and so is the controller, because a
   // dispose that only sets a flag leaves the upstream socket open.
   const source = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'index.js'),
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'host', 'index.ts'),
     'utf8',
   )
   const body = /async doRefreshCatalog\(force\) \{[\s\S]*?\n  \}/.exec(source)
-  assert.ok(body !== null, 'lib/index.js no longer has a doRefreshCatalog of that shape')
+  assert.ok(body !== null, 'src/host/index.ts no longer has a doRefreshCatalog of that shape')
   const refresh = body[0]
   const checks = refresh.match(/isRefreshObsolete\(this\)/g) ?? []
   assert.ok(
@@ -242,7 +242,7 @@ test('the refresh consults dispose on BOTH the success and the failure path', ()
   )
   // And dispose itself must fire it.
   const dispose = /ctx\.effect\(\(\) => async \(\) => \{[\s\S]*?\n  \}\)/.exec(source)
-  assert.ok(dispose !== null, 'lib/index.js no longer has the fiber effect cleanup')
+  assert.ok(dispose !== null, 'src/host/index.ts no longer has the fiber effect cleanup')
   assert.match(
     dispose[0],
     /refreshAbort\?\.abort\(\)/,

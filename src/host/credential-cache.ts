@@ -14,16 +14,37 @@
  *
  * @module dsh-connect-qoder/credential-cache
  */
-import { isCredentialUsable } from './credentials.js'
+import { isCredentialUsable } from './credentials.ts'
+
+export interface CredentialCacheOptions {
+  loadApp: () => any
+  loadEnv: () => any
+  exchangePat?: (credential: any) => Promise<{ token: string; refreshToken: string; expiresAt: number }> | any
+}
 
 export class CredentialCache {
+  /** Reads the app's credential store. */
+  loadApp: () => any
+  /** The PAT fallback reader. */
+  loadEnv: () => any
+  /** Exchanges a PAT for a job token; absent when PATs are unsupported. */
+  exchangePat?: (credential: any) => any
+  /** The cached record (app credential, or PAT after exchange). */
+  cached: any
+  /** Set when a request was rejected with a sign-in failure. */
+  invalid: boolean
+  /** How many times the underlying store was actually read. */
+  reads: number
+  /** How many times a PAT was exchanged for a job token. */
+  exchanges: number
+
   /**
    * @param options.loadApp - `() => credential | undefined`, reading the app's store.
    * @param options.loadEnv - `() => credential | undefined`, the PAT fallback.
    * @param options.exchangePat - `(credential) => { token, refreshToken, expiresAt }`,
    *   called only for a PAT source; absent when PATs are not supported.
    */
-  constructor({ loadApp, loadEnv, exchangePat }) {
+  constructor({ loadApp, loadEnv, exchangePat }: CredentialCacheOptions) {
     this.loadApp = loadApp
     this.loadEnv = loadEnv
     this.exchangePat = exchangePat

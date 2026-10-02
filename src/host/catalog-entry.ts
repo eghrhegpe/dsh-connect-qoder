@@ -17,9 +17,9 @@
  *
  * @module dsh-connect-qoder/catalog-entry
  */
-import { regionEnabledFor, HIDE_ALL_MODELS } from './preferences.js'
-import { contextWindowLabelFor, resolveContextWindow } from './pi-model.js'
-import { unwrapVolatile } from './volatile.js'
+import { regionEnabledFor, HIDE_ALL_MODELS } from './preferences.ts'
+import { contextWindowLabelFor, resolveContextWindow } from './pi-model.ts'
+import { unwrapVolatile } from './volatile.ts'
 
 /**
  * A model id is the catalog display name with whitespace removed, so the id is

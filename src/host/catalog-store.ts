@@ -13,7 +13,7 @@
  * @module dsh-connect-qoder/catalog-store
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 
 /** How long a fetched catalog stays fresh before it is refetched. */
 export const CATALOG_TTL_MS = 30 * 60 * 1000
@@ -21,13 +21,32 @@ export const CATALOG_TTL_MS = 30 * 60 * 1000
 /** On-disk format this reader accepts; other versions are discarded. */
 export const CATALOG_FORMAT_VERSION = 1
 
+export interface CatalogStoreOptions {
+  path?: string
+  ttlMs?: number
+  logger?: { warn?: (message: string, error?: unknown) => void }
+}
+
 export class CatalogStore {
+  /** Where the catalog file lives. */
+  path: string
+  /** How long a fetch stays fresh, in ms. */
+  ttlMs: number
+  /** Optional logger for a failed save. */
+  logger?: { warn?: (message: string, error?: unknown) => void }
+  /** Parsed catalog entries. */
+  entries: any[]
+  /** Epoch ms of the last successful fetch. */
+  fetchedAt: number
+  /** The error from the last failed `save()`, or `undefined`. */
+  lastSaveError: unknown
+
   /**
    * @param options.path - where the catalog file lives.
    * @param options.ttlMs - how long a fetch stays fresh; injectable for tests.
    * @param options.logger - optional, for a failed save.
    */
-  constructor({ path, ttlMs = CATALOG_TTL_MS, logger } = {}) {
+  constructor({ path, ttlMs = CATALOG_TTL_MS, logger }: CatalogStoreOptions = {}) {
     this.path = path
     this.ttlMs = ttlMs
     this.logger = logger
@@ -83,7 +102,7 @@ export class CatalogStore {
       mkdirSync(dirname(this.path), { recursive: true })
       writeFileSync(tmp, JSON.stringify({ version: CATALOG_FORMAT_VERSION, fetchedAt: this.fetchedAt, entries: this.entries }, null, 2), 'utf8')
       renameSync(tmp, this.path)
-    } catch (error) {
+    } catch (error: any) {
       this.lastSaveError = error
       // A failed rename leaves the temp file behind; clean it up so the next
       // `save()` can write to it again.

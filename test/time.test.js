@@ -15,7 +15,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { toEpochMs } from '../lib/time.js'
+import { toEpochMs } from '../src/host/time.ts'
 
 test('second-precision integers are scaled to milliseconds', () => {
   // 2026-09-25T10:00:00Z, as the campaign window publishes it.

@@ -38,9 +38,9 @@
 
 ---
 
-## 1. `adapter.js` 的 Cordis 接线与 profile 构造
+## 1. `adapter.ts` 的 Cordis 接线与 profile 构造
 
-**位置**：`lib/adapter.js`
+**位置**：`src/host/adapter.ts`
 
 **为什么没测**：模块顶层 import `@earendil-works/pi-ai` 与
 `@deepseek-ai/dsh-llm-pi-ai`，本仓库不安装 peer 依赖。
@@ -48,38 +48,38 @@
 **已经测到哪一步**：`toPiModel` 原先住在这里，是整个插件最关键也最无防护的函数——
 它那行 `compat: { supportsDeveloperRole: false }` 决定了每个请求会不会被 403
 `10605` 拒绝，而「故意不声明 `maxTokens`」决定了长推理回复会不会被截断成
-`finish: max-tokens`。两处此前都只有注释守着。现已抽出到 `lib/pi-model.js`
+`finish: max-tokens`。两处此前都只有注释守着。现已抽出到 `src/host/pi-model.ts`
 （纯函数、不碰任何 pi-ai API）并由 `test/pi-model.test.js` 覆盖；
 它消费的 `rateNow` / `offPeakActive` / `offPeakRemaining` 早前已移到
-`lib/offpeak.js` 并被完整覆盖。
+`src/host/offpeak.ts` 并被完整覆盖。
 
 **剩下的是什么**：`createQoderAdapter` 组装 `PiAiAdapter` profile 的那部分——provider
 注册、inert 认证平面、`PiAiAdapter` 的构造。这部分是接线，没有可断言的纯逻辑，
 留在原地是因为抽它出来只会造出一个只被调用一次的间接层。**它做的模型列表已经抽出**：
-`buildModelsFor` 现在住在 `lib/adapter-models.js`（区域开关、勾选过滤、最大上下文、
+`buildModelsFor` 现在住在 `src/host/adapter-models.ts`（区域开关、勾选过滤、最大上下文、
 逐模型图像模式）并由 `test/adapter-models.test.js` 覆盖。
 
 **曾经登记为"可行"的方案，实测不可行**：`node --experimental-test-module-mocks` 桩掉
 pi-ai 与 `@deepseek-ai/*`。本机实测**两种做法都失败**，原因写在这里以免下一次再走一遍：
 （1）`mock.module()` 要求被桩的 specifier **先能解析**——而这些包恰恰不安装；
-（2）自定义 resolve hook 也够不着，因为 `lib/index.js` 在模块顶层**静态** import
-`adapter.js`，那条解析发生在 hook 链看到它之前。flag 本身在 Node 24.16 上可用，
+（2）自定义 resolve hook 也够不着，因为 `src/host/index.ts` 在模块顶层**静态** import
+`adapter.ts`，那条解析发生在 hook 链看到它之前。flag 本身在 Node 24.16 上可用，
 但对本仓库的用途无效。因此走的是另一条路：把有决策的部分抽成无 peer 依赖的模块
-（`adapter-models.js` / `region-gate.js` / `routes.js`），接线留在原地。
+（`adapter-models.ts` / `region-gate.ts` / `routes.ts`），接线留在原地。
 
 ---
 
 ## 2. `RegionRuntime` 本身与 `activate` 的 Cordis 接线
 
-**位置**：`lib/index.js`（约 1300 行）
+**位置**：`src/host/index.ts`（约 1300 行）
 
 **为什么没测**：模块顶层 import 四个 `@deepseek-ai/*` peer 包，本仓库不安装。
 
 **已经测到哪一步**：这个文件里所有**纯逻辑**都已经搬出去了——
-凭据缓存（`lib/credential-cache.js`）、目录落盘（`lib/catalog-store.js`）、
-设置写入与读回（`lib/settings-save.js`）、行投影与过滤（`lib/catalog-entry.js`）、
-刷新结果如何落地（`lib/catalog-refresh.js`）、能否上线一个区域（`lib/region-gate.js`）、
-以及**每条路由共用的两道闸与 body 读取器**（`lib/routes.js`：方法检查含 `Allow` 与
+凭据缓存（`src/host/credential-cache.ts`）、目录落盘（`src/host/catalog-store.ts`）、
+设置写入与读回（`src/host/settings-save.ts`）、行投影与过滤（`src/host/catalog-entry.ts`）、
+刷新结果如何落地（`src/host/catalog-refresh.ts`）、能否上线一个区域（`src/host/region-gate.ts`）、
+以及**每条路由共用的两道闸与 body 读取器**（`src/host/routes.ts`：方法检查含 `Allow` 与
 `HEAD`、回环来源检查、64 KiB 上限）。
 
 **剩下的风险**：`ctx.inject(['webServer'])` 里的路由**注册**与 handler 主体；
@@ -87,7 +87,7 @@ pi-ai 与 `@deepseek-ai/*`。本机实测**两种做法都失败**，原因写�
 `registerAdapter` 失败时的回滚是否真的释放了 shim 端口。
 
 **要补上需要**：把每条 handler 抽成 `(req, deps) => result` 的纯函数——
-`applySettingsSave` 已证明可行，`lib/routes.js` 也是同一套路的前半段（闸已抽出，
+`applySettingsSave` 已证明可行，`src/host/routes.ts` 也是同一套路的前半段（闸已抽出，
 handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"的说法经实测是错的，
 不要按它排期。
 
@@ -147,7 +147,7 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
 
 ## 4. 协议层的两个原理盲区
 
-**位置**：`lib/upstream.js` 的 `authHeaders`
+**位置**：`src/host/upstream.ts` 的 `authHeaders`
 
 **为什么测不了**（已实测确认，不是推测）：
 
@@ -209,8 +209,8 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
 应用目录**找得到**了，于是面板能说"应用装在这里、但这个版本读不出它的密钥"，
 而不是谎称应用不存在。解包本身仍只有 Windows 一条链。
 
-**位置**：`lib/credentials.js`（OS keystore 封装）、`lib/account-state.js`（`appDataRoot` 注入）、
-`lib/upstream.js`（`MACHINE_OS` darwin 回落）
+**位置**：`src/host/credentials.ts`（OS keystore 封装）、`src/host/account-state.ts`（`appDataRoot` 注入）、
+`src/host/upstream.ts`（`MACHINE_OS` darwin 回落）
 
 **为什么剩下的还没有**：
 
@@ -274,8 +274,8 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
 
 ## 8. 国际版 campaigns 端点按 umid 机器身份门控每日签到
 
-**位置**：`lib/upstream.js`（`openApiHeaders` 与 `readCampaigns` / `claimCampaign` /
-`fetchUsage` / `fetchUserInfo` 共用的头组）、`lib/claim.js`（降级列表的语义）
+**位置**：`src/host/upstream.ts`（`openApiHeaders` 与 `readCampaigns` / `claimCampaign` /
+`fetchUsage` / `fetchUserInfo` 共用的头组）、`src/host/claim.ts`（降级列表的语义）
 
 **发现（2026-09-27，本机两个真实账号）**：国际版 `GET /sash/api/v1/me/campaigns`
 对**不带 umid 机器身份头**的请求只下发常驻的 `VIEW_DETAILS` 横幅（首月翻倍广告），

@@ -10,7 +10,7 @@
  * the two sides of that contract, plus the try/catch that keeps any future
  * region-start failure from taking the route down with it.
  *
- * lib/index.js cannot be imported in a node test (Cordis peer dependencies),
+ * src/host/index.ts cannot be imported in a node test (Cordis peer dependencies),
  * so — like test/config-schema.test.js — the checks are textual against the
  * module's source.
  */
@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 // Normalize so the literal newline markers below match on a CRLF checkout.
-const source = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
+const source = readFileSync(new URL('../src/host/index.ts', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 
 /** Slice from a start marker to an end marker (exclusive). */
 function slice(start, end) {
@@ -54,7 +54,7 @@ test('the stopped-region check reads that shape back', () => {
 test('the reload route survives a failing region start', () => {
   assert.match(
     reloadHandler,
-    /try \{\s*await startStoppedRegions\(wanted\)\s*\} catch \(error\) \{/,
+    /try \{\s*await startStoppedRegions\(wanted\)\s*\} catch \(error(?::\s*any)?\) \{/,
     'a throw out of startStoppedRegions would reach the web server catch-all and answer a bare 400',
   )
 })

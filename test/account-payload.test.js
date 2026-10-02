@@ -4,7 +4,7 @@
  * WHY THESE ASSERTIONS EXIST (read before adding to them)
  *
  * This function was born from a defect no gate could see. It lived as a closure
- * inside lib/index.js — a file no test can import, because the Cordis peers are
+ * inside src/host/index.ts — a file no test can import, because the Cordis peers are
  * deliberately not installed — and it called `readAccountStateAsync` while its
  * import line named only the synchronous `readAccountState`. Every account-panel
  * render therefore threw `ReferenceError`, escaped the request handler, and came
@@ -28,8 +28,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildAccountPayload } from '../lib/account-payload.js'
-import { REGIONS } from '../lib/credentials.js'
+import { buildAccountPayload } from '../src/host/account-payload.ts'
+import { REGIONS } from '../src/host/credentials.ts'
 
 /**
  * A region shaped like a real one, but with nothing on disk to find.

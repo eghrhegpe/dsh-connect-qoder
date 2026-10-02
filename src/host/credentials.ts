@@ -505,7 +505,7 @@ function runUnwrap(appDir, options, spawn) {
     // No `Local State`: the app is not installed under this name. Reported
     // below like any other failure, minus the diagnostic, because this is the
     // normal outcome of probing the several names a region knows.
-    return recordUnwrapFailure(appDir, 'no Local State file', identity, undefined)
+    return recordUnwrapFailure(appDir, 'no Local State file', identity)
   }
   let dir
   let key
@@ -526,7 +526,7 @@ function runUnwrap(appDir, options, spawn) {
       zeroOutFile(join(dir, 'key.b64'))
       try {
         rmSync(dir, { recursive: true, force: true })
-      } catch (error) {
+      } catch (error: any) {
         // Blocked only while some handle on the file is still open — in
         // practice a killed child whose kernel teardown has not caught up
         // (see `zeroOutFile`). Reported rather than thrown, so a surviving
@@ -579,7 +579,7 @@ function runUnwrap(appDir, options, spawn) {
     const read = readUnwrappedKey(outFile)
     if (read.failure !== undefined) lastFailure = read.failure
     return finishUnwrap(appDir, settle(read.key), lastFailure, identity)
-  } catch (error) {
+  } catch (error: any) {
     // Keep enough of the cause to be diagnosable. This used to be a bare
     // `catch {}`, which made a missing app, a DPAPI failure, an absent
     // PowerShell and a changed `Local State` format all look identical from
@@ -620,7 +620,7 @@ function readUnwrappedKey(outFile) {
  * probing several app names and stays out of the log, everything else is a real
  * problem the user has to see.
  */
-function recordUnwrapFailure(appDir, reason, identity, error) {
+function recordUnwrapFailure(appDir, reason, identity) {
   lastUnwrapFailure.set(appDir, { reason, at: Date.now(), identity })
   if (reason !== 'no Local State file') {
     const where = diagnosticSink ?? ((message) => process.emitWarning(message))
@@ -710,7 +710,7 @@ const PS_ENV_ALLOWLIST = [
 
 function unwrapEnv(appDir, outFile) {
   const allowed = new Set(PS_ENV_ALLOWLIST.map((name) => name.toLowerCase()))
-  const env = {}
+  const env: Record<string, string | undefined> = {}
   for (const [name, value] of Object.entries(process.env)) {
     if (allowed.has(name.toLowerCase())) env[name] = value
   }
@@ -772,7 +772,7 @@ function zeroOutFile(file, attempts = 4) {
     let fd
     try {
       fd = openSync(file, 'r+')
-    } catch (error) {
+    } catch (error: any) {
       // A file that vanished between the stat and the open is a success, not a
       // failure; anything else is a lock we may be able to win on the retry.
       if (!existsSync(file)) return true
@@ -788,7 +788,7 @@ function zeroOutFile(file, attempts = 4) {
         offset += length
       }
       return true
-    } catch (error) {
+    } catch (error: any) {
       lastError = error
     } finally {
       try {
@@ -1028,7 +1028,12 @@ export function cachedOscryptKeyFor(appDir) {
  *
  * @returns a credential record, or `undefined` when no app holds a usable one.
  */
-export function loadCredential(region, appDataRoot, options = {}) {
+export interface LoadCredentialOptions {
+  cachedOnly?: boolean
+  force?: boolean
+}
+
+export function loadCredential(region: any, appDataRoot?: any, options: LoadCredentialOptions = {}) {
   // `cachedOnly` is how the account route reads: it answers from the key cache
   // and never spawns the unwrap. See `cachedOscryptKeyFor` for why that matters.
   // `force` is the opposite end, for the explicit user-driven re-read.
@@ -1052,7 +1057,7 @@ export function loadCredential(region, appDataRoot, options = {}) {
  *
  * @returns a promise of a credential record, or `undefined`.
  */
-export async function loadCredentialAsync(region, appDataRoot, options = {}) {
+export async function loadCredentialAsync(region: any, appDataRoot?: any, options: LoadCredentialOptions = {}) {
   const keyFor =
     options.cachedOnly === true
       ? cachedOscryptKeyFor
@@ -1128,35 +1133,33 @@ function credentialFromLegacyLayouts(region, appDataRoot, keyFor) {
 function readLegacyCredential(region, appDir, appName, oscryptKey) {
   if (oscryptKey === undefined) return undefined
   for (const dbPath of stateDbCandidates(appDir)) {
-    for (const dbPath of stateDbCandidates(appDir)) {
-      if (!existsSync(dbPath)) continue
-      let userInfo
-      try {
-        userInfo = readJsonSecret(dbPath, USER_INFO_KEY, oscryptKey)
-      } catch {
-        continue
-      }
-      if (userInfo === undefined || typeof userInfo.token !== 'string' || userInfo.token.length === 0) continue
-      if (typeof userInfo.id !== 'string' || userInfo.id.length === 0) continue
-      const expiresAt = Number(userInfo.expireTime)
-      return {
-        region: region.id,
-        appName,
-        userID: userInfo.id,
-        name: typeof userInfo.name === 'string' ? userInfo.name : '',
-        email: typeof userInfo.email === 'string' ? userInfo.email : '',
-        token: userInfo.token,
-        refreshToken: typeof userInfo.refreshToken === 'string' ? userInfo.refreshToken : '',
-        refreshTokenExpiresAt: Number(userInfo.refreshTokenExpireTime) || 0,
-        expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
-        expired: Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt <= Date.now() : false,
-        userType: typeof userInfo.userType === 'string' ? userInfo.userType : '',
-        userTag: typeof userInfo.userTag === 'string' ? userInfo.userTag : '',
-        machineID: machineIdFor(appDir, `dsh-connect-qoder-${region.id}`),
-        source: 'app',
-        plan: safeRead(() => readJsonSecret(dbPath, USER_PLAN_KEY, oscryptKey)),
-        usage: safeRead(() => readJsonSecret(dbPath, CREDIT_USAGE_KEY, oscryptKey)),
-      }
+    if (!existsSync(dbPath)) continue
+    let userInfo
+    try {
+      userInfo = readJsonSecret(dbPath, USER_INFO_KEY, oscryptKey)
+    } catch {
+      continue
+    }
+    if (userInfo === undefined || typeof userInfo.token !== 'string' || userInfo.token.length === 0) continue
+    if (typeof userInfo.id !== 'string' || userInfo.id.length === 0) continue
+    const expiresAt = Number(userInfo.expireTime)
+    return {
+      region: region.id,
+      appName,
+      userID: userInfo.id,
+      name: typeof userInfo.name === 'string' ? userInfo.name : '',
+      email: typeof userInfo.email === 'string' ? userInfo.email : '',
+      token: userInfo.token,
+      refreshToken: typeof userInfo.refreshToken === 'string' ? userInfo.refreshToken : '',
+      refreshTokenExpiresAt: Number(userInfo.refreshTokenExpireTime) || 0,
+      expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
+      expired: Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt <= Date.now() : false,
+      userType: typeof userInfo.userType === 'string' ? userInfo.userType : '',
+      userTag: typeof userInfo.userTag === 'string' ? userInfo.userTag : '',
+      machineID: machineIdFor(appDir, `dsh-connect-qoder-${region.id}`),
+      source: 'app',
+      plan: safeRead(() => readJsonSecret(dbPath, USER_PLAN_KEY, oscryptKey)),
+      usage: safeRead(() => readJsonSecret(dbPath, CREDIT_USAGE_KEY, oscryptKey)),
     }
   }
   return undefined
@@ -1332,7 +1335,7 @@ export function sweepStaleOscryptDirs(maxAgeMs = 5 * 60 * 1000) {
       zeroOutFile(join(dir, OSCRYPT_MARKER))
       rmSync(dir, { recursive: true, force: true })
       reclaimed += 1
-    } catch (error) {
+    } catch (error: any) {
       // Still held by a live process, or the dir vanished under us; its own
       // cleanup (or the next sweep) takes it. Reported, because this directory
       // holds a master key in plain text and the next sweep is a plugin start

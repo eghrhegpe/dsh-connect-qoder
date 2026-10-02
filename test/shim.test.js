@@ -3,7 +3,7 @@
  *
  * Run: node --test test/shim.test.js
  *
- * lib/shim.js is the translation layer — it is the only thing standing between
+ * src/host/shim.ts is the translation layer — it is the only thing standing between
  * pi-ai's OpenAI expectations and Qoder's protocol — and it had no coverage at
  * all. That matters more here than elsewhere because most of its invariants are
  * things a request can simply fail to satisfy without any error surfacing: a
@@ -21,7 +21,7 @@ import { test, after, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { connect } from 'node:net'
 
-import { createQoderShim, defaultEffortFor } from '../lib/shim.js'
+import { createQoderShim, defaultEffortFor } from '../src/host/shim.ts'
 
 const REGION = { id: 'qoder-cn', displayName: 'Qoder CN' }
 

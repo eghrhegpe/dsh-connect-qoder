@@ -3,6 +3,11 @@ node_modules/
 .build/
 *.tgz
 *.tar.gz
+*.tsbuildinfo
+
+# 构建产物：源码全在 src/（host + client），lib/ 由 `npm run build` 重建，
+# 纯产物、可删可重建、不进版本库。发到 registry 的那一份由 prepack 现场构建。
+/lib/
 
 # Editor / OS noise
 .DS_Store

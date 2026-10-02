@@ -33,7 +33,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync, readdirSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadCredentialAsync, loadCredential, setCredentialDiagnosticSink, describeUnwrapFailure, appDataRootFor } from '../lib/credentials.js'
+import { loadCredentialAsync, loadCredential, setCredentialDiagnosticSink, describeUnwrapFailure, appDataRootFor } from '../src/host/credentials.ts'
 
 const REGION = {
   id: 'qoder-cn',
@@ -284,7 +284,7 @@ test('both paths share one implementation, and differ only in the child spawn', 
   // on states reachable without a real PowerShell. What must not be possible is
   // for one path to grow its own copy of the temp-directory, zeroing or
   // failure-recording logic — that is how the two would drift, silently.
-  const source = readFileSync(new URL('../lib/credentials.js', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/host/credentials.ts', import.meta.url), 'utf8')
   assert.equal(
     (source.match(/function runUnwrap\(/g) ?? []).length,
     1,

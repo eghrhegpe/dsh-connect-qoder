@@ -8,7 +8,7 @@
  * repository installs none of them. That made the whole request-authentication
  * surface untestable: the method check, the origin check, the body cap, and the
  * 405/403 responses could all be wrong with the suite fully green
- * (docs/KNOWN_GAPS.md item 1（`adapter.js` 的 Cordis 接线与 profile 构造）and item 2（`RegionRuntime` 本身与 `activate` 的 Cordis 接线）).
+ * (docs/KNOWN_GAPS.md item 1（`adapter.ts` 的 Cordis 接线与 profile 构造）and item 2（`RegionRuntime` 本身与 `activate` 的 Cordis 接线）).
  *
  * The alternative considered and rejected first was
  * `--experimental-test-module-mocks`. It was implemented and measured, and it
@@ -27,7 +27,7 @@
  *
  * @module dsh-connect-qoder/routes
  */
-import { sendJson } from './http-utils.js'
+import { sendJson } from './http-utils.ts'
 
 /**
  * Read a JSON request body, capped.
@@ -80,13 +80,15 @@ export async function readJsonBody(req, maxBytes = 64 * 1024) {
  *
  * @param req - the Node request.
  * @param res - the Node response, used to answer a failure.
- * @param maxBytes - the largest body accepted, in bytes.
+ * @param maxBytes - the largest body accepted, in bytes. Optional, and
+ * deliberately left `undefined` when the caller does not care: `readJsonBody`
+ * owns the 64 KiB cap, and a default here would quietly override it.
  * @returns `{ ok: true, body }`, or `{ ok: false }` once a 400 has been sent.
  */
-export async function readJsonBodyOr400(req, res, maxBytes) {
+export async function readJsonBodyOr400(req: any, res: any, maxBytes?: number) {
   try {
     return { ok: true, body: await readJsonBody(req, maxBytes) }
-  } catch (error) {
+  } catch (error: any) {
     sendJson(
       res,
       400,

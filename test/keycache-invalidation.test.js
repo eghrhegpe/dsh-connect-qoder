@@ -20,7 +20,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { cachedKeyFor } from '../lib/credentials.js'
+import { cachedKeyFor } from '../src/host/credentials.ts'
 
 const KEY = Buffer.alloc(32, 0x41)
 

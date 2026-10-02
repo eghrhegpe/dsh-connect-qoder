@@ -1,5 +1,5 @@
 /**
- * Tests for lib/account-state.js: the four per-region sign-in states.
+ * Tests for src/host/account-state.ts: the four per-region sign-in states.
  *
  * Run: node --test test/account-state.test.js
  *
@@ -21,7 +21,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { readAccountState, ACCOUNT_STATES } from '../lib/account-state.js'
+import { readAccountState, ACCOUNT_STATES } from '../src/host/account-state.ts'
 
 /** A region shaped like the real descriptors, with one directory per layout. */
 const REGION = {

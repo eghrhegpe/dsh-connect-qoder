@@ -16,7 +16,7 @@
  * It is a consistency pin, NOT the fix for the 400 the card once showed on
  * 在线确认. That 400 came from the account route dereferencing a runtime
  * entry's nonexistent `region` field before the call was ever made (see the
- * stopped-region check in lib/index.js). A probe of
+ * stopped-region check in src/host/index.ts). A probe of
  * `openapi.qoder.com.cn/api/v1/userinfo` with a real CN credential answers
  * 200 for a bare `Authorization: Bearer` too, so this header set is not what
  * the CN endpoint gates on.
@@ -30,7 +30,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { fetchUserInfo } from '../lib/upstream.js'
+import { fetchUserInfo } from '../src/host/upstream.ts'
 
 const CN_REGION = {
   id: 'qoder-cn',

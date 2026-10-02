@@ -29,7 +29,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { failureStillBlocks, UNWRAP_FAILURE_TTL_MS } from '../lib/credentials.js'
+import { failureStillBlocks, UNWRAP_FAILURE_TTL_MS } from '../src/host/credentials.ts'
 
 const IDENTITY = '1700000000000:512'
 const AT = 1_700_000_000_000

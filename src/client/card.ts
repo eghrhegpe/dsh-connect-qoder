@@ -1,8 +1,8 @@
 
 import * as react from "react"
 import * as react_jsx_runtime from "react/jsx-runtime"
-import { QODER_MODELS_PATH, QODER_USAGE_PATH, QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH, QODER_CHECKIN_PATH } from "./paths"
-import { writeSettingsField } from "./settings-write"
+import { QODER_MODELS_PATH, QODER_USAGE_PATH, QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH, QODER_CHECKIN_PATH } from "./paths.ts"
+import { writeSettingsField } from "./settings-write.ts"
 /** The three per-model image choices this card writes. */
 const IMAGE_MODES = ["auto", "on", "off"];
 
@@ -491,7 +491,7 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }) {
 			setRegions(Array.isArray(value.regions) ? value.regions : []);
 			setStatus("ready");
 			setNotice(undefined);
-		} catch (error) {
+		} catch (error: any) {
 			if (!mounted.current) return;
 			setStatus("error");
 			setNotice(error instanceof Error ? error.message : String(error));
@@ -522,7 +522,7 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }) {
 				amount: typeof value?.amount === "number" ? value.amount : void 0
 			});
 			await load(true);
-		} catch (error) {
+		} catch (error: any) {
 			if (mounted.current) setClaimNotice({
 				kind: "error",
 				message: error instanceof Error ? error.message : String(error)
@@ -746,7 +746,7 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 					detail: value.detail
 				}
 			}));
-		} catch (error) {
+		} catch (error: any) {
 			if (!mounted.current) return;
 			setConfirmState((current) => ({
 				...current,
@@ -778,7 +778,7 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 			await writeSettingsField(settingsScope, "enabledRegions", next);
 			if (onReconciled !== void 0) onReconciled();
 			await load();
-		} catch (error) {
+		} catch (error: any) {
 			setEnabledRegions((current) => ({ ...current, [regionId]: !nextOn }));
 			if (mounted.current) setOfferError(String(error?.message ?? error));
 		} finally {
@@ -1173,7 +1173,7 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 			setRefreshedAt(typeof value.refreshedAt === "number" ? value.refreshedAt : undefined);
 			setRefreshFailure(refreshNoticeKey(value));
 			setStatus("ready");
-		} catch (error) {
+		} catch (error: any) {
 			if (!mounted.current || signal?.aborted === true) return;
 			setStatus("error");
 			setNotice(error instanceof Error ? error.message : String(error));
@@ -1274,7 +1274,7 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 			setSavedMaxWindow(maxWindow);
 			setSavedEnabledIds(enabledIds);
 			setNotice(t("row.saved"));
-		} catch (error) {
+		} catch (error: any) {
 			setNotice(`${t("row.failed")}: ${error instanceof Error ? error.message : String(error)}`);
 		} finally {
 			if (mounted.current) setSaving(false);

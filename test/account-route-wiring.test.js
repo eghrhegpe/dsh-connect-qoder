@@ -6,8 +6,8 @@
  *
  * WHY THIS FILE EXISTS
  *
- * `lib/index.js` cannot be imported by a test (it pulls in the Cordis peer
- * dependencies), which is a registered gap — docs/KNOWN_GAPS.md item 1（`adapter.js` 的 Cordis 接线与 profile 构造）and item 2（`RegionRuntime` 本身与 `activate` 的 Cordis 接线）. It is therefore possible to regress
+ * `src/host/index.ts` cannot be imported by a test (it pulls in the Cordis peer
+ * dependencies), which is a registered gap — docs/KNOWN_GAPS.md item 1（`adapter.ts` 的 Cordis 接线与 profile 构造）and item 2（`RegionRuntime` 本身与 `activate` 的 Cordis 接线）. It is therefore possible to regress
  * the ROUTING of the credential read without any test going red, and that is
  * not hypothetical: dropping `{ cachedOnly: true }` from the render path was
  * measured to leave the whole suite green, while putting the plugin's 30 s
@@ -31,7 +31,7 @@
  *
  * WHAT MOVED OUT OF THIS FILE
  *
- * The payload builder itself now lives in `lib/account-payload.js`, which is
+ * The payload builder itself now lives in `src/host/account-payload.ts`, which is
  * peer-free and therefore importable — so the questions about HOW it reads
  * (async reader, cached by default, forced on request, concurrently) are now
  * answered by EXECUTING it in test/account-payload.test.js rather than by
@@ -53,12 +53,12 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const HOST = readFileSync(join(root, 'lib', 'index.js'), 'utf8')
+const HOST = readFileSync(join(root, 'src', 'host', 'index.ts'), 'utf8')
 
 /** The body of one registered route handler, by its path constant. */
 function handlerFor(pathConst) {
   const at = HOST.indexOf(`path: ${pathConst}`)
-  assert.notStrictEqual(at, -1, `lib/index.js no longer registers a route for ${pathConst}`)
+  assert.notStrictEqual(at, -1, `src/host/index.ts no longer registers a route for ${pathConst}`)
   // The handler is the first `handler:` after the path, and runs to the closing
   // of its registration block. A window is enough and is safer than trying to
   // match braces across the whole file — but it has to be generous, because the
@@ -86,10 +86,10 @@ function codeOnly(source) {
 }
 
 /**
- * The account payload entry point in `lib/index.js`.
+ * The account payload entry point in `src/host/index.ts`.
  *
  * It is a one-line delegation now: the read itself lives in
- * `lib/account-payload.js` so a test can execute it (see the header). What is
+ * `src/host/account-payload.ts` so a test can execute it (see the header). What is
  * left to assert here is that the delegation exists at all — that the payload
  * is not inlined back into this file, which is the one place no test can reach
  * and the exact shape that hid a ReferenceError from every gate until a user
@@ -97,19 +97,19 @@ function codeOnly(source) {
  */
 function payloadBuilder() {
   const at = HOST.indexOf('const accountPayload =')
-  assert.notStrictEqual(at, -1, 'lib/index.js no longer builds an account payload')
+  assert.notStrictEqual(at, -1, 'src/host/index.ts no longer builds an account payload')
   return HOST.slice(at, at + 400)
 }
 
 test('the payload is built by the importable module, not inline in this file', () => {
   // Behaviour (which mode, async reader, concurrency) is asserted by executing
   // it in test/account-payload.test.js. This pins the boundary instead: if the
-  // body comes back into lib/index.js, that coverage silently stops applying.
+  // body comes back into src/host/index.ts, that coverage silently stops applying.
   const builder = payloadBuilder()
   assert.match(
     builder,
     /buildAccountPayload\(/,
-    'accountPayload must delegate to lib/account-payload.js, which a test can import',
+    'accountPayload must delegate to src/host/account-payload.ts, which a test can import',
   )
   assert.match(
     builder,
@@ -157,7 +157,7 @@ test('the account reload re-reads for real, ignoring the failure window', () => 
 test('the cached-vs-forced decision is not made in the routing file', () => {
   // Both are now one parameter to the shared builder, and the mapping from route
   // to mode is asserted per route below (GET = default, reload = forced). If a
-  // mode literal reappears in lib/index.js the two routes have stopped sharing
+  // mode literal reappears in src/host/index.ts the two routes have stopped sharing
   // one decision, and the shape drift this file has been written against twice
   // is back.
   // `force: true` legitimately appears here — it is the reload route ASKING for
@@ -167,7 +167,7 @@ test('the cached-vs-forced decision is not made in the routing file', () => {
   assert.doesNotMatch(
     codeOnly(HOST.slice(HOST.indexOf('export async function apply('))),
     /cachedOnly/,
-    'the read mode belongs to lib/account-payload.js; the routes must only ask for it',
+    'the read mode belongs to src/host/account-payload.ts; the routes must only ask for it',
   )
 })
 
@@ -215,7 +215,7 @@ test('a zero-region publish is a no-op rather than a throw', () => {
   // one the reload route reaches, and an uncaught throw there would take the
   // whole route down.
   const publish = /function publishRegions\(\) \{[\s\S]*?\n  \}/.exec(HOST)
-  assert.ok(publish !== null, 'lib/index.js no longer has a publishRegions')
+  assert.ok(publish !== null, 'src/host/index.ts no longer has a publishRegions')
   assert.match(
     publish[0],
     /started\.length === 0\) return \{ ok: true \}/,
