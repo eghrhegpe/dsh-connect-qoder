@@ -52,12 +52,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
  * the ratchet at 445 would have failed on the first run.
  *
  * Lowered batch by batch as the host modules were annotated: 536 → 502 → 445 →
- * 387 → 354 → 289 → 211 → 122 → 104. THE WHOLE HOST SIDE AND THE CLIENT GLUE
- * ARE NOW AT ZERO; the only file still on the list is `src/client/card.ts`,
- * which is a 1595-line React artifact emitted by a JSX compiler rather than
- * hand-written source. See the per-file breakdown under `--write`.
+ * 387 → 354 → 289 → 211 → 122 → 104 → 76. THE WHOLE HOST SIDE AND THE CLIENT
+ * GLUE ARE AT ZERO; the only file still on the list is `src/client/card.ts`.
+ *
+ * Note what the 104 → 76 step was: adding a REAL (if minimal) declaration for
+ * `react` / `react/jsx-runtime` at `src/client/react-shim.d.ts`. It was never a
+ * matter of annotating 28 things by hand — a bare `declare module 'react';`
+ * types every member as `any`, so those sites were invisible to this audit
+ * rather than merely unannotated. Two side effects, both intended: the shim
+ * immediately surfaced 16 REAL type errors in card.ts that the empty shell had
+ * been hiding, and one of them was a genuine call-arity bug (`load` takes
+ * `(refresh, signal?)` but was called with one argument).
+ *
+ * See the per-file breakdown under `--write`.
  */
-const BUDGET = 104
+const BUDGET = 76
 
 // Flags from tsconfig's `strict` family that `noImplicitAny` implies. Passing
 // these explicitly keeps this script's count identical whether or not the

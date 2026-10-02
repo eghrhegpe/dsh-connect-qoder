@@ -1142,7 +1142,7 @@ export function QoderPluginCard({ t, settingsScope, view }) {
 	 * the first load: a refresh must not clobber edits the user has staged
 	 * but not yet saved.
 	 */
-	const load = (0, react.useCallback)(async (refresh, signal) => {
+	const load = (0, react.useCallback)(async (refresh, signal?: AbortSignal) => {
 		if (refresh) setRefreshing(true);
 		try {
 			const response = await fetch(`${QODER_MODELS_PATH}${refresh ? "?refresh=1" : ""}`, {

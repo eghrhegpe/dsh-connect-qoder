@@ -235,6 +235,7 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/copy-row.ts` `copy-usage.ts` `copy-account.ts` | 按面板拆分的三段文案：模型行与错峰、用量与签到、账号与区域标签条 |
 | `src/client/card.ts` | 卡片的纯函数与五个组件（`QoderPluginCard` / `QoderUsagePanel` / `QoderAccountPanel` / `RegionUsage` / `QuotaBlock`） |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
+| `src/client/react-shim.d.ts` | 最小 React 类型垫片（只管类型检查，不参与构建、不随包发布） |
 
 ## 构建产物：`lib/` 不是源码
 
