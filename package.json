@@ -27,7 +27,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"test/*.test.js\"",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=68 --test-coverage-branches=85 --test-coverage-functions=66 \"test/*.test.js\"",
-    "verify": "npm run typecheck && npm run audit:any && npm test && npm run build && npm run verify:host && npm run verify:bundle",
+    "verify": "npm run typecheck && npm run audit:any && npm run build && npm test && npm run verify:host && npm run verify:bundle",
     "verify:deploy": "node scripts/check-deploy-drift.mjs",
     "audit:any": "node scripts/audit-implicit-any.mjs",
     "verify:host": "node scripts/verify-host-bundle.mjs",
