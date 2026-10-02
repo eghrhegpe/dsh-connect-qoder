@@ -305,6 +305,27 @@ npm run build           # 从 src/ 重建 lib/（宿主 bundle + 卡片产物）
 对拍覆盖不到渲染：JSX 被 stub 成 `null`，所以**改了 UI 仍然要在浏览器里看一眼**（展开卡片 →
 切区域 → 改图像档位 → 保存 → 看错峰倒计时）。
 
+### 卡片侧测三层，别互相替代
+
+卡片的可编辑逻辑（`dirty` / `save` / `discard`、staged 与 saved、per-region 允许清单、名称
+过滤）住在 `src/client/controller.ts` 的 `QoderCardController` 里，是个**纯类**——不 import
+React、不碰 DOM、不发 `fetch`。这不是顺手为之，是为了让测它不需要浏览器：
+
+| 层 | 测什么 | 跑在哪里 |
+|---|---|---|
+| `test/controller.test.js`（16 条） | 状态机的**规则**：什么时候算 dirty、拒绝写入怎么呈现、discard 回滚到哪、auto 怎么写最小、过滤为什么只窄化视图 | 裸 `node:test`，无 jsdom、无 React |
+| `test/card-dom.test.js`（9 条） | **产物级**渲染接线：`QoderPluginCard` 真的把快照渲染成了用户看见的 DOM、按钮 disabled 条件对不对 | jsdom，驱动 `lib/client.js`（出货包） |
+| 浏览器手动 | 视觉与交互手感（样式、错峰倒计时动效） | 人类 |
+
+规则在 controller、接线在 card-dom，**两者都在 CI 里**，谁都不能替谁：只测 controller 会漏掉
+「快照没接到 JSX」这种接线错误，只测 card-dom 会把状态机的每条规则塞进 jsdom、慢且脆。改
+规则去 `test/controller.test.js`，改渲染去 `test/card-dom.test.js`——一条规则同时出现在两个
+文件里，通常是抽得不够干净，而不是「保险起见各写一遍」。
+
+`useSyncExternalStore` 的签名（含「为什么 `subscribe` / `getSnapshot` 必须做箭头属性、
+`getSnapshot` 为什么必须引用稳定」）写在 `src/client/react-shim.d.ts` 里，改 store 接口先看
+那段注释。
+
 `.npmrc` 里的 `legacy-peer-deps=true` 是必需的、不是随手加的：本包的 peer 依赖是
 `@deepseek-ai/*`，由宿主在运行时提供，不在公共 registry 上，npm 自动安装 peer 会在装到
 devDependencies 之前就失败。
