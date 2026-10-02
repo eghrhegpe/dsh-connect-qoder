@@ -54,8 +54,8 @@ interface ToolCallAccumulator {
 export interface ShimOptions {
   resolveCredential: () => Promise<ShimCredential> | ShimCredential
   resolveModels: () => CatalogEntry[]
-  resolveUpstreamKey?: (modelId: unknown) => string | undefined
-  resolveAlwaysThinking?: (modelId: unknown) => boolean | undefined
+  resolveUpstreamKey?: (modelId: string) => string | undefined
+  resolveAlwaysThinking?: (modelId: string) => boolean | undefined
   resolveEnabledIds?: () => unknown
   invalidateCredential?: () => void
   region: Region
@@ -337,7 +337,10 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
     const controller = new AbortController()
     req.on('close', () => controller.abort())
 
-    const displayModel = body.model
+    // `body.model` arrives as an unknown wire value; the resolvers are only
+    // meaningful for a real id, so a non-string is left to fall through to the
+    // catalog miss below rather than being coerced into a false lookup.
+    const displayModel = typeof body.model === 'string' ? body.model : ''
     // The catalog is the authority on whether this model tolerates
     // `enable_thinking: false`; the injected resolver only overrides it.
     // Both are looked up BEFORE `resolveThinking`, because its fallback
@@ -355,7 +358,7 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
         : undefined
     const request: ChatTurnRequest = {
       // DSH sends the user-facing model id; the wire needs Qoder's own key.
-      model: resolveUpstreamKey(body.model) ?? body.model,
+      model: resolveUpstreamKey?.(displayModel) ?? body.model,
       messages: toQoderMessages(body.messages ?? []),
       tools: toQoderTools(body.tools),
       maxTokens: typeof body.max_tokens === 'number' ? body.max_tokens : undefined,

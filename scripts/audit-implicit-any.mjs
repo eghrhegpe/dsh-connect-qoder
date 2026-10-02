@@ -52,11 +52,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
  * the ratchet at 445 would have failed on the first run.
  *
  * Lowered batch by batch as the host modules were annotated: 536 → 502 → 445 →
- * 387 → 354 → 289. Everything still on the list is `src/host/credentials.ts`,
- * `src/host/index.ts`, or the client — see the per-file breakdown under
- * `--write`.
+ * 387 → 354 → 289 → 211. Every host module is now at zero except
+ * `src/host/credentials.ts`; the rest of the debt is the client
+ * (`card.ts`, `index.ts`, `settings-write.ts`). See the per-file breakdown
+ * under `--write`.
  */
-const BUDGET = 289
+const BUDGET = 211
 
 // Flags from tsconfig's `strict` family that `noImplicitAny` implies. Passing
 // these explicitly keeps this script's count identical whether or not the

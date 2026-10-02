@@ -226,7 +226,16 @@ test('the refresh consults dispose on BOTH the success and the failure path', ()
     join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'host', 'index.ts'),
     'utf8',
   )
-  const body = /async doRefreshCatalog\(force\) \{[\s\S]*?\n  \}/.exec(source)
+  // The parameter list and return annotation are matched loosely rather than
+  // as the bare `(force)` this used to be: the assertion is about what the
+  // method BODY does, and pinning the exact spelling made a pure type
+  // annotation (`force` → `force?: boolean`) look like a regression.
+  //
+  // The body is anchored on `\r?\n  \}` so it still stops at the method's own
+  // closing brace. The source is read with LF line endings in a working copy
+  // and CRLF in a fresh checkout, so the terminator has to accept both — the
+  // literal `\n` it used before only ever matched one of the two.
+  const body = /async doRefreshCatalog\([^)]*\)[^{]*\{[\s\S]*?\r?\n  \}/.exec(source)
   assert.ok(body !== null, 'src/host/index.ts no longer has a doRefreshCatalog of that shape')
   const refresh = body[0]
   const checks = refresh.match(/isRefreshObsolete\(this\)/g) ?? []

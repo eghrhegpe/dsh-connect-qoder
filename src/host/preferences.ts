@@ -58,9 +58,18 @@ export type ImageMode = 'auto' | 'on' | 'off'
  * @param source - the live source, or `undefined`.
  * @returns the merged settings.
  */
+/**
+ * Where the settings are read from, in any of the spellings a Host line hands
+ * over: a plain document, a `{ get() }` reference to one, or a zero-argument
+ * function returning either. Named so the entry can declare its mutable
+ * `preferencesSource` with the same union this module accepts, instead of the
+ * two sides drifting to different spellings of "the live source".
+ */
+export type PreferencesSource = Preferences | VolatileRef<Preferences> | (() => unknown) | undefined
+
 export function resolvePreferences(
   snapshot: Preferences,
-  source: Preferences | VolatileRef<Preferences> | (() => unknown) | undefined,
+  source: PreferencesSource,
 ): Preferences {
   let resolved: unknown = typeof source === 'function' ? source() : source
   resolved = unwrapVolatile(resolved as VolatileRef<unknown>)

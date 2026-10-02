@@ -214,7 +214,12 @@ test('a zero-region publish is a no-op rather than a throw', () => {
   // construction sites have to tolerate zero regions. `publishRegions` is the
   // one the reload route reaches, and an uncaught throw there would take the
   // whole route down.
-  const publish = /function publishRegions\(\) \{[\s\S]*?\n  \}/.exec(HOST)
+  // The return annotation and the parameter list are matched loosely, and the
+  // body terminator accepts CRLF: the source is LF in a working copy and CRLF
+  // in a fresh checkout, so a literal `\n` only ever matched one of the two.
+  // Neither looseness touches what this assertion is about — the zero-region
+  // branch inside the body.
+  const publish = /function publishRegions\([^)]*\)[^{]*\{[\s\S]*?\r?\n  \}/.exec(HOST)
   assert.ok(publish !== null, 'src/host/index.ts no longer has a publishRegions')
   assert.match(
     publish[0],

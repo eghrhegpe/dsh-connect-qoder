@@ -22,6 +22,7 @@ import z from '@deepseek-ai/schemastery'
 import { resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import { createQoderAdapter, offPeakActive, offPeakRemaining, rateNow } from './adapter.ts'
 import { createQoderShim } from './shim.ts'
+import type { ShimHandle } from './shim.ts'
 import {
   REGIONS,
   loadCredential,
@@ -35,6 +36,7 @@ import { buildAccountPayload } from './account-payload.ts'
 import { CredentialCache } from './credential-cache.ts'
 import { applySettingsSave, settingsNamespaceOf } from './settings-save.ts'
 import { createSingleFlight } from './single-flight.ts'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   enabledIdsFor as resolveEnabledIds,
   imageModeFor as resolveImageMode,
@@ -42,12 +44,16 @@ import {
   regionEnabledFor as resolveRegionEnabled,
   resolvePreferences,
 } from './preferences.ts'
+import type { Preferences, PreferencesSource } from './preferences.ts'
 import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.ts'
 import { normalizeEntry, projectModelRow, buildModelRowsPayload } from './catalog-entry.ts'
 import type { FetchedEntry } from './catalog-entry.ts'
+import type { RouteRelease } from './lifecycle.ts'
+import type { CatalogEntry, CatalogOutcome, HostContext, PluginLogger, RefreshFailure, Region } from './domain.ts'
 import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
 import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
 import { exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.ts'
+import type { UsageSnapshot } from './upstream.ts'
 import { classifyUpstreamError, isProtocolShapeChangedError } from './errors.ts'
 import {
   campaignIsClaimed,
@@ -100,8 +106,8 @@ const QODER_SAVE_PATH = '/plugins/dsh-connect-qoder/__save'
  * before merging and mutating, and the live `current()` below resolves it
  * the same way.
  */
-function asVolatile(schema) {
-  if (typeof schema.volatile === 'function') return schema.volatile()
+function asVolatile<T extends { volatile?: unknown }>(schema: T): unknown {
+  if (typeof schema.volatile === 'function') return (schema.volatile as () => unknown)()
   return schema
 }
 
@@ -276,33 +282,44 @@ export function qoderCatalogPath(filename = '.qoder-catalog.json') {
  */
 class RegionRuntime {
   /** The region descriptor this runtime owns. */
-  region: any
+  region: Region
   /** The Cordis context this runtime was activated with. */
-  ctx: any
+  ctx: HostContext
   /** The plugin logger. */
-  logger: any
+  logger: PluginLogger
   /** The on-disk catalog cache for this region. */
-  catalog: any
+  catalog: CatalogStore
   /** The per-region credential cache. */
-  credentials: any
+  credentials: CredentialCache
   /** The refresh interval handle, or `undefined` when stopped. */
-  refreshTimer: any
+  refreshTimer: NodeJS.Timeout | undefined
   /** The last usage reading, or `undefined` before the first read. */
-  usage: any
+  usage: UsageSnapshot | undefined
   /** Epoch ms of the last usage reading. */
   usageAt: number
   /** One live catalog run, shared across triggers. */
   catalogFlight: (force?: boolean) => Promise<void>
   /** One live usage run, shared across triggers. */
-  usageFlight: (force?: boolean) => Promise<unknown>
+  usageFlight: (force?: boolean) => Promise<UsageSnapshot | undefined>
   /** Whether this runtime has been disposed. */
   disposed: boolean
   /** The controller for the catalog fetch currently in flight. */
   refreshAbort: AbortController | undefined
   /** Why the last refresh did not produce a catalog, or `undefined`. */
   refreshFailed: { reason: string; error?: unknown } | undefined
+  /**
+   * Re-advertise the provider after a catalog change.
+   *
+   * Assigned by {@link wireRuntime} once the adapter pair exists, and read by
+   * `applyCatalogOutcome` — hence optional: a refresh that lands before the
+   * adapter is registered has nothing to tell, and the `?.` there is what
+   * makes that a no-op instead of a crash. It is a field rather than a method
+   * because the behaviour it triggers (rebuild the adapter, emit the Host
+   * event) belongs to the activation scope, not to the region.
+   */
+  invalidate?: () => void
 
-  constructor(region: any, ctx: any) {
+  constructor(region: Region, ctx: HostContext) {
     this.region = region
     this.ctx = ctx
     this.logger = ctx.logger
@@ -396,12 +413,12 @@ class RegionRuntime {
    * run that started the flight; joining is safe because a fetch that began
    * milliseconds ago is fresher than anything a duplicate would return.
    */
-  refreshCatalog(force = false) {
+  refreshCatalog(force = false): Promise<void> {
     return this.catalogFlight(force)
   }
 
   /** The actual refresh work behind {@link RegionRuntime.refreshCatalog}. */
-  async doRefreshCatalog(force) {
+  async doRefreshCatalog(force?: boolean): Promise<void> {
     if (!force && this.catalog.fresh()) return
     let credential
     try {
@@ -466,18 +483,18 @@ class RegionRuntime {
    *
    * @param outcome - `{ ok: true, entries }` or `{ ok: false, reason, error }`.
    */
-  applyOutcome(outcome) {
+  applyOutcome(outcome: CatalogOutcome): { committed: boolean; previousFailure: RefreshFailure | undefined } {
     return applyCatalogOutcome(this, outcome)
   }
 
   /** Look up the upstream key for a user-facing model id. */
-  upstreamKey(modelId) {
+  upstreamKey(modelId: string): string | undefined {
     const found = this.catalog.current().find((entry) => entry.id === modelId)
     return found?.key
   }
 
   /** The catalog entry behind a user-facing model id. */
-  entryFor(modelId) {
+  entryFor(modelId: string): CatalogEntry | undefined {
     return this.catalog.current().find((entry) => entry.id === modelId)
   }
 
@@ -491,12 +508,12 @@ class RegionRuntime {
    * one in-flight fetch, so mashing the button costs the upstream one request
    * per completed reading rather than one per click.
    */
-  readUsage(force = false) {
+  readUsage(force = false): Promise<UsageSnapshot | undefined> {
     return this.usageFlight(force)
   }
 
   /** The actual fetch behind {@link RegionRuntime.readUsage}. */
-  async doReadUsage(force) {
+  async doReadUsage(force?: boolean): Promise<UsageSnapshot | undefined> {
     if (!force && this.usage !== undefined && Date.now() - this.usageAt < USAGE_TTL_MS) {
       return this.usage
     }
@@ -531,7 +548,11 @@ class RegionRuntime {
  * @returns the runtime plus its shim, or `undefined` when the shim could not
  *   listen (the region is then simply absent rather than fatal).
  */
-async function startRegion(region, ctx, enabledIdsFor) {
+async function startRegion(
+  region: Region,
+  ctx: HostContext,
+  enabledIdsFor: (regionId: string) => string[],
+): Promise<{ region: Region; runtime: RegionRuntime; shim: ShimHandle } | undefined> {
   const runtime = new RegionRuntime(region, ctx)
 
   // A region is published only when it can actually answer; the three refusals
@@ -592,7 +613,7 @@ async function startRegion(region, ctx, enabledIdsFor) {
  * @param ctx - the plugin context, with `llm` injected.
  * @param config - the resolved plugin configuration.
  */
-export async function apply(ctx, config = {}) {
+export async function apply(ctx: HostContext, config: Record<string, unknown> = {}) {
   try {
     await activate(ctx, config)
   } catch (error: any) {
@@ -601,7 +622,7 @@ export async function apply(ctx, config = {}) {
 }
 
 /** The real activation sequence, called under {@link apply}'s guard. */
-async function activate(ctx, config) {
+async function activate(ctx: HostContext, config: Record<string, unknown>): Promise<void> {
   // The context-window, image, and roster preferences are read through a mutable
   // holder so the settings section can change them without re-registering the
   // adapter; the adapter re-reads them every time it builds a model list, and the
@@ -619,17 +640,22 @@ async function activate(ctx, config) {
   // `plainOptions(config)` in dsh-llm-deepseek). The installSection hosts
   // (0.1.6) replace the source with their document reference through the
   // `setSource` callback instead.
-  let preferences = { ...config }
-  const livePreferences = () => {
-    const next = { ...config }
-    for (const [key, value] of Object.entries(next) as [string, any][]) {
-      if (value !== null && typeof value === 'object' && typeof value.get === 'function') {
-        next[key] = value.get()
+  // `Preferences`, not a bare record: the Loader hands `apply` an object whose
+  // fields ARE the four settings this plugin declares, and the volatile shells
+  // (`{ get() }`) are a documented part of that hand-off. Typing it as an open
+  // record here would let a reader index a field that does not exist and get
+  // `unknown` back instead of a compile error.
+  let preferences: Preferences = config as Preferences
+  const livePreferences = (): Preferences => {
+    const next = { ...(config as Record<string, unknown>) }
+    for (const [key, value] of Object.entries(next)) {
+      if (value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
+        next[key] = (value as { get: () => unknown }).get()
       }
     }
-    return next
+    return next as Preferences
   }
-  let preferencesSource = livePreferences
+  let preferencesSource: PreferencesSource = livePreferences
   let invalidateAdapter = () => {}
 
   /**
@@ -660,11 +686,11 @@ async function activate(ctx, config) {
   }
 
   /** The models the user enabled for one region; empty means "no filter". */
-  const enabledIdsFor = (regionId) => resolveEnabledIds(current(), regionId)
+  const enabledIdsFor = (regionId: string): string[] => resolveEnabledIds(current(), regionId)
 
   // Give the credential layer a logger. Without one, a failed OSCrypt unwrap
   // was completely silent — the region simply never appeared in the picker.
-  setCredentialDiagnosticSink((message) => ctx.logger.warn(message))
+  setCredentialDiagnosticSink((message: string) => ctx.logger.warn(message))
 
   // Reclaim the key hand-off directories a crashed or killed run left behind,
   // BEFORE this run creates its own. A `finally` in `oscryptKeyFor` covers
@@ -683,7 +709,7 @@ async function activate(ctx, config) {
     ctx.logger.warn('dsh-connect-qoder: stale credential temp sweep failed', error)
   }
 
-  const started = []
+  const started: Array<{ region: Region; runtime: RegionRuntime; shim: ShimHandle }> = []
   for (const region of REGIONS) {
     const entry = await startRegion(region, ctx, enabledIdsFor)
     if (entry !== undefined) started.push(entry)
@@ -714,7 +740,7 @@ async function activate(ctx, config) {
    *
    * @type {(() => void)[]}
    */
-  const routeReleases = []
+  const routeReleases: RouteRelease[] = []
 
   const buildAdapter = () =>
     createQoderAdapter({
@@ -735,11 +761,13 @@ async function activate(ctx, config) {
       // contract (`ctx.get` + undefined check), so a host without them keeps
       // working for text-only turns and simply cannot accept images — the same
       // graceful degradation the official llm-pi-ai plugin has.
-      resolveAttachments: () => ctx.get('attachments'),
-      resolveImageAccess: (attachments, ref) =>
+      resolveAttachments: () => ctx.get?.('attachments'),
+      resolveImageAccess: (attachments: unknown, ref: unknown) =>
         resolveImageAttachmentAccess(
           attachments,
-          (hostPath) => ctx.get('fs')?.processPathFromHostPath(hostPath),
+          (hostPath: string) =>
+            (ctx.get?.('fs') as { processPathFromHostPath?: (p: string) => unknown } | undefined)
+              ?.processPathFromHostPath?.(hostPath),
           ref,
         ),
     })
@@ -748,8 +776,8 @@ async function activate(ctx, config) {
   // See its zero-region branch for why an empty set is not an error here.
   let adapter = started.length > 0 ? buildAdapter() : undefined
 
-  let releaseAdapter
-  let releaseDirectory
+  let releaseAdapter: (() => void) | undefined
+  let releaseDirectory: (() => void) | undefined
 
   /**
    * Make the host offer the current set of started regions, replacing any
@@ -769,16 +797,27 @@ async function activate(ctx, config) {
    *
    * @returns `{ ok, error }`
    */
-  function publishRegions() {
+  /**
+   * One region's registration row for `registerConfigurableProviders`.
+   *
+   * `settingsPath` is the empty list rather than a path: this plugin serves its
+   * own settings section under {@link settingsNs}, so it registers no
+   * configurable sub-schema for the host to walk. `declared: false` says the
+   * same thing from the other side. Both are stated explicitly because an empty
+   * array here is a deliberate "none", not an unfinished value.
+   */
+  const providerRowFor = (runtime: RegionRuntime) => ({
+    provider: runtime.region.id,
+    displayName: runtime.region.displayName,
+    settingsNs,
+    settingsPath: [] as string[],
+    declared: false,
+  })
+
+  function publishRegions(): { ok: boolean; error?: unknown } {
     const previousAdapter = adapter
     const previousProviderIds = started.map(({ runtime }) => runtime.region.id)
-    const previousDirectory = started.map(({ runtime }) => ({
-      provider: runtime.region.id,
-      displayName: runtime.region.displayName,
-      settingsNs,
-      settingsPath: [],
-      declared: false,
-    }))
+    const previousDirectory = started.map(({ runtime }) => providerRowFor(runtime))
     // Nothing started: there is no adapter to publish, and `createQoderAdapter`
     // refuses an empty region set by design. Answering "nothing to do" keeps
     // the card routes (registered above and below this function) alive, which is
@@ -795,13 +834,7 @@ async function activate(ctx, config) {
         adapter.adapter,
       )
       releaseDirectory = ctx.llm.registerConfigurableProviders(
-        started.map(({ runtime }) => ({
-          provider: runtime.region.id,
-          displayName: runtime.region.displayName,
-          settingsNs,
-          settingsPath: [],
-          declared: false,
-        })),
+        started.map(({ runtime }) => providerRowFor(runtime)),
       )
     } catch (error: any) {
       // Release anything the failed registration managed to install.
@@ -834,7 +867,7 @@ async function activate(ctx, config) {
   }
 
   /** Wire one runtime's invalidation to the current adapter pair. */
-  const wireRuntime = (runtime) => {
+  const wireRuntime = (runtime: RegionRuntime) => {
     runtime.invalidate = () => {
       invalidateAdapter()
       ctx.emit('llm/adapters-updated')
@@ -884,7 +917,7 @@ async function activate(ctx, config) {
   // surface could render a control for this route — context-window choice
   // included. The section is optional: a host without a settings service still
   // gets working models, just no configuration surface.
-  ctx.inject(['settings'], (settingsCtx) => {
+  ctx.inject(['settings'], (settingsCtx: HostContext) => {
     const settings = settingsCtx.settings
     try {
       // FIX 0.1.7: the settings service replaced `installSection` with a
@@ -943,12 +976,12 @@ async function activate(ctx, config) {
   // and it cannot read the host catalog directly. This route is the only path,
   // so it is mounted on the optional webServer context and answers with the
   // catalog the adapter already holds — metadata only, never a credential.
-  ctx.inject(['webServer'], (webCtx) => {
+  ctx.inject(['webServer'], (webCtx: HostContext) => {
     try {
       rememberRouteRelease(routeReleases, webCtx.webServer.register({
         kind: 'exact',
         path: QODER_MODELS_PATH,
-        handler: async (req, res) => {
+        handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'GET')) return
           if (!originAllowed(req, res)) return
           // `refresh=1` re-reads the catalog from upstream. It matters because
@@ -999,12 +1032,12 @@ async function activate(ctx, config) {
   // state, and returns success anyway. A read-back check catches that, but
   // the only writer that actually lands the value there is a mutate executed
   // inside the Host process.
-  ctx.inject(['webServer', 'settings'], (webCtx) => {
+  ctx.inject(['webServer', 'settings'], (webCtx: HostContext) => {
     try {
       rememberRouteRelease(routeReleases, webCtx.webServer.register({
         kind: 'exact',
         path: QODER_SAVE_PATH,
-        handler: async (req, res) => {
+        handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'POST')) return
           if (!originAllowed(req, res)) return
           const settings = webCtx.get?.('settings')
@@ -1064,12 +1097,12 @@ async function activate(ctx, config) {
   // card a credential-free summary. Each region is read independently and a
   // failing region is reported as unavailable rather than failing the panel, so
   // one dead sign-in cannot hide the other region's numbers.
-  ctx.inject(['webServer'], (webCtx) => {
+  ctx.inject(['webServer'], (webCtx: HostContext) => {
     try {
       rememberRouteRelease(routeReleases, webCtx.webServer.register({
         kind: 'exact',
         path: QODER_USAGE_PATH,
-        handler: async (req, res) => {
+        handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'GET')) return
           if (!originAllowed(req, res)) return
           const force = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('refresh') === '1'
@@ -1107,12 +1140,12 @@ async function activate(ctx, config) {
   // names the region, this host re-reads Qoder's own campaign list, and only a
   // round that is open and unclaimed is ever posted at. The card therefore
   // cannot claim a stale round even if it were to render one.
-  ctx.inject(['webServer'], (webCtx) => {
+  ctx.inject(['webServer'], (webCtx: HostContext) => {
     try {
       rememberRouteRelease(routeReleases, webCtx.webServer.register({
         kind: 'exact',
         path: QODER_CHECKIN_PATH,
-        handler: async (req, res) => {
+        handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'POST')) return
           if (!originAllowed(req, res)) return
           const requested = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('region')
@@ -1145,7 +1178,7 @@ async function activate(ctx, config) {
    * @param runtime - the region's runtime.
    * @returns `{ region, claimed, replayed, amount?, alreadyClaimed, checkin }`.
    */
-  async function claimToday(runtime) {
+  async function claimToday(runtime: RegionRuntime) {
     const credential = await runtime.resolveCredential()
     if (credential === undefined) throw new Error('no usable sign-in on this machine')
 
@@ -1201,7 +1234,7 @@ async function activate(ctx, config) {
    * still cannot start is left exactly as it was: no runtime, no route, and
    * the account panel keeps showing its state.
    */
-  async function startStoppedRegions(onlyRegionId) {
+  async function startStoppedRegions(onlyRegionId?: string) {
     let changed = false
     for (const region of REGIONS) {
       if (onlyRegionId !== undefined && region.id !== onlyRegionId) continue
@@ -1267,12 +1300,12 @@ async function activate(ctx, config) {
   // outside every gate in this repository. See that module's header.
   const accountPayload = (options = {}) => buildAccountPayload({ regions: REGIONS, settings: current(), ...options })
 
-  ctx.inject(['webServer'], (webCtx) => {
+  ctx.inject(['webServer'], (webCtx: HostContext) => {
     try {
       rememberRouteRelease(routeReleases, webCtx.webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_PATH,
-        handler: async (req, res) => {
+        handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'GET')) return
           if (!originAllowed(req, res)) return
           // The guard the RELOAD route below carries, and this one did not.
@@ -1299,7 +1332,7 @@ async function activate(ctx, config) {
       rememberRouteRelease(routeReleases, webCtx.webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_RELOAD_PATH,
-        handler: async (req, res) => {
+        handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'POST')) return
           if (!originAllowed(req, res)) return
           const read = await readJsonBodyOr400(req, res)
@@ -1356,7 +1389,7 @@ async function activate(ctx, config) {
       rememberRouteRelease(routeReleases, webCtx.webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_CONFIRM_PATH,
-        handler: async (req, res) => {
+        handler: async (req: IncomingMessage, res: ServerResponse) => {
           if (!methodAllowed(req, res, 'POST')) return
           if (!originAllowed(req, res)) return
           const read = await readJsonBodyOr400(req, res)
@@ -1430,7 +1463,7 @@ async function activate(ctx, config) {
  * runtime and is never cleared again — a zombie credential-resolution loop
  * that outlives the plugin.
  */
-function beginCatalogUpdates(runtime) {
+function beginCatalogUpdates(runtime: RegionRuntime) {
   void runtime.refreshCatalog(true).then(() => {
     if (runtime.disposed) return
     runtime.refreshTimer = setInterval(() => {

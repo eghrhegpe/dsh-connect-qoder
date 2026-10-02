@@ -215,9 +215,20 @@ export type CatalogOutcome =
   | { ok: true; entries: unknown[] }
   | { ok: false; reason: string; error?: unknown }
 
-/** A logger the plugin writes warnings to, when the host supplies one. */
+/**
+ * A logger the plugin writes to, when the host supplies one.
+ *
+ * All four levels the entry code actually calls, not just `warn`: an earlier
+ * pass declared only `warn` and the gap went unnoticed until `apply` was
+ * annotated and `ctx.logger.error(...)` stopped compiling. Every level is
+ * optional because the pluggable logger is peer-supplied and the code calls
+ * them defensively (`logger.warn?.(…)`).
+ */
 export interface PluginLogger {
+  debug?(message: string, error?: unknown): void
+  info?(message: string, error?: unknown): void
   warn?(message: string, error?: unknown): void
+  error?(message: string, error?: unknown): void
 }
 
 /**
@@ -400,7 +411,86 @@ export type ChatStream = AsyncIterator<UpstreamChunk>
  */
 export type RunChat = (
   region: Region,
-  credential: Record<string, unknown>,
+  credential: QoderCredential,
   request: ChatTurnRequest,
   signal: AbortSignal,
 ) => AsyncIterator<UpstreamChunk>
+
+/**
+ * The Cordis service a route registration is made against.
+ *
+ * Every member is optional and read with the optional-call form (`?.`), because
+ * the Host this plugin is loaded into may be older than the service: the plugin
+ * has to keep working on a line that has no `webServer`, and the whole reason
+ * `ctx.inject` exists here is to be told about that rather than to assume it.
+ *
+ * `register` is typed as returning `unknown` on purpose — that value is handed
+ * straight back to the Host's own disposer, and this plugin never inspects it.
+ */
+export interface HostService {
+  register?: (options: unknown) => unknown
+}
+
+/**
+ * The Cordis context one plugin activation receives.
+ *
+ * Declared structurally, from the members this plugin actually touches — not as
+ * a copy of Cordis's own `Context` type, which lives in a peer package that is
+ * not installed here and whose real shape is larger than anything below. Each
+ * member is optional or optional-called, which is the contract the entry code
+ * already relies on: a Host without `llm` still gets the card routes, a Host
+ * without `webServer` still gets the adapters.
+ *
+ * `get(name)` returns `unknown` because it is a service locator: the caller is
+ * the only one who knows what it asked for, and the entry narrows each result
+ * at the point of use rather than trusting the name.
+ */
+export interface HostContext {
+  logger: PluginLogger
+  /** `ctx.get` + undefined check is the older service-locator spelling. */
+  get?: (name: string) => any
+  /** Declare interest in services; the callback runs once they are ready. */
+  inject?: (names: string[], callback: (ctx: HostContext) => void) => void
+  /** Register a teardown that runs on unload. */
+  effect?: (callback: () => (() => void) | Promise<() => void>) => void
+  /** Broadcast a Host event. */
+  emit?: (event: string, ...args: unknown[]) => void
+  /** Subscribe to a Host event. */
+  on?: (event: string, handler: (...args: unknown[]) => void) => void
+  /** The plugin's own fiber, handed back to the settings service. */
+  fiber?: unknown
+  llm?: {
+    /**
+     * Both registrations answer with a release function, and the entry stores
+     * that answer and calls it later (on a re-publish, and on dispose). The
+     * return is therefore typed as the callable it is used as — `unknown`
+     * would force a cast at every one of the four call sites, which is how a
+     * real "this is not callable" bug gets hidden behind a shrug.
+     */
+    registerAdapter?: (providerIds: string[], adapter: unknown) => (() => void) | undefined
+    registerConfigurableProviders?: (providers: unknown) => (() => void) | undefined
+  }
+  settings?: {
+    register?: (namespace: string, section: unknown) => unknown
+    configure?: (options: { auto: boolean }, fiber: unknown) => unknown
+    /**
+     * The 0.1.6 spelling, kept alongside `configure` so ONE build spans both
+     * Host lines. `configure({auto:true})` is 0.1.7's auto-form presentation;
+     * `installSection` is 0.1.6's, and it is also the line that hands the
+     * plugin a live settings document through `setSource`. Neither is
+     * guaranteed, and the entry probes for each with `typeof … === 'function'`
+     * rather than assuming an order.
+     */
+    installSection?: (
+      ctx: HostContext,
+      namespace: string,
+      section: unknown,
+      config: unknown,
+      hooks: {
+        setSource: (source: unknown) => void
+        onChange: () => void
+      },
+    ) => unknown
+  }
+  webServer?: HostService
+}

@@ -804,6 +804,31 @@ function normalizeDedicatedPackage(value: unknown): DedicatedPackage | undefined
 }
 
 /**
+ * The account's usage, shaped the way the IDE's panel presents it.
+ *
+ * Fields the plugin does not itself merge into a card are typed `unknown`
+ * rather than dropped: the payload is handed to the client card largely as-is,
+ * so a closed interface here would mean a field the upstream adds is silently
+ * invisible to the type. What IS declared are the keys the host reads before
+ * spreading — `displayMode`, `isQuotaExceeded`, the quota halves — because
+ * those are the ones a typo would turn into a missing panel row.
+ */
+export interface UsageSnapshot {
+  displayMode?: unknown
+  userType?: unknown
+  expiresAt?: number
+  upgradeUrl?: unknown
+  userQuota?: QuotaBucket
+  addOnQuota?: QuotaBucket
+  dedicatedPackages?: DedicatedPackage[]
+  campaigns?: Array<{ key: string; title: string; description: string; detailUrl: string; endsAt?: number }>
+  checkin?: unknown
+  isQuotaExceeded?: boolean
+  source?: string
+  [field: string]: unknown
+}
+
+/**
  * Read the account's usage, shaped the way the IDE's panel presents it.
  *
  * Two routes are tried because they carry different halves of the picture: the
@@ -820,7 +845,7 @@ export async function fetchUsage(
   region: Region,
   credential: QoderCredential,
   signal?: AbortSignal,
-): Promise<Record<string, unknown> | undefined> {
+): Promise<UsageSnapshot | undefined> {
   const headers = openApiHeaders(credential, region)
 
   const read = async (url: string): Promise<any> => {
