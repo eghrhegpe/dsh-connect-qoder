@@ -316,6 +316,15 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	// so the setter would only accept `undefined` — and both callers below set
 	// it to a model id (see the `setPulse(modelId)` in `setMode` / `toggle`).
 	const [pulse, setPulse] = react.useState<string | undefined>(undefined);
+	// Whether the per-row image-input selects are shown at all. Pure VIEW state
+	// — unlike `maxWindow` it is never written to the settings document and
+	// never dirties the card, so it lives here rather than in the controller.
+	// Default off: with it on, fourteen rows each print "跟随目录", a value
+	// that means "nothing was set", and that column becomes the loudest thing
+	// on the card. A model carrying a real override still shows its select
+	// (see `imageTuningActive` below) — hiding a value the user set would be
+	// worse than the noise it removes.
+	const [imageTuning, setImageTuning] = react.useState(false);
 	// A ticking clock, so the off-peak rate and its countdown flip on their
 	// own at the window boundary instead of waiting for a manual refresh.
 	// The tick only runs when at least one model carries a usable
@@ -487,6 +496,13 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	const maxWindow = snap.maxWindow;
 	const enabledIds = snap.enabledIds;
 	const activeRegion = snap.activeRegion;
+	// One row's image select is shown when the user asked for the tuning
+	// column, or when that model already carries a non-default override — an
+	// override is data the user set, and a view switch must not be able to
+	// hide it. Read through `imageModeOf` rather than the raw map so "no key"
+	// and "an unrecognised value" both resolve to the same default.
+	const imageTuningActive =
+		imageTuning || visibleModels.some((model) => imageModeOf(imageOverrides, model.id) !== "auto");
 	// The off-peak footnote below the roster reads the promotion block of the
 	// first model that carries one (the window its discount hours imply), rather
 	// than re-running the `find` four times at the render site. The predicate
@@ -598,13 +614,14 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 									aria-label={t("row.search")}
 									onChange={(event: ValueEvent) => setQuery(event.target.value)}
 								/>
-								<span className="dsm-qoder-count" aria-live="polite">
-									{t("row.filterCount", {
-										visible: visibleModels.length,
-										total: regionModels.length,
-										ticked: visibleTicked,
-									})}
-								</span>
+							<span className="dsm-qoder-count" aria-live="polite">
+								{t("row.filterCount", {
+									visible: visibleModels.length,
+									total: regionModels.length,
+								})}
+								{" · "}
+								<strong>{t("row.filterTicked", { ticked: visibleTicked })}</strong>
+							</span>
 							</div>
 						) : null}
 						{/* An empty result after filtering is distinct from a
@@ -739,6 +756,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 												</span>
 											) : null}
 											</span>
+										{imageTuning || imageModeOf(imageOverrides, model.id) !== "auto" ? (
 											<label className="dsm-qoder-switch">
 												<span>{t("row.imageTitle")}</span>
 												<select
@@ -757,6 +775,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 													))}
 												</select>
 											</label>
+										) : null}
 										</li>
 									);
 								})}
@@ -777,6 +796,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 								})}
 							</p>
 						) : null}
+					<div className="dsm-qoder-switches">
 						<label className="dsm-qoder-switch" title={t("row.maxWindowTitle")}>
 							<input
 								type="checkbox"
@@ -790,7 +810,28 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 							/>
 							<span>{t("row.maxWindow")}</span>
 						</label>
-						<p className="dsm-qoder-hint">{t("row.imageHint")}</p>
+						{/* A VIEW switch, not a setting: it reveals the per-row
+						    image selects and never dirties the card, which is why
+						    it sits beside the window switch but is not disabled
+						    while a save is in flight — toggling the view during a
+						    save cannot conflict with what is being written. */}
+						<label className="dsm-qoder-switch" title={t("row.imageTuningTitle")}>
+							<input
+								type="checkbox"
+								checked={imageTuning}
+								aria-label={t("row.imageTuning")}
+								onChange={(event: unknown) => {
+									setImageTuning((event as CheckboxEvent).target.checked);
+								}}
+							/>
+							<span>{t("row.imageTuning")}</span>
+						</label>
+					</div>
+					{/* The image hint explains the per-row selects, so it is
+					    only worth a line when those selects are actually on
+					    screen. With the tuning column collapsed the card keeps
+					    the two-line explanation it did not need. */}
+					{imageTuningActive ? <p className="dsm-qoder-hint">{t("row.imageHint")}</p> : null}
 						{/* Maintenance actions drop below the settings block:
 						    re-pulling the catalog and bulk-ticking the roster are
 						    low-frequency upkeep, not part of the filter-first reading
@@ -864,13 +905,13 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 								</span>
 							) : null}
 						</div>
-						<div className="dsm-qoder-actions">
-							<button
-								type="button"
-								className="dsm-qoder-button"
-								disabled={saving || !dirty || settingsScope === undefined}
-								onClick={save}
-							>
+					<div className="dsm-qoder-actions dsm-qoder-actions-save">
+						<button
+							type="button"
+							className="dsm-qoder-button"
+							disabled={saving || !dirty || settingsScope === undefined}
+							onClick={save}
+						>
 								{saving ? t("row.saving") : t("row.save")}
 							</button>
 							<button

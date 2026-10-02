@@ -49,6 +49,11 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-body{padding:12px 14px;display:flex;flex-direction:column;gap:12px}",
 	".dsm-qoder-hint{margin:0;color:var(--dsw-alias-label-secondary,#61666b);font-size:12px;line-height:1.6}",
 	".dsm-qoder-switch{display:flex;align-items:center;gap:8px;font-size:13px}",
+	// The two row-level choices that are not per-model: the context-window
+	// display and the image-input tuning switch. They belong on one line —
+	// as separate children of the body's flex column each spent a full 12px
+	// gap row on a single 13px label.
+	".dsm-qoder-switches{display:flex;align-items:center;gap:16px;flex-wrap:wrap}",
 	".dsm-qoder-models{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto}",
 	".dsm-qoder-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}",
 	".dsm-qoder-row-main{display:flex;align-items:center;gap:8px;min-width:0}",
@@ -74,6 +79,14 @@ const QODER_CARD_CSS = [
 	// error line carries its own: text and button on one row.
 	".dsm-qoder-account-error{display:flex;align-items:center;gap:10px}",
 	".dsm-qoder-actions{display:flex;gap:8px}",
+	// Save / discard, pinned to the bottom of the viewport while the card is
+	// on screen. The edits happen in the roster, which scrolls inside its own
+	// 320px box above two hint paragraphs and a maintenance row — the commit
+	// controls used to be a full screen away from the change they commit, and
+	// a user could tick a model and never see that a save was pending. The
+	// background is the open card's own layer so rows scrolling under it stay
+	// hidden rather than bleeding through.
+	".dsm-qoder-actions-save{position:sticky;bottom:0;z-index:1;background:var(--dsw-alias-bg-layer-2,#25262b);border-top:1px solid var(--dsw-alias-border-l2,#36373b);padding:8px 0;margin-top:-4px}",
 	".dsm-qoder-button{font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:transparent;color:inherit;cursor:pointer}",
 	".dsm-qoder-button:disabled{opacity:.5;cursor:default}",
 	// Usage panel. Mirrors the Qoder IDE's own "我的用量" card: a titled
@@ -140,6 +153,10 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}",
 	".dsm-qoder-search{font-size:12px;padding:5px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-3,#202126);color:inherit;border:1px solid var(--dsw-alias-border-l2,#36373b);min-width:150px;flex:1 1 150px}",
 	".dsm-qoder-count{font-size:11px;color:var(--dsw-alias-label-secondary,#61666b);white-space:nowrap;font-variant-numeric:tabular-nums}",
+	// "已勾选 3" is the one number here that describes a consequence — it is
+	// how many models will actually reach DSH's picker — so it keeps the
+	// primary label while the "显示 14 / 14" beside it stays secondary.
+	".dsm-qoder-count strong{color:var(--dsw-alias-label-primary,#1a1a1a);font-weight:500}",
 	// Loading skeleton: three shimmering placeholder rows in the shape of a
 	// real model row, so the list does not jump when the data lands.
 	".dsm-qoder-skeleton{display:flex;flex-direction:column;gap:6px}",

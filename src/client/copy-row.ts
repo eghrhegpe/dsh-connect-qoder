@@ -33,7 +33,13 @@ export const zhRow = {
 	"row.enabledCount": "已勾选 {count} / {total}",
 	"row.rateFree": "免费",
 	"row.rateLabel": "倍率",
-	"row.refreshModels": "刷新计费",
+	// Two refreshes used to sit on one card under three different names —
+	// "刷新" (usage), "刷新计费" (catalog) and "重新读取登录状态" (sign-in) —
+	// so a user whose numbers looked wrong had to guess which one to press.
+	// The sign-in one is a genuinely different action and keeps its own name;
+	// these two now say WHAT they refresh. "刷新计费" was the worst of them:
+	// the route re-reads the model catalog, and the rates ride along with it.
+	"row.refreshModels": "刷新模型目录",
 	"row.refreshing": "正在刷新…",
 	"row.refreshed": "已更新（{time}）",
 	// Issue 05: the host now ships the fetch time and names a stale region,
@@ -59,8 +65,20 @@ export const zhRow = {
 	"row.searchPlaceholder": "输入模型名…",
 	"row.searchEmpty": "没有匹配的模型。",
 	"row.retry": "重试",
-	"row.filterCount": "显示 {visible} / {total} · 已勾选 {ticked}",
-	"row.clearFilter": "清除筛选"
+	// Split in two so the two facts can carry different weight: how many rows
+	// the filter left on screen is bookkeeping, how many of them will actually
+	// reach DSH's model picker is the number the user is here to set.
+	"row.filterCount": "显示 {visible} / {total}",
+	"row.filterTicked": "已勾选 {ticked}",
+	"row.clearFilter": "清除筛选",
+	// The per-row image-input selects are the card's single largest source of
+	// noise: fourteen rows each printing "跟随目录", a value that says "nothing
+	// was set". They are now behind this switch. It is a VIEW switch, not a
+	// setting — it never dirties the card — and a model already carrying an
+	// override stays visible even with it off: hiding a value the user set
+	// would be worse than the noise.
+	"row.imageTuning": "按模型微调图像输入",
+	"row.imageTuningTitle": "默认关闭：所有模型跟随 Qoder 目录声明的视觉能力。开启后可以为每个模型单独强制开启或关闭；已经改过的模型始终显示。"
 };
 /** English — model row copy. */
 export const enRow = {
@@ -97,7 +115,7 @@ export const enRow = {
 	"row.enabledCount": "{count} of {total} checked",
 	"row.rateFree": "free",
 	"row.rateLabel": "Rate",
-	"row.refreshModels": "Refresh rates",
+	"row.refreshModels": "Refresh the model catalog",
 	"row.refreshing": "Refreshing…",
 	"row.refreshed": "Updated ({time})",
 	"row.refreshStale": "Last updated: {time} (refresh failed)",
@@ -115,6 +133,9 @@ export const enRow = {
 	"row.searchPlaceholder": "Type a model name…",
 	"row.searchEmpty": "No matching models.",
 	"row.retry": "Retry",
-	"row.filterCount": "{visible} of {total} shown · {ticked} ticked",
-	"row.clearFilter": "Clear filter"
+	"row.filterCount": "{visible} of {total} shown",
+	"row.filterTicked": "{ticked} ticked",
+	"row.clearFilter": "Clear filter",
+	"row.imageTuning": "Tune image input per model",
+	"row.imageTuningTitle": "Off by default: every model follows the vision flag Qoder's own catalog declares. Turn it on to force image input on or off per model; a model you have already changed stays visible either way."
 };

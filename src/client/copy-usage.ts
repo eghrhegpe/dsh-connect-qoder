@@ -1,7 +1,9 @@
 /** Simplified Chinese — usage panel copy. */
 export const zhUsage = {
 	"usage.title": "我的用量",
-	"usage.refresh": "刷新",
+	// "刷新" alone was ambiguous next to the card's other refresh: this one
+	// re-reads the quota, the other re-reads the model catalog.
+	"usage.refresh": "刷新用量",
 	"usage.loading": "正在读取用量…",
 	"usage.empty": "当前账户暂无可展示的用量。",
 	"usage.unavailable": "这个区域暂时读不到用量。",
@@ -36,7 +38,7 @@ export const zhUsage = {
 /** English — usage panel copy. */
 export const enUsage = {
 	"usage.title": "My usage",
-	"usage.refresh": "Refresh",
+	"usage.refresh": "Refresh usage",
 	"usage.loading": "Reading usage…",
 	"usage.empty": "This account has no usage to show right now.",
 	"usage.unavailable": "Usage is unavailable for this region right now.",

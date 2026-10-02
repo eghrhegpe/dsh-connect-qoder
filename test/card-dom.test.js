@@ -56,7 +56,7 @@ const REGIONS = [
 ]
 
 /** A fetch stub answering the plugin's own routes from an in-memory model. */
-function routeStub({ models = [model({})], accountRegions = REGIONS, usageRegions = [], saveStatus = 200 } = {}) {
+function routeStub({ models = [model({})], accountRegions = REGIONS, usageRegions = [], saveStatus = 200, imageOverrides = {} } = {}) {
   const calls = []
   const seen = (url) => { calls.push(String(url)); return calls }
   const json = (value) => ({
@@ -70,7 +70,7 @@ function routeStub({ models = [model({})], accountRegions = REGIONS, usageRegion
     if (path.includes('/models')) {
       return json({
         models,
-        imageOverrides: {},
+        imageOverrides,
         enabledModelIds: {},
         useMaximumContextWindow: false,
         refreshedAt: 1750000000000,
@@ -544,5 +544,41 @@ test('toggling the max-window switch does not erase the load-failure detail', as
     text(errorAfter).includes('HTTP 500'),
     `the failure reason must survive the toggle; saw: ${text(errorAfter)}`,
   )
+})
+
+// Fourteen rows each printing "跟随目录" — a value that means "nothing was
+// set" — made that column the loudest thing on the card. The selects are now
+// behind a view switch, and the switch must be able to bring them back.
+test('the per-row image selects stay out of the way until they are asked for', async () => {
+  const { container, react } = await mount({ models: [model({ id: 'm1', name: 'Alpha' })] })
+
+  assert.equal(
+    container.querySelectorAll('.dsm-qoder-select').length,
+    0,
+    'a default row must not print a select whose value says nothing was set',
+  )
+
+  const tuning = container.querySelector('input[aria-label="按模型微调图像输入"]')
+  assert.ok(tuning !== null, 'the tuning switch is missing')
+  await update(react, () => tuning.click())
+
+  assert.equal(
+    container.querySelectorAll('.dsm-qoder-select').length,
+    1,
+    'the tuning switch must reveal the per-row select',
+  )
+})
+
+// The stronger half of the rule: the switch is a VIEW switch, so it must never
+// be able to hide a value the user actually set. A model carrying an override
+// keeps its select even with the switch off.
+test('an image override the user set is never hidden by the view switch', async () => {
+  const { container } = await mount({
+    fetch: routeStub({ models: [model({ id: 'm1', name: 'Alpha' })], imageOverrides: { m1: 'on' } }),
+  })
+
+  const select = container.querySelector('.dsm-qoder-select')
+  assert.ok(select !== null, 'a model with an override must keep its select with the switch off')
+  assert.equal(select.value, 'on', `the saved override must be the selected value; saw: ${select.value}`)
 })
 
