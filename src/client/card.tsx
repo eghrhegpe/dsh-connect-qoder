@@ -238,7 +238,12 @@ export function RegionUsage({ t, entry, campaignsOpen, onCampaignsToggle }: Regi
 			    carries no information of its own — it is the same string on
 			    every line — so it prints once, on the first campaign. */}
 			{campaigns.length > 1 && campaignsOpen !== true ? (
-				<button type="button" className="dsm-qoder-button" onClick={onCampaignsToggle}>
+				<button
+					type="button"
+					className="dsm-qoder-button dsm-qoder-disclosure"
+					aria-expanded={false}
+					onClick={onCampaignsToggle}
+				>
 					{t("usage.promoCount", { count: campaigns.length })}
 				</button>
 			) : (
@@ -266,7 +271,12 @@ export function RegionUsage({ t, entry, campaignsOpen, onCampaignsToggle }: Regi
 						</p>
 					))}
 					{campaigns.length > 1 ? (
-						<button type="button" className="dsm-qoder-button" onClick={onCampaignsToggle}>
+						<button
+							type="button"
+							className="dsm-qoder-button dsm-qoder-disclosure"
+							aria-expanded
+							onClick={onCampaignsToggle}
+						>
 							{t("usage.promoCollapse")}
 						</button>
 					) : null}
@@ -670,151 +680,237 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 								</button>
 							</div>
 						) : null}
-						{visibleModels.length > 0 ? (
-							<ul className="dsm-qoder-models">
-								{visibleModels.map((model) => {
-									// Same reasoning as `visibleTicked` above: an
-									// unaddressable row must not read as ticked.
-									const active =
-										model.region !== undefined &&
-										enabledIdsFor(models, enabledIds[model.region]).has(model.id);
-									// The rate is resolved against the ticking clock, not
-									// the server's snapshot, so it flips at the window
-									// boundary.
-										const offPeak = offPeakState(model, clock);
-										const rate = rateLabelOf(t, rateAt(model, clock));
-										const offPeakTitle =
-											model.promotion === undefined
-												? t("row.rateLabel")
-												: offPeak?.active === true
-													? `${t("row.offPeakOn")} · ${formatCountdown(offPeak.remainingSeconds)}`
-													: t("row.offPeakOff");
-										// The badge names the WINDOW BOUNDARY, not a per-second countdown.
-										// A ticking HH:MM:SS beside the multiplier reset this row's visual
-										// anchor sixty times a minute to restate a fact nobody acts on
-										// second by second — and it was the only thing on the card that
-										// moved, so the eye kept going back to it. "至 08:00" answers the
-										// same question (how long the cheap rate lasts) without the churn.
-										// The exact countdown is unchanged; it moved to the tooltip, where
-										// a user who wants it can still read it.
-										const boundary =
-											model.promotion == null
-												? undefined
-												: offPeak?.active === true
-													? model.promotion.windowEnd
-													: model.promotion.windowStart;
-										const offPeakBadge =
-											offPeak === undefined
-												? ""
-												: boundary === undefined
-													? t(offPeak.active ? "row.offPeakOn" : "row.offPeakOff")
-													: `${t(offPeak.active ? "row.offPeakOn" : "row.offPeakOff")} ${t(
-															offPeak.active ? "row.offPeakEnd" : "row.offPeakStart",
-															{ time: boundary },
-														)}`;
-										// Static facts about the model, as flat muted text: the context
-										// window and whether it takes images. As pills they competed with
-										// the rate — four same-sized chips with two colours between them,
-										// so "1M" and "视觉" read as loudly as "x0.20". They are
-										// attributes, not status, so they get the quiet label and no
-										// border. `windowLabelOf` is read once rather than twice: it is
-										// the same argument either way, and the old spelling called it in
-										// the condition and again in the body.
-										const windowLabel = windowLabelOf(model, maxWindow);
-										const metaParts: string[] = [];
-										if (windowLabel !== "") metaParts.push(windowLabel);
-										metaParts.push(model.isVL === true ? t("row.vision") : t("row.textOnly"));
-									const contextTitle = model.contextOptions?.length
-										? `${t("row.maxWindow")}: ${model.contextOptions.map(formatContextWindowForUi).join(" / ")}`
-										: t("row.maxWindowNote");
-									return (
-										<li
-											key={`${model.region}:${model.id}`}
-											className={`dsm-qoder-row${active ? "" : " dsm-qoder-row-off"}${
-												pulse === model.id ? " dsm-qoder-row-pulse" : ""
-											}`}
-										>
-											<span className="dsm-qoder-row-main">
-												<label className="dsm-qoder-pick" title={t("row.showInPicker")}>
-													<input
-														type="checkbox"
-														checked={active}
-														// A row with no region cannot be toggled:
-														// `toggleModel` records the tick against that
-														// region's roster, and there is no roster to
-														// record it against. Disabled rather than
-														// silently doing nothing, so the control
-														// matches its behaviour.
-														disabled={saving || model.region === undefined}
-														aria-label={`${t("row.showInPicker")}: ${model.name ?? model.id}`}
-														onChange={() => {
-															if (model.region === undefined) return;
-															toggleModel(model.region, model.id);
-														}}
-													/>
-												</label>
-												<span className="dsm-qoder-name" title={model.id}>
-													{model.name ?? model.id}
-												</span>
-												{rate !== undefined ? (
+						{/* The two roster-level controls that are not per-model: the
+						    context-window display and the image-input tuning switch.
+						    They sit ABOVE the roster, not below it, for a hard
+						    reason: "按最大上下文显示" is persisted state — it dirties
+						    the card (`controller.ts`: `staged.maxWindow !==
+						    saved.maxWindow`) — and the commit controls are now the
+						    roster's own footer. A setting that "保存" would carry
+						    must sit above the row that saves it. */}
+						<div className="dsm-qoder-switches">
+							<label className="dsm-qoder-switch" title={t("row.maxWindowTitle")}>
+								<input
+									type="checkbox"
+									checked={maxWindow}
+									disabled={saving}
+									aria-label={t("row.maxWindow")}
+									onChange={(event: unknown) => {
+										setMaxWindow((event as CheckboxEvent).target.checked);
+										if (status !== "error") setNotice(undefined); // 只在非 error 态清：error 态下 notice 是失败唯一详情，清了冒号后就剩空白
+									}}
+								/>
+								<span>{t("row.maxWindow")}</span>
+							</label>
+							{/* A VIEW switch, not a setting: it reveals the per-row
+							    image selects and never dirties the card, which is why
+							    it sits beside the window switch but is not disabled
+							    while a save is in flight — toggling the view during a
+							    save cannot conflict with what is being written. */}
+							<label className="dsm-qoder-switch" title={t("row.imageTuningTitle")}>
+								<input
+									type="checkbox"
+									checked={imageTuning}
+									aria-label={t("row.imageTuning")}
+									onChange={(event: unknown) => {
+										setImageTuning((event as CheckboxEvent).target.checked);
+									}}
+								/>
+								<span>{t("row.imageTuning")}</span>
+							</label>
+						</div>
+						{/* The image hint explains the per-row selects, so it is
+						    only worth a line when those selects are actually on
+						    screen. With the tuning column collapsed the card keeps
+						    the two-line explanation it did not need. */}
+						{imageTuningActive ? <p className="dsm-qoder-hint">{t("row.imageHint")}</p> : null}
+						{/* Roster and its commit bar, in one scroll box owned by this
+						    card (see `.dsm-qoder-roster` in styles.ts). The list used
+						    to scroll on its own with the save row outside it, which
+						    handed the row's sticky positioning to the host page. */}
+						<div className="dsm-qoder-roster">
+							{visibleModels.length > 0 ? (
+								<ul className="dsm-qoder-models">
+									{visibleModels.map((model) => {
+										// Same reasoning as `visibleTicked` above: an
+										// unaddressable row must not read as ticked.
+										const active =
+											model.region !== undefined &&
+											enabledIdsFor(models, enabledIds[model.region]).has(model.id);
+										// The rate is resolved against the ticking clock, not
+										// the server's snapshot, so it flips at the window
+										// boundary.
+											const offPeak = offPeakState(model, clock);
+											const rate = rateLabelOf(t, rateAt(model, clock));
+											const offPeakTitle =
+												model.promotion === undefined
+													? t("row.rateLabel")
+													: offPeak?.active === true
+														? `${t("row.offPeakOn")} · ${formatCountdown(offPeak.remainingSeconds)}`
+														: t("row.offPeakOff");
+											// The badge names the WINDOW BOUNDARY, not a per-second countdown.
+											// A ticking HH:MM:SS beside the multiplier reset this row's visual
+											// anchor sixty times a minute to restate a fact nobody acts on
+											// second by second — and it was the only thing on the card that
+											// moved, so the eye kept going back to it. "至 08:00" answers the
+											// same question (how long the cheap rate lasts) without the churn.
+											// The exact countdown is unchanged; it moved to the tooltip, where
+											// a user who wants it can still read it.
+											const boundary =
+												model.promotion == null
+													? undefined
+													: offPeak?.active === true
+														? model.promotion.windowEnd
+														: model.promotion.windowStart;
+											const offPeakBadge =
+												offPeak === undefined
+													? ""
+													: boundary === undefined
+														? t(offPeak.active ? "row.offPeakOn" : "row.offPeakOff")
+														: `${t(offPeak.active ? "row.offPeakOn" : "row.offPeakOff")} ${t(
+																offPeak.active ? "row.offPeakEnd" : "row.offPeakStart",
+																{ time: boundary },
+															)}`;
+											// Static facts about the model, as flat muted text: the context
+											// window and whether it takes images. As pills they competed with
+											// the rate — four same-sized chips with two colours between them,
+											// so "1M" and "视觉" read as loudly as "x0.20". They are
+											// attributes, not status, so they get the quiet label and no
+											// border. `windowLabelOf` is read once rather than twice: it is
+											// the same argument either way, and the old spelling called it in
+											// the condition and again in the body.
+											const windowLabel = windowLabelOf(model, maxWindow);
+											const metaParts: string[] = [];
+											if (windowLabel !== "") metaParts.push(windowLabel);
+											metaParts.push(model.isVL === true ? t("row.vision") : t("row.textOnly"));
+										const contextTitle = model.contextOptions?.length
+											? `${t("row.maxWindow")}: ${model.contextOptions.map(formatContextWindowForUi).join(" / ")}`
+											: t("row.maxWindowNote");
+										return (
+											<li
+												key={`${model.region}:${model.id}`}
+												className={`dsm-qoder-row${active ? "" : " dsm-qoder-row-off"}${
+													pulse === model.id ? " dsm-qoder-row-pulse" : ""
+												}`}
+											>
+												<span className="dsm-qoder-row-main">
+													<label className="dsm-qoder-pick" title={t("row.showInPicker")}>
+														<input
+															type="checkbox"
+															checked={active}
+															// A row with no region cannot be toggled:
+															// `toggleModel` records the tick against that
+															// region's roster, and there is no roster to
+															// record it against. Disabled rather than
+															// silently doing nothing, so the control
+															// matches its behaviour.
+															disabled={saving || model.region === undefined}
+															aria-label={`${t("row.showInPicker")}: ${model.name ?? model.id}`}
+															onChange={() => {
+																if (model.region === undefined) return;
+																toggleModel(model.region, model.id);
+															}}
+														/>
+													</label>
+													<span className="dsm-qoder-name" title={model.id}>
+														{model.name ?? model.id}
+													</span>
+													{rate !== undefined ? (
+														<span
+															className={`dsm-qoder-rate${
+																Number(rateAt(model, clock)) <= 0 ? " dsm-qoder-rate-free" : ""
+															}`}
+															title={offPeakTitle}
+														>
+															{rate}
+														</span>
+													) : null}
+												{offPeak !== undefined ? (
 													<span
-														className={`dsm-qoder-rate${
-															Number(rateAt(model, clock)) <= 0 ? " dsm-qoder-rate-free" : ""
+														className={`dsm-qoder-badge${
+															offPeak.active ? " dsm-qoder-badge-offer" : ""
 														}`}
-														title={offPeakTitle}
+														title={
+															model.promotion?.description !== undefined
+																? String(model.promotion.description)
+																: offPeakTitle
+														}
 													>
-														{rate}
+														{offPeakBadge}
 													</span>
 												) : null}
-											{offPeak !== undefined ? (
-												<span
-													className={`dsm-qoder-badge${
-														offPeak.active ? " dsm-qoder-badge-offer" : ""
-													}`}
-													title={
-														model.promotion?.description !== undefined
-															? String(model.promotion.description)
-															: offPeakTitle
-													}
-												>
-													{offPeakBadge}
+												{metaParts.length > 0 ? (
+													<span className="dsm-qoder-meta" title={contextTitle}>
+														{metaParts.join(" · ")}
+													</span>
+												) : null}
 												</span>
+											{imageTuning || imageModeOf(imageOverrides, model.id) !== "auto" ? (
+												<label className="dsm-qoder-switch">
+													<span>{t("row.imageTitle")}</span>
+													<select
+														className="dsm-qoder-select"
+														value={imageModeOf(imageOverrides, model.id)}
+														disabled={saving}
+														aria-label={`${t("row.imageTitle")}: ${model.name ?? model.id}`}
+														onChange={(event: unknown) => {
+															setMode(model.id, (event as ValueEvent).target.value);
+														}}
+													>
+														{IMAGE_MODES.map((mode) => (
+															<option key={mode} value={mode}>
+																{t(mode === "auto" ? "row.imageAuto" : mode === "on" ? "row.imageOn" : "row.imageOff")}
+															</option>
+														))}
+													</select>
+												</label>
 											) : null}
-											{metaParts.length > 0 ? (
-												<span className="dsm-qoder-meta" title={contextTitle}>
-													{metaParts.join(" · ")}
-												</span>
-											) : null}
-											</span>
-										{imageTuning || imageModeOf(imageOverrides, model.id) !== "auto" ? (
-											<label className="dsm-qoder-switch">
-												<span>{t("row.imageTitle")}</span>
-												<select
-													className="dsm-qoder-select"
-													value={imageModeOf(imageOverrides, model.id)}
-													disabled={saving}
-													aria-label={`${t("row.imageTitle")}: ${model.name ?? model.id}`}
-													onChange={(event: unknown) => {
-														setMode(model.id, (event as ValueEvent).target.value);
-													}}
-												>
-													{IMAGE_MODES.map((mode) => (
-														<option key={mode} value={mode}>
-															{t(mode === "auto" ? "row.imageAuto" : mode === "on" ? "row.imageOn" : "row.imageOff")}
-														</option>
-													))}
-												</select>
-											</label>
-										) : null}
-										</li>
-									);
-								})}
-							</ul>
-						) : null}
-						{/* Rate-rule and image-mode footnotes sit below the roster:
-						    the off-peak window belongs to the rates shown on the rows
-						    above, and the image hint explains the per-model selects on
-						    those same rows. */}
+											</li>
+										);
+									})}
+								</ul>
+							) : null}
+						{/* Commit controls: the roster's own footer. Still a real
+						    flow element — a sticky element sits at its natural
+						    position until the box would scroll it out of view. */}
+						<div className="dsm-qoder-actions dsm-qoder-actions-save">
+							<button
+								type="button"
+								className="dsm-qoder-button"
+								disabled={saving || !dirty || settingsScope === undefined}
+								onClick={save}
+							>
+								{saving ? t("row.saving") : t("row.save")}
+							</button>
+							<button
+								type="button"
+								className="dsm-qoder-button"
+								disabled={saving || !dirty}
+								onClick={discard}
+							>
+								{t("row.discard")}
+							</button>
+							{snap.lastSave !== undefined ? (
+								<span className="dsm-qoder-state">
+									{/* A save just completed (success banner or failure
+									    reason), as decided by the controller. The failure
+									    banner is the one that has to be visible: it is the
+									    card's only proof that the value did not persist, so
+									    it outranks the generic "unsaved" marker while it is
+									    up. A load failure is a different banner (it lives in
+									    `notice`, on the error panel) — a failed fetch must
+									    not overwrite "已保存" here. */}
+									{snap.lastSave.ok === true
+										? t("row.saved")
+										: `${t("row.failed")}: ${snap.lastSave.reason}`}
+								</span>
+							) : dirty ? (
+								<span className="dsm-qoder-state">{t("row.unsaved")}</span>
+							) : null}
+						</div>
+						</div>
+						{/* The rate rule is a footnote to the roster it describes,
+						    so it reads after the box rather than inside it. */}
 						{offPeakWindow != null ? (
 							<p className="dsm-qoder-hint">
 								{t("row.offPeakHint", {
@@ -826,42 +922,6 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 								})}
 							</p>
 						) : null}
-					<div className="dsm-qoder-switches">
-						<label className="dsm-qoder-switch" title={t("row.maxWindowTitle")}>
-							<input
-								type="checkbox"
-								checked={maxWindow}
-								disabled={saving}
-								aria-label={t("row.maxWindow")}
-								onChange={(event: unknown) => {
-									setMaxWindow((event as CheckboxEvent).target.checked);
-									if (status !== "error") setNotice(undefined); // 只在非 error 态清：error 态下 notice 是失败唯一详情，清了冒号后就剩空白
-								}}
-							/>
-							<span>{t("row.maxWindow")}</span>
-						</label>
-						{/* A VIEW switch, not a setting: it reveals the per-row
-						    image selects and never dirties the card, which is why
-						    it sits beside the window switch but is not disabled
-						    while a save is in flight — toggling the view during a
-						    save cannot conflict with what is being written. */}
-						<label className="dsm-qoder-switch" title={t("row.imageTuningTitle")}>
-							<input
-								type="checkbox"
-								checked={imageTuning}
-								aria-label={t("row.imageTuning")}
-								onChange={(event: unknown) => {
-									setImageTuning((event as CheckboxEvent).target.checked);
-								}}
-							/>
-							<span>{t("row.imageTuning")}</span>
-						</label>
-					</div>
-					{/* The image hint explains the per-row selects, so it is
-					    only worth a line when those selects are actually on
-					    screen. With the tuning column collapsed the card keeps
-					    the two-line explanation it did not need. */}
-					{imageTuningActive ? <p className="dsm-qoder-hint">{t("row.imageHint")}</p> : null}
 						{/* Maintenance actions drop below the settings block:
 						    re-pulling the catalog and bulk-ticking the roster are
 						    low-frequency upkeep, not part of the filter-first reading
@@ -933,41 +993,6 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 										? t("row.protocolChanged")
 										: t("row.refreshFailed", { reason: refreshFailure })}
 								</span>
-							) : null}
-						</div>
-					<div className="dsm-qoder-actions dsm-qoder-actions-save">
-						<button
-							type="button"
-							className="dsm-qoder-button"
-							disabled={saving || !dirty || settingsScope === undefined}
-							onClick={save}
-						>
-								{saving ? t("row.saving") : t("row.save")}
-							</button>
-							<button
-								type="button"
-								className="dsm-qoder-button"
-								disabled={saving || !dirty}
-								onClick={discard}
-							>
-								{t("row.discard")}
-							</button>
-							{snap.lastSave !== undefined ? (
-								<span className="dsm-qoder-state">
-									{/* A save just completed (success banner or failure
-									    reason), as decided by the controller. The failure
-									    banner is the one that has to be visible: it is the
-									    card's only proof that the value did not persist, so
-									    it outranks the generic "unsaved" marker while it is
-									    up. A load failure is a different banner (it lives in
-									    `notice`, on the error panel) — a failed fetch must
-									    not overwrite "已保存" here. */}
-									{snap.lastSave.ok === true
-										? t("row.saved")
-										: `${t("row.failed")}: ${snap.lastSave.reason}`}
-								</span>
-							) : dirty ? (
-								<span className="dsm-qoder-state">{t("row.unsaved")}</span>
 							) : null}
 						</div>
 					</div>

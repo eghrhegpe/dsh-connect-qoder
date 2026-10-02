@@ -628,8 +628,12 @@ test('several campaigns collapse behind a count, and print one badge between the
     'two campaigns must not both print by default',
   )
 
-  const toggle = [...container.querySelectorAll('button')].find((b) => text(b) === '2 个活动')
-  assert.ok(toggle !== undefined, 'no campaign count button rendered')
+  const toggle = container.querySelector('.dsm-qoder-disclosure')
+  assert.ok(toggle !== null, 'no campaign disclosure rendered')
+  // The folded label keeps the offer wording: folding the campaigns away must
+  // not also drop the signal that the account HAS offers.
+  assert.equal(text(toggle), '限时特惠 · 2 个活动')
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false')
   await update(react, () => toggle.click())
 
   assert.equal(
@@ -642,6 +646,11 @@ test('several campaigns collapse behind a count, and print one badge between the
     1,
     'the identical badge must print once, not once per campaign',
   )
+  assert.equal(
+    container.querySelector('.dsm-qoder-disclosure').getAttribute('aria-expanded'),
+    'true',
+    'the collapse control must report the expanded state it offers',
+  )
 })
 
 test('an image override the user set is never hidden by the view switch', async () => {
@@ -652,5 +661,57 @@ test('an image override the user set is never hidden by the view switch', async 
   const select = container.querySelector('.dsm-qoder-select')
   assert.ok(select !== null, 'a model with an override must keep its select with the switch off')
   assert.equal(select.value, 'on', `the saved override must be the selected value; saw: ${select.value}`)
+})
+
+// The save/discard row used to sit OUTSIDE the scrolling list, which handed its
+// `position:sticky` to whichever ancestor the host happened to make the
+// scrollport. In the live settings pane that pinned it to the page's scroll
+// edge and painted it across the fourth model row — the roster read as two
+// broken halves. Sharing the roster's own scroll box is what makes the pin
+// deterministic, so the nesting is the contract, not an implementation detail.
+test('the commit bar shares the roster scroll box instead of the host page', async () => {
+  const { container } = await mount({ models: [model({ id: 'm1', name: 'Alpha' })] })
+
+  const body = container.querySelector('.dsm-qoder-body')
+  assert.ok(body !== null, 'the card body is missing')
+  const roster = body.querySelector(':scope > .dsm-qoder-roster')
+  assert.ok(roster !== null, 'the roster box is not a direct child of the body')
+  assert.ok(
+    roster.querySelector('.dsm-qoder-models') !== null,
+    'the roster box must own the model list it scrolls',
+  )
+  assert.ok(
+    roster.querySelector(':scope > .dsm-qoder-actions-save') !== null,
+    'the commit bar must be a direct child of the roster box',
+  )
+  assert.equal(
+    body.querySelectorAll(':scope > .dsm-qoder-actions-save').length,
+    0,
+    'the commit bar must not be a body-level sibling of the list — that is the ' +
+      'shape whose sticky positioning the host page takes over',
+  )
+})
+
+// "按最大上下文显示" is persisted state: it dirties the card, and the commit
+// controls are now the roster's own footer. A setting a save would carry has to
+// sit above the row that saves it, or a user flips the switch and the button
+// that commits it is behind them.
+test('every setting the commit bar saves renders above it', async () => {
+  const { container } = await mount({ models: [model({ id: 'm1', name: 'Alpha' })] })
+
+  const switches = container.querySelector('.dsm-qoder-switches')
+  assert.ok(switches !== null, 'the roster-level switches are missing')
+  assert.ok(
+    switches.querySelector('input[aria-label="按最大上下文显示"]') !== null,
+    'the persisted max-window switch must live in the roster-level switch row',
+  )
+
+  const bar = container.querySelector('.dsm-qoder-actions-save')
+  assert.ok(bar !== null, 'the commit bar is missing')
+  const all = [...container.querySelectorAll('*')]
+  assert.ok(
+    all.indexOf(switches) < all.indexOf(bar),
+    'the persisted switch row must render above the commit bar, not below it',
+  )
 })
 

@@ -54,7 +54,19 @@ const QODER_CARD_CSS = [
 	// as separate children of the body's flex column each spent a full 12px
 	// gap row on a single 13px label.
 	".dsm-qoder-switches{display:flex;align-items:center;gap:16px;flex-wrap:wrap}",
-	".dsm-qoder-models{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto}",
+	// The roster and its commit bar share ONE scroll box. The list used to be
+	// its own 320px scroller while the save/discard row sat outside it, which
+	// made that row's nearest scrollport the HOST settings pane — so
+	// `position:sticky` pinned it to an edge of the page scroll area and it
+	// painted on top of whichever model row happened to be there (seen in a
+	// live settings screenshot: the bar landed across the fourth row and the
+	// roster read as two broken halves). Owning the scrollport here is what
+	// makes the footer's position deterministic instead of a function of how
+	// the host lays out its settings pane. `flex:none` on both children keeps
+	// the list at its natural height so the box, not the list, is what
+	// overflows.
+	".dsm-qoder-roster{display:flex;flex-direction:column;max-height:368px;overflow:auto}",
+	".dsm-qoder-models{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;flex:none}",
 	".dsm-qoder-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}",
 	".dsm-qoder-row-main{display:flex;align-items:center;gap:8px;min-width:0}",
 	".dsm-qoder-name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
@@ -79,16 +91,31 @@ const QODER_CARD_CSS = [
 	// error line carries its own: text and button on one row.
 	".dsm-qoder-account-error{display:flex;align-items:center;gap:10px}",
 	".dsm-qoder-actions{display:flex;gap:8px}",
-	// Save / discard, pinned to the bottom of the viewport while the card is
-	// on screen. The edits happen in the roster, which scrolls inside its own
-	// 320px box above two hint paragraphs and a maintenance row — the commit
-	// controls used to be a full screen away from the change they commit, and
-	// a user could tick a model and never see that a save was pending. The
-	// background is the open card's own layer so rows scrolling under it stay
-	// hidden rather than bleeding through.
-	".dsm-qoder-actions-save{position:sticky;bottom:0;z-index:1;background:var(--dsw-alias-bg-layer-2,#25262b);border-top:1px solid var(--dsw-alias-border-l2,#36373b);padding:8px 0;margin-top:-4px}",
+	// Save / discard, pinned to the foot of `.dsm-qoder-roster`'s own scroll
+	// box — NOT to the host page. The edits happen in the roster, which
+	// scrolls inside that box above two hint paragraphs and a maintenance row,
+	// so the commit controls used to be a full screen away from the change
+	// they commit and a user could tick a model and never see that a save was
+	// pending. The background is the open card's own layer so rows scrolling
+	// under it stay hidden rather than bleeding through.
+	".dsm-qoder-actions-save{position:sticky;bottom:0;z-index:1;flex:none;background:var(--dsw-alias-bg-layer-2,#25262b);border-top:1px solid var(--dsw-alias-border-l2,#36373b);padding:8px 0}",
 	".dsm-qoder-button{font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);background:transparent;color:inherit;cursor:pointer}",
 	".dsm-qoder-button:disabled{opacity:.5;cursor:default}",
+	// The campaign fold. As a bare `.dsm-qoder-button` inside the usage
+	// stack it stretched to the full column width and centred two words in a
+	// wide empty pill — it read as a broken placeholder, not a control. It is
+	// footnote-sized, so it shrinks to its own text, and it keeps the offer
+	// green so folding the campaigns away does not also drop the signal that
+	// they exist. Declared after `.dsm-qoder-button` on purpose: the base rule
+	// sets the `border` shorthand, so an earlier `border-color` would lose.
+	".dsm-qoder-disclosure{align-self:flex-start;font-size:11px;padding:3px 10px;border-color:var(--dsw-alias-state-success-primary,#12b76a);color:var(--dsw-alias-state-success-primary,#12b76a)}",
+	// Same border-caret rationale as the card chevron above: the glyph is
+	// drawn from borders, not a font, so it cannot fall back to tofu on a host
+	// whose fonts differ. `aria-expanded` is the state hook — it is the
+	// attribute a screen reader needs anyway, so there is no second source of
+	// truth to keep in sync.
+	".dsm-qoder-disclosure::after{content:\"\";display:inline-block;width:5px;height:5px;margin-left:6px;border-right:1.4px solid currentColor;border-bottom:1.4px solid currentColor;transform:rotate(45deg) translateY(-2px)}",
+	".dsm-qoder-disclosure[aria-expanded=\"true\"]::after{transform:rotate(225deg) translateY(-2px)}",
 	// Usage panel. Mirrors the Qoder IDE's own "我的用量" card: a titled
 	// block per quota, each with a filled bar and a used/total line.
 	".dsm-qoder-usage{border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:12px}",

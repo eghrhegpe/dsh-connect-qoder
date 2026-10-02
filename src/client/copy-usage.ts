@@ -21,9 +21,11 @@ export const zhUsage = {
 	// Upstream can ship several campaigns at once. Each used to take a full
 	// line — same badge, same weight, no way to tell which one is relevant —
 	// until the promo block was taller than the quota it sits under. More than
-	// one now collapses behind a count.
-	"usage.promoCount": "{count} 个活动",
-	"usage.promoCollapse": "收起",
+	// one now collapses behind a count. The folded label keeps the offer
+	// wording the per-line badge carried: folding the campaigns away must not
+	// also drop the signal that there ARE offers on this account.
+	"usage.promoCount": "限时特惠 · {count} 个活动",
+	"usage.promoCollapse": "收起活动",
 	"usage.viewDetails": "查看详情",
 	"usage.credits": "Credits",
 	// The daily check-in. Wording follows dsh-connect-workbuddy's own
@@ -59,8 +61,8 @@ export const enUsage = {
 	"usage.used": "used",
 	"usage.exceeded": "Quota exhausted",
 	"usage.promotion": "Limited offer",
-	"usage.promoCount": "{count} offers",
-	"usage.promoCollapse": "Hide",
+	"usage.promoCount": "Limited offer · {count} offers",
+	"usage.promoCollapse": "Hide offers",
 	"usage.viewDetails": "View details",
 	"usage.credits": "Credits",
 	"usage.checkin": "Daily check-in",

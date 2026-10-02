@@ -1,7 +1,7 @@
 /**
  * Position gate #1 — the card body must render its three surfaces in the
  * fixed order the WorkBuddy layout was modelled on: the account strip +
- * sign-in card FIRST, the usage panel SECOND, the model list LAST.
+ * sign-in card FIRST, the usage panel SECOND, the model roster LAST.
  *
  * Run: node --test test/card-position.test.js
  *
@@ -82,12 +82,17 @@ function routeStub({ models = [model({})], accountRegions = REGIONS, usageRegion
 
 // The card body's surface children, in the order the JSX emits them.
 // `QoderPluginCard` mounts (inside `.dsm-qoder-body`): account panel
-// (strip + sign-in) → usage panel → model list. Anything else here means the
+// (strip + sign-in) → usage panel → roster. Anything else here means the
 // assembly was reordered.
+//
+// The third marker is the ROSTER BOX, not the bare `<ul>`: the model list and
+// its commit bar share one scroll box (see `test/card-dom.test.js`, "the commit
+// bar shares the roster scroll box"), so the roster — not the list inside it —
+// is the body's third surface.
 const EXPECTED_SURFACES = [
   'dsm-qoder-account', // region strip + selected-region sign-in (account-panel.tsx)
   'dsm-qoder-usage-row', // usage panel (usage-panel.tsx)
-  'dsm-qoder-models', // model list (card.tsx)
+  'dsm-qoder-roster', // model roster box: list + commit bar (card.tsx)
 ]
 
 test('card body renders account → usage → models in that fixed order', async () => {
@@ -113,11 +118,11 @@ test('card body renders account → usage → models in that fixed order', async
     const cls = String(child.className ?? '')
     if (cls.includes('dsm-qoder-account')) order.push('account')
     else if (cls.includes('dsm-qoder-usage-row')) order.push('usage')
-    else if (cls.includes('dsm-qoder-models')) order.push('models')
+    else if (cls.includes('dsm-qoder-roster')) order.push('roster')
   }
   assert.deepEqual(
     order,
-    ['account', 'usage', 'models'],
-    `body surfaces must sit in order account → usage → models; saw: ${order.join(', ')}`,
+    ['account', 'usage', 'roster'],
+    `body surfaces must sit in order account → usage → roster; saw: ${order.join(', ')}`,
   )
 })
