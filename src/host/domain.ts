@@ -140,10 +140,23 @@ export interface CatalogEntry {
  * `info` blob encrypted under a per-request AES key containing exactly these,
  * so a missing `userID` or `token` is not a degraded call — it produces a
  * signature the gateway will reject.
+ *
+ * Those identity fields are now declared rather than left to the
+ * `[field: string]: unknown` index signature that used to stand in for them.
+ * The index signature documented them in prose while giving the compiler
+ * nothing to check, and it also made this interface reject `LoadedCredential`
+ * — the type that actually flows in from `resolveCredential`. `region-gate`
+ * reads only `expired`, but the fields are listed so the type says what the
+ * doc says. Everything is optional because a region with no sign-in resolves
+ * to nothing at all and is filtered before this is read.
  */
 export interface ResolvedCredential {
   expired?: boolean
-  [field: string]: unknown
+  userID?: string
+  token?: string
+  name?: string
+  email?: string
+  machineID?: string
 }
 
 /**
@@ -155,6 +168,15 @@ export interface ResolvedCredential {
  * visible. `machineID` is the one that may legitimately be empty: it is a
  * machine fingerprint, and an absent one is sent as the empty string rather
  * than failing the request.
+ *
+ * The `[field: string]: unknown` index signature that used to sit here is gone
+ * on purpose. It contradicted the sentence above — an open record is exactly
+ * what this is documented not to be — and nothing ever read a credential by
+ * arbitrary key. What it *did* do was make the interface reject the richer
+ * `LoadedCredential` that is the actual source of every value here, because
+ * that one has no index signature: the mismatch stayed invisible only while
+ * both ends travelled through `any`. Removing it makes the plugin's own
+ * credential readable by the signing and chat paths with no cast at all.
  */
 export interface QoderCredential {
   userID: string
@@ -162,7 +184,6 @@ export interface QoderCredential {
   name?: string
   email?: string
   machineID?: string
-  [field: string]: unknown
 }
 
 /**

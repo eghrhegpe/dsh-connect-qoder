@@ -15,22 +15,47 @@
  * @module dsh-connect-qoder/credential-cache
  */
 import { isCredentialUsable } from './credentials.ts'
+import type { LoadedCredential } from './credentials.ts'
+
+/** What a PAT exchange answers — the three fields the cache copies across. */
+export interface ExchangedPat {
+  token: string
+  refreshToken: string
+  expiresAt: number
+}
 
 export interface CredentialCacheOptions {
-  loadApp: () => any
-  loadEnv: () => any
-  exchangePat?: (credential: any) => Promise<{ token: string; refreshToken: string; expiresAt: number }> | any
+  /**
+   * Reads the app's credential store. May answer a promise: the real reader is
+   * `loadCredentialAsync`, which decrypts on a worker so a read does not freeze
+   * the event loop — and `resolve` is async anyway, so awaiting costs nothing.
+   */
+  loadApp: () => LoadedCredential | undefined | Promise<LoadedCredential | undefined>
+  loadEnv: () => LoadedCredential | undefined
+  exchangePat?: (credential: LoadedCredential) => Promise<ExchangedPat> | ExchangedPat
 }
 
 export class CredentialCache {
-  /** Reads the app's credential store. */
-  loadApp: () => any
+  /** Reads the app's credential store (see {@link CredentialCacheOptions.loadApp}). */
+  loadApp: () => LoadedCredential | undefined | Promise<LoadedCredential | undefined>
   /** The PAT fallback reader. */
-  loadEnv: () => any
-  /** Exchanges a PAT for a job token; absent when PATs are unsupported. */
-  exchangePat?: (credential: any) => any
-  /** The cached record (app credential, or PAT after exchange). */
-  cached: any
+  loadEnv: () => LoadedCredential | undefined
+  /**
+   * Exchanges a PAT for a job token; absent when PATs are unsupported.
+   *
+   * The parameter and the answer are both `LoadedCredential`-derived rather
+   * than `any`: the call below reads `credential.source` to decide whether to
+   * exchange at all, and then copies three named fields off the answer. With
+   * `any` neither the discriminant nor the three field names was checked, so a
+   * rename on either side would have surfaced as `undefined` at runtime.
+   */
+  exchangePat?: (credential: LoadedCredential) => Promise<ExchangedPat> | ExchangedPat
+  /**
+   * The cached record: an app credential as read, or a PAT after exchange —
+   * which is that same credential with its three token fields replaced, so it
+   * is still a `LoadedCredential`.
+   */
+  cached: LoadedCredential | undefined
   /** Set when a request was rejected with a sign-in failure. */
   invalid: boolean
   /** How many times the underlying store was actually read. */
@@ -90,7 +115,7 @@ export class CredentialCache {
     if (isCredentialUsable(this.cached)) return this.cached
 
     this.reads += 1
-    const fromApp = this.loadApp()
+    const fromApp = await this.loadApp()
     const credential = fromApp ?? this.loadEnv()
     if (credential === undefined) {
       this.cached = undefined

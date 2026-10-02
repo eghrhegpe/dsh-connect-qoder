@@ -26,8 +26,10 @@
  * @module dsh-connect-qoder/account-payload
  */
 import { readAccountStateAsync } from './account-state.ts'
+import type { AccountRegion, AccountStateRecord } from './account-state.ts'
 import { appDataRootFor } from './credentials.ts'
 import { regionEnabledFor } from './preferences.ts'
+import type { Preferences } from './preferences.ts'
 
 /**
  * Build the account panel's answer for every region.
@@ -57,19 +59,23 @@ import { regionEnabledFor } from './preferences.ts'
  * @returns a promise of `{ regions, enabledRegions }`.
  */
 export interface BuildAccountPayloadOptions {
-  // Lenient shapes: the callers (lib/index.js) pass the plugin's own region
-  // descriptors and the live preferences snapshot, both richer than any type
-  // this extracted module should pin.
-  regions: any[]
-  settings: any
+  // The real types, not `any`. The comment that used to sit here said the
+  // callers pass shapes "richer than any type this extracted module should
+  // pin" — true when the caller was `lib/index.js`, which had no types at all.
+  // Both callers are TypeScript now, and each one's type is already imported
+  // here (the region descriptor by `account-state.ts`, the preferences
+  // snapshot by `preferences.ts`), so pinning them costs nothing and makes
+  // `region.id` / `enabledRegions` checked at the only call site.
+  regions: AccountRegion[]
+  settings: Preferences | undefined
   force?: boolean
   readAccountState?: (
-    region: any,
+    region: AccountRegion,
     appDataRoot: string,
     options?: { force?: boolean; cachedOnly?: boolean },
-  ) => Promise<unknown>
+  ) => Promise<AccountStateRecord>
   appDataRoot?: string
-  regionEnabled?: (preferences: any, regionId: string) => boolean
+  regionEnabled?: (preferences: Preferences | undefined, regionId: string) => boolean
 }
 
 export async function buildAccountPayload({
@@ -88,7 +94,7 @@ export async function buildAccountPayload({
   const mode = force === true ? { force: true } : { cachedOnly: true }
   const states = await Promise.all(
     regions.map(async (region) => ({
-      ...(await readAccountState(region, appDataRoot, mode) as any),
+      ...(await readAccountState(region, appDataRoot, mode)),
       enabled: enabledRegions[region.id],
     })),
   )
