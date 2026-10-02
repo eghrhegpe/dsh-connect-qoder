@@ -59,12 +59,6 @@ const inject = ["slots", "locale"];
 function apply(ctx: ClientContext) {
 	try {
 		installStyles();
-		const namespace = "settings.qoder";
-		ctx.effect(() => ctx.locale.register(namespace, {
-			zh,
-			en
-		}), "dsh-connect-qoder: settings copy");
-	const t = ctx.locale.bind(namespace);
 	/**
 	 * FIX 0.1.7: probe the settings surface without a hard dependency.
 	 * 0.1.7 serves the section through `configForms`; 0.1.6 and earlier
@@ -74,19 +68,51 @@ function apply(ctx: ClientContext) {
 	 * so the card body below is unchanged.
 	 */
 	const softGet = (name: string): any => ctx.get(name);
+	/**
+	 * The namespace the HOST actually serves this plugin's settings under.
+	 *
+	 * Read from the live `describe()` view rather than trusted from a constant,
+	 * because a plugin no longer picks its own namespace: on 0.1.7 the service
+	 * derives it from the Loader entry (`ns: entry.options.id`, which is the
+	 * provider name `llm-qoder`), and on 0.1.6 and earlier it is the plugin
+	 * namespace. The host half already resolves this the same way in
+	 * `settingsNamespaceOf` — and reads it live for the same reason.
+	 *
+	 * This value drives BOTH the locale table and the settings scope, and that
+	 * is the point: they must name one namespace, or the copy and the section
+	 * the user is looking at belong to different identities. An earlier version
+	 * hardcoded `"settings.qoder"` here — a namespace the host has never
+	 * served — so `locale.bind` found no table, every lookup fell back to
+	 * echoing its own key, and the card rendered as raw `account.reload`-style
+	 * identifiers in BOTH languages. The fault was misread as "no English
+	 * translation" for a while, because a key-echo looks the same as a missing
+	 * translation whichever locale is active.
+	 */
+	const resolveNamespace = (): string => {
+		const fallback = "dsh-connect-qoder";
+		const forms = softGet("configForms");
+		if (forms === void 0) return fallback;
+		try {
+			const served = (forms.describe().getSnapshot().view?.namespaces ?? [])
+				.find((entry: { ns: string }) => entry.ns === fallback || /qoder/i.test(entry.ns));
+			return served !== void 0 ? served.ns : fallback;
+		} catch {
+			return fallback;
+		}
+	};
+	const namespace = resolveNamespace();
+	ctx.effect(() => ctx.locale.register(namespace, {
+		zh,
+		en
+	}), "dsh-connect-qoder: settings copy");
+	const t = ctx.locale.bind(namespace);
 	let settingsScope: SettingsScope | undefined;
 	const forms = softGet("configForms");
 	const legacy = softGet("settingsScope");
 	if (forms !== void 0) {
-		let ns = "dsh-connect-qoder";
-		try {
-			const served = (forms.describe().getSnapshot().view?.namespaces ?? [])
-				.find((entry: { ns: string }) => entry.ns === "dsh-connect-qoder" || /qoder/i.test(entry.ns));
-			if (served !== void 0) ns = served.ns;
-		} catch {}
-		settingsScope = forms.get(ns) as SettingsScope;
+		settingsScope = forms.get(namespace) as SettingsScope;
 	} else if (legacy !== void 0) {
-		settingsScope = legacy.bind({ namespace: "dsh-connect-qoder" }) as SettingsScope;
+		settingsScope = legacy.bind({ namespace }) as SettingsScope;
 	}
 	/**
 	 * FIX 0.1.7: the plugin-manager detail page renders a bundle's config
