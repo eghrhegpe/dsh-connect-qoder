@@ -14,6 +14,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import type { CatalogEntry } from './domain.ts'
 
 /** How long a fetched catalog stays fresh before it is refetched. */
 export const CATALOG_TTL_MS = 30 * 60 * 1000
@@ -43,8 +44,16 @@ export class CatalogStore {
   ttlMs: number
   /** Optional logger for a failed save. */
   logger?: { warn?: (message: string, error?: unknown) => void }
-  /** Parsed catalog entries. */
-  entries: any[]
+  /**
+   * Parsed catalog entries, unvalidated.
+   *
+   * `unknown[]` rather than `any[]`, to match `replace()`'s own parameter and
+   * the fact that the array comes straight off `JSON.parse` of a file this
+   * plugin wrote earlier — so it is exactly as trustworthy as the disk. No
+   * caller reads into an entry without narrowing: the roster is projected
+   * through `readModelCatalogShape`, which takes `unknown`.
+   */
+  entries: unknown[]
   /** Epoch ms of the last successful fetch. */
   fetchedAt: number
   /** The error from the last failed `save()`, or `undefined`. */
@@ -124,8 +133,20 @@ export class CatalogStore {
     }
   }
 
-  current() {
-    return this.entries
+  /**
+   * The roster as the readers want it: `CatalogEntry[]`.
+   *
+   * The store holds `unknown[]`, because `load()` parses a JSON file this
+   * plugin wrote in an earlier run — the disk is exactly as trustworthy as the
+   * last writer, and nothing re-validates it on read. The narrowing therefore
+   * happens here, once, at the one boundary where a caller asks for the roster
+   * in the shape the rest of the plugin speaks. `replace()` is fed by
+   * `normalizeEntry` (see the refresh path), which is what actually guarantees
+   * `id`/`key`/`name`; a hand-edited cache file is the one way a malformed row
+   * reaches a reader, and it fails the same way it did before this change.
+   */
+  current(): CatalogEntry[] {
+    return this.entries as CatalogEntry[]
   }
 
   fresh(now = Date.now()) {

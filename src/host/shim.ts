@@ -484,7 +484,10 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
         const choice = chunk?.choices?.[0]
         if (choice === undefined) continue
         const delta = choice.delta ?? choice.message ?? {}
-        const out: any = { role: 'assistant' }
+        // The assistant turn is assembled key by key, and only the keys the
+        // upstream actually sent are set — so this is a record of unknowns, not
+        // `any`: each `if` above is what proves the value it assigns.
+        const out: Record<string, unknown> = { role: 'assistant' }
         if (typeof delta.content === 'string' && delta.content.length > 0) out.content = delta.content
         // pi-ai reads reasoning from any of these fields.
         const reasoning = delta.reasoning_content ?? delta.reasoning
@@ -582,7 +585,11 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
       closed = true
       closedPromise = new Promise<void>((resolve, reject) => {
         server.closeAllConnections()
-        server.close((err: any) => {
+        // `server.close` answers a Node `Error | undefined`. Typed that way
+        // rather than `any`: the `err.code` read below is only safe because
+        // `err` is truthy-checked first, and the annotation is what lets the
+        // compiler confirm the check is the only read that needs it.
+        server.close((err?: Error & { code?: string }) => {
           if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') reject(err)
           else resolve()
         })

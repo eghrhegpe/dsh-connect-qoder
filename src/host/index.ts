@@ -112,6 +112,20 @@ function asVolatile<T extends { volatile?: unknown }>(schema: T): unknown {
 }
 
 /**
+ * The `id` of a catalog entry, or `undefined` when it has none.
+ *
+ * `CatalogLike.current()` is `unknown[]` (see its doc), and every lookup by
+ * model id goes through here rather than reading `entry.id` directly. An entry
+ * that is not an object, or whose `id` is not a string, matches nothing —
+ * which is the same "not this model" answer the old `entry.id === modelId`
+ * gave, except that it no longer throws on a malformed row.
+ */
+function idOf(entry: unknown): string | undefined {
+  const id = (entry as { id?: unknown } | null | undefined)?.id
+  return typeof id === 'string' ? id : undefined
+}
+
+/**
  * Prefer the largest context window the catalog declares for a model.
  *
  * Qoder's catalog offers 200K/400K/1M for most models and flags one as its own
@@ -487,15 +501,27 @@ class RegionRuntime {
     return applyCatalogOutcome(this, outcome)
   }
 
-  /** Look up the upstream key for a user-facing model id. */
+  /**
+   * Look up the upstream key for a user-facing model id.
+   *
+   * `catalog.current()` is `unknown[]` on purpose — `CatalogLike` is declared
+   * as the minimum every consumer reads, so the offline suite's stand-in with
+   * only `current()`/`replace()` still satisfies it, and the entries came off
+   * `JSON.parse` of a file on disk. That makes narrowing the caller's job, and
+   * this is it: an entry that is not an object, or has no string `id`, simply
+   * does not match.
+   */
   upstreamKey(modelId: string): string | undefined {
-    const found = this.catalog.current().find((entry) => entry.id === modelId)
-    return found?.key
+    const found = this.catalog.current().find((entry) => idOf(entry) === modelId)
+    return typeof (found as { key?: unknown } | null | undefined)?.key === 'string'
+      ? (found as { key: string }).key
+      : undefined
   }
 
   /** The catalog entry behind a user-facing model id. */
   entryFor(modelId: string): CatalogEntry | undefined {
-    return this.catalog.current().find((entry) => entry.id === modelId)
+    const found = this.catalog.current().find((entry) => idOf(entry) === modelId)
+    return found as CatalogEntry | undefined
   }
 
   /**
@@ -575,7 +601,15 @@ async function startRegion(
   const shim = createQoderShim({
     region,
     resolveCredential: () => runtime.resolveCredential(),
-    resolveModels: () => runtime.catalog.current(),
+    // The store hands back `unknown[]` — its `current()` satisfies
+    // `CatalogLike`, so it cannot promise more than "parsed from a JSON file".
+    // The shim's own contract is `CatalogEntry[]`, and the cast is where those
+    // two meet: every entry here went through `normalizeEntry` on its way in
+    // (`refresh` above), which is what mints `id`/`key`/`name` and fills the
+    // optional flags. Re-normalizing on every read would be the alternative,
+    // and it would cost a pass over the roster on each listing to re-derive
+    // fields the write path already established.
+    resolveModels: () => runtime.catalog.current() as CatalogEntry[],
     resolveUpstreamKey: (id) => runtime.upstreamKey(id),
     resolveAlwaysThinking: (id) => runtime.entryFor(id)?.alwaysThinking === true,
     // Read on every listing so curating the roster reaches the picker live.

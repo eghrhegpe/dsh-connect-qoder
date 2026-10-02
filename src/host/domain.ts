@@ -233,7 +233,7 @@ export interface RefreshableRuntime {
  * narrowing on `ok === true` is checked, not merely permitted.
  */
 export type CatalogOutcome =
-  | { ok: true; entries: unknown[] }
+  | { ok: true; entries: CatalogEntry[] }
   | { ok: false; reason: string; error?: unknown }
 
 /**
