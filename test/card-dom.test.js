@@ -572,6 +572,47 @@ test('the per-row image selects stay out of the way until they are asked for', a
 // The stronger half of the rule: the switch is a VIEW switch, so it must never
 // be able to hide a value the user actually set. A model carrying an override
 // keeps its select even with the switch off.
+// Upstream ships several campaigns at once. Stacked, each took a full line
+// with the same badge at the same weight, until the promo block was taller
+// than the quota it sits under — and the badge carries no information of its
+// own, since it is the same string on every line.
+test('several campaigns collapse behind a count, and print one badge between them', async () => {
+  const { container, react } = await mount({
+    usageRegions: [
+      {
+        region: 'qoder-cn',
+        available: true,
+        campaigns: [
+          { key: 'a', title: '每天领 100 Credits' },
+          { key: 'b', title: '首月 Credits 翻倍' },
+        ],
+      },
+    ],
+  })
+  for (let i = 0; i < 3; i++) await update(react, () => {})
+
+  assert.equal(
+    container.querySelectorAll('.dsm-qoder-usage-promo').length,
+    0,
+    'two campaigns must not both print by default',
+  )
+
+  const toggle = [...container.querySelectorAll('button')].find((b) => text(b) === '2 个活动')
+  assert.ok(toggle !== undefined, 'no campaign count button rendered')
+  await update(react, () => toggle.click())
+
+  assert.equal(
+    container.querySelectorAll('.dsm-qoder-usage-promo').length,
+    2,
+    'expanding must print every campaign',
+  )
+  assert.equal(
+    container.querySelectorAll('.dsm-qoder-usage-badge-offer').length,
+    1,
+    'the identical badge must print once, not once per campaign',
+  )
+})
+
 test('an image override the user set is never hidden by the view switch', async () => {
   const { container } = await mount({
     fetch: routeStub({ models: [model({ id: 'm1', name: 'Alpha' })], imageOverrides: { m1: 'on' } }),

@@ -18,6 +18,12 @@ export const zhUsage = {
 	"usage.used": "已使用",
 	"usage.exceeded": "额度用完",
 	"usage.promotion": "限时特惠",
+	// Upstream can ship several campaigns at once. Each used to take a full
+	// line — same badge, same weight, no way to tell which one is relevant —
+	// until the promo block was taller than the quota it sits under. More than
+	// one now collapses behind a count.
+	"usage.promoCount": "{count} 个活动",
+	"usage.promoCollapse": "收起",
 	"usage.viewDetails": "查看详情",
 	"usage.credits": "Credits",
 	// The daily check-in. Wording follows dsh-connect-workbuddy's own
@@ -53,6 +59,8 @@ export const enUsage = {
 	"usage.used": "used",
 	"usage.exceeded": "Quota exhausted",
 	"usage.promotion": "Limited offer",
+	"usage.promoCount": "{count} offers",
+	"usage.promoCollapse": "Hide",
 	"usage.viewDetails": "View details",
 	"usage.credits": "Credits",
 	"usage.checkin": "Daily check-in",

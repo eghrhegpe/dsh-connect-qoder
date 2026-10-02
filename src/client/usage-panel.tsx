@@ -43,6 +43,11 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 	const [busy, setBusy] = react.useState(false);
 	const [claimBusy, setClaimBusy] = react.useState(false);
 	const [claimNotice, setClaimNotice] = react.useState<{ kind?: string; message?: string; amount?: number } | undefined>(undefined);
+	// Whether the campaign list is expanded. It lives here rather than in
+	// `RegionUsage` so that component stays hook-free and renderable on its
+	// own. Upstream can ship several campaigns at once, and stacked they
+	// outgrew the quota block they sit under; more than one starts collapsed.
+	const [campaignsOpen, setCampaignsOpen] = react.useState(false);
 	const mounted = react.useRef(true);
 	// The read sequence: `load` runs from the mount effect, the card's
 	// refreshToken bump, the refresh button and after every check-in claim,
@@ -147,7 +152,14 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 					<p className="dsm-qoder-error">{`${t("usage.error")}: ${notice ?? ""}`}</p>
 				) : null}
 				{active !== undefined ? (
-					<RegionUsage t={t} entry={active} />
+					<RegionUsage
+						t={t}
+						entry={active}
+						campaignsOpen={campaignsOpen}
+						onCampaignsToggle={() => {
+							setCampaignsOpen(!campaignsOpen);
+						}}
+					/>
 				) : (
 					// The selected edition has no quota entry yet — it is not
 					// signed in or not started — so say so instead of leaving

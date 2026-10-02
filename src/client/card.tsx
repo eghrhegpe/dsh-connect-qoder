@@ -172,6 +172,14 @@ export function CheckinCard({ t, checkin, busy, notice, onClaim }: CheckinCardPr
 interface RegionUsageProps {
 	t: TranslateFn
 	entry: CardUsageRegion & Record<string, unknown>
+	/**
+	 * Whether the campaign list is expanded. Owned by the usage panel, not
+	 * here: this component is deliberately hook-free so it can be rendered
+	 * without a tree. Absent means "collapse", so a caller that knows nothing
+	 * about campaigns still gets the quiet default.
+	 */
+	campaignsOpen?: boolean
+	onCampaignsToggle?: EventHandler
 }
 
 /**
@@ -182,7 +190,7 @@ interface RegionUsageProps {
  * beside the whole panel, because a check-in row inside this stack spent a
  * full-width line on two short strings.
  */
-export function RegionUsage({ t, entry }: RegionUsageProps) {
+export function RegionUsage({ t, entry, campaignsOpen, onCampaignsToggle }: RegionUsageProps) {
 	if (entry.available !== true) {
 		return (
 			<div className="dsm-qoder-usage-block">
@@ -222,26 +230,48 @@ export function RegionUsage({ t, entry }: RegionUsageProps) {
 				</react.Fragment>
 			))}
 			{campaigns.length > 0 ? <div className="dsm-qoder-usage-sep" /> : null}
-			{campaigns.map((camp) => (
-				<p className="dsm-qoder-usage-promo" key={`camp:${camp.key}`}>
-					<span className="dsm-qoder-usage-badge dsm-qoder-usage-badge-offer">
-						{t("usage.promotion")}
-					</span>
-					{" "}
-					{camp.title}
-					{camp.endsAt !== undefined
-						? ` · ${withDate(t("usage.expiresOn"), typeof camp.endsAt === "number" ? camp.endsAt : undefined)}`
-						: ""}
-					{camp.detailUrl ? (
-						<react.Fragment>
-							{" "}
-							<a href={camp.detailUrl} target="_blank" rel="noreferrer">
-								{t("usage.viewDetails")}
-							</a>
-						</react.Fragment>
+			{/* One campaign is a footnote and prints in full. Several used to
+			    stack as same-weight lines each carrying an identical badge,
+			    until the promo block was taller than the quota it sits under
+			    — marketing must not outrank the number the user came for.
+			    More than one collapses behind a count. The badge itself
+			    carries no information of its own — it is the same string on
+			    every line — so it prints once, on the first campaign. */}
+			{campaigns.length > 1 && campaignsOpen !== true ? (
+				<button type="button" className="dsm-qoder-button" onClick={onCampaignsToggle}>
+					{t("usage.promoCount", { count: campaigns.length })}
+				</button>
+			) : (
+				<react.Fragment>
+					{campaigns.map((camp, index) => (
+						<p className="dsm-qoder-usage-promo" key={`camp:${camp.key}`}>
+							{index === 0 ? (
+								<span className="dsm-qoder-usage-badge dsm-qoder-usage-badge-offer">
+									{t("usage.promotion")}
+								</span>
+							) : null}
+							{index === 0 ? " " : null}
+							{camp.title}
+							{camp.endsAt !== undefined
+								? ` · ${withDate(t("usage.expiresOn"), typeof camp.endsAt === "number" ? camp.endsAt : undefined)}`
+								: ""}
+							{camp.detailUrl ? (
+								<react.Fragment>
+									{" "}
+									<a href={camp.detailUrl} target="_blank" rel="noreferrer">
+										{t("usage.viewDetails")}
+									</a>
+								</react.Fragment>
+							) : null}
+						</p>
+					))}
+					{campaigns.length > 1 ? (
+						<button type="button" className="dsm-qoder-button" onClick={onCampaignsToggle}>
+							{t("usage.promoCollapse")}
+						</button>
 					) : null}
-				</p>
-			))}
+				</react.Fragment>
+			)}
 		</div>
 	);
 }
