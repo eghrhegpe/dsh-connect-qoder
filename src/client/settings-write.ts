@@ -29,9 +29,27 @@
  * this module. The card shows it, so the user knows the value is not
  * saved instead of trusting a "已保存" banner over stale settings.
  */
+/**
+ * The settings surface the card writes through, as this module reads it.
+ *
+ * One shape covers BOTH Host lines, which is why it is declared here rather
+ * than imported: `configForms.get(ns)` (0.1.7) and `settingsScope.bind({ns})`
+ * (0.1.6) are deliberately mirrored onto each other by `client/index.ts`, so
+ * the card body — and this writer — never branches on which one is present.
+ * `client/index.ts` keeps its own two probes; what that file hands the card is
+ * a value satisfying this interface.
+ *
+ * Every member is read defensively by the callers: `set` may reject, and
+ * `getSnapshot().value` is `undefined` for a namespace the Host has not
+ * materialized yet (that is the `fieldSnapshot` catch, not a programming error).
+ */
+export interface SettingsScope {
+	set(field: string, value: unknown): Promise<unknown>
+	getSnapshot(): { value?: Record<string, unknown> }
+}
 var QoderSettingsWriteError = class extends Error {
-	field;
-	constructor(field, reason) {
+	field: string;
+	constructor(field: string, reason?: string) {
 		super(`qoder: settings field "${field}" was not persisted${reason === void 0 ? "" : `: ${reason}`}`);
 		this.name = "QoderSettingsWriteError";
 		this.field = field;
@@ -49,8 +67,8 @@ var QoderSettingsWriteError = class extends Error {
  * indistinguishable from "not persisted" from the card's side, so it is
  * thrown as a write failure rather than returning the stale value.
  */
-async function saveFieldViaHost(field, value) {
-	let response;
+async function saveFieldViaHost(field: string, value: unknown): Promise<unknown> {
+	let response: Response;
 	try {
 		response = await fetch("/plugins/dsh-connect-qoder/__save", {
 			method: "POST",
@@ -61,12 +79,16 @@ async function saveFieldViaHost(field, value) {
 	} catch (error: any) {
 		throw new QoderSettingsWriteError(field, `Host save endpoint unreachable: ${String(error)}`);
 	}
+	// The endpoint's answers are unvalidated JSON from the Host, so each is
+	// narrowed at the point of use rather than declared as a record up front —
+	// a `catch` that answers `{ error }` and a success that answers `{ value }`
+	// are different shapes and only the reader knows which it holds.
 	if (!response.ok) {
-		const detail = await response.json().catch(() => ({ error: `HTTP ${String(response.status)}` }));
+		const detail = await response.json().catch(() => ({ error: `HTTP ${String(response.status)}` })) as Record<string, unknown>;
 		const reason = `${String(detail.errorName ?? "")} ${String(detail.error ?? "")}`.trim();
 		throw new QoderSettingsWriteError(field, `Host save refused: ${reason === "" ? String(detail.error) : reason}`);
 	}
-	const detail = await response.json().catch(() => void 0);
+	const detail = await response.json().catch((): undefined => void 0) as Record<string, unknown> | undefined;
 	if (detail !== void 0 && detail.ok === false) {
 		const reason = `${String(detail.errorName ?? "")} ${String(detail.error ?? "")}`.trim();
 		throw new QoderSettingsWriteError(field, `Host read-back mismatch: ${reason}`);
@@ -74,10 +96,9 @@ async function saveFieldViaHost(field, value) {
 	return detail?.value;
 }
 /** Read one field back from the scope snapshot, tolerating an absent namespace. */
-function fieldSnapshot(scope, field) {
+function fieldSnapshot(scope: SettingsScope, field: string): unknown {
 	try {
-		const value = scope.getSnapshot().value?.[field];
-		return value === void 0 ? null : value;
+		return scope.getSnapshot().value?.[field] ?? null;
 	} catch {
 		return null;
 	}
@@ -98,9 +119,9 @@ function fieldSnapshot(scope, field) {
  * @returns the authoritative value the write settled on (from the
  *   endpoint) or `null` when only the scope delivered it.
  */
-export async function writeSettingsField(scope, field, value) {
-	let hostError;
-	let authoritative = null;
+export async function writeSettingsField(scope: SettingsScope, field: string, value: unknown): Promise<unknown> {
+	let hostError: unknown;
+	let authoritative: unknown = null;
 	try {
 		authoritative = await saveFieldViaHost(field, value);
 		try {
@@ -119,7 +140,7 @@ export async function writeSettingsField(scope, field, value) {
 	// read-back confirmation below can compare against it too.
 	const nextValue =
 		field === "enabledModelIds"
-			? { ...fieldSnapshot(scope, field), ...value }
+			? { ...(fieldSnapshot(scope, field) as Record<string, unknown> | null), ...(value as Record<string, unknown>) }
 			: value;
 	try {
 		// The scope stores the value verbatim (no server-side merge on
@@ -143,7 +164,7 @@ export async function writeSettingsField(scope, field, value) {
 				// mirror merge may legitimately keep sibling regions the
 				// card did not edit, so the check is "all posted regions
 				// equal", not "whole object equal".
-				? Object.keys(nextValue).every((regionId) => JSON.stringify(readBack?.[regionId]) === JSON.stringify(nextValue[regionId]))
+				? Object.keys(nextValue as Record<string, unknown>).every((regionId) => JSON.stringify((readBack as Record<string, unknown> | null)?.[regionId]) === JSON.stringify((nextValue as Record<string, unknown>)[regionId]))
 				: JSON.stringify(readBack) === JSON.stringify(nextValue);
 		if (matches) return authoritative;
 	}

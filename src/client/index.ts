@@ -1,6 +1,34 @@
 import { installStyles } from "./styles.ts"
 import { zh, en } from "./copy.ts"
 import { QoderPluginCard } from "./card.ts"
+import type { SettingsScope } from "./settings-write.ts"
+
+/**
+ * The browser plugin's Cordis context, from the members this file touches.
+ *
+ * Declared structurally for the same reason `HostContext` is (`domain.ts`):
+ * Cordis is a peer the checkout has no types for, and a hand-written imitation
+ * of its real `Context` would be worse than `unknown` because it could not
+ * admit what it does not know. Everything below is either present in the
+ * `inject` list above or probed with `ctx.get`, so nothing here is speculative.
+ *
+ * `get` answers `unknown` on purpose: it is the soft service locator this file
+ * uses to span the 0.1.6/0.1.7 settings split, and each result is narrowed at
+ * the point of use rather than trusted by name.
+ */
+interface ClientContext {
+	effect(callback: () => unknown, name?: string): unknown
+	locale: {
+		register(namespace: string, copy: { zh: unknown; en: unknown }): unknown
+		bind(namespace: string): (key: string) => string
+	}
+	slots: {
+		inject(slotName: string, callback: () => unknown): unknown
+		register(slot: Record<string, unknown>, card: unknown): unknown
+	}
+	get(name: string): any
+}
+
 /** Stable browser-plugin name. */
 const name = "dsh-connect-qoder-client";
 /**
@@ -28,7 +56,7 @@ const inject = ["slots", "locale"];
  * rendered, because the card list is built from the Host's installed
  * sections.
  */
-function apply(ctx) {
+function apply(ctx: ClientContext) {
 	try {
 		installStyles();
 		const namespace = "settings.qoder";
@@ -45,20 +73,20 @@ function apply(ctx) {
 	 * mirrors the legacy `settingsScope.bind` shape (`.set` / `.getSnapshot`),
 	 * so the card body below is unchanged.
 	 */
-	const softGet = (name) => ctx.get(name);
-	let settingsScope;
+	const softGet = (name: string): any => ctx.get(name);
+	let settingsScope: SettingsScope | undefined;
 	const forms = softGet("configForms");
 	const legacy = softGet("settingsScope");
 	if (forms !== void 0) {
 		let ns = "dsh-connect-qoder";
 		try {
 			const served = (forms.describe().getSnapshot().view?.namespaces ?? [])
-				.find((entry) => entry.ns === "dsh-connect-qoder" || /qoder/i.test(entry.ns));
+				.find((entry: { ns: string }) => entry.ns === "dsh-connect-qoder" || /qoder/i.test(entry.ns));
 			if (served !== void 0) ns = served.ns;
 		} catch {}
-		settingsScope = forms.get(ns);
+		settingsScope = forms.get(ns) as SettingsScope;
 	} else if (legacy !== void 0) {
-		settingsScope = legacy.bind({ namespace: "dsh-connect-qoder" });
+		settingsScope = legacy.bind({ namespace: "dsh-connect-qoder" }) as SettingsScope;
 	}
 	/**
 	 * FIX 0.1.7: the plugin-manager detail page renders a bundle's config
@@ -75,7 +103,7 @@ function apply(ctx) {
 	 * read-only card when no settings surface is served, instead of
 	 * throwing into the loader.
 	 */
-	const registerCard = (slotName, key) => {
+	const registerCard = (slotName: string, key: string) => {
 		try {
 			ctx.slots.inject(slotName, () => ctx.slots.register({
 				name: slotName,
