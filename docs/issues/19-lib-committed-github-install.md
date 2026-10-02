@@ -78,3 +78,17 @@
 上游 `hdhgsysh/dsh-connect-qoder` 是「`lib/*.js` 即源码、直接提交」；#17 之后本 fork
 翻转为「`src/` 为唯一真相、`lib/` 为纯产物」——本项只回退其中"产物出库"的一半，
 **源码真相源仍是 `src/`**（构建脚本、REQUIRED 闸门、verify:* 行为比对全不动）。
+
+## 发布记录
+
+**0.4.4（2026-10-03，tag `v0.4.4` @ `2437c13`）是 `lib/` 入库后的第一个发布版本**：
+
+- npm 上 `@eghrhegpe/dsh-connect-qoder@0.4.4` 已发；版本提交的 CI run `37055921577` 全绿
+  （含新鲜度门禁）。
+- `RELEASING.md` §5.5 内容核验全过：已发 tarball 与 tag 提交本地构建产物 **8/8 文件 SHA256 一致**
+  （`lib/index.js`、`lib/client.js`、`package.json`、`CHANGELOG.md`、`README.md`、
+  `cordis.patch.yml`、`locale/en.json`、`locale/zh.json`）；包内 `version == 0.4.4`、
+  CHANGELOG 含 `## 0.4.4 — 2026-10-03`（无"未发布"标记）、含本版新增的 locale 本地化介绍
+  （「插件页介绍随语言切换」那条的用户可见物证）。
+- 该版同时是 `github:` 源零配置安装的首个可用版本：远端 main 自此携带 `lib/`，
+  pnpm git-dep 判定 `packageShouldBeBuilt = false`。
