@@ -47,6 +47,113 @@ import { tmpdir, homedir } from 'node:os'
 import { join, basename } from 'node:path'
 import { createDecipheriv } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
+import type { Region } from './domain.ts'
+
+/**
+ * One entry of the OSCrypt key cache: the key plus the identity of the
+ * `Local State` file it was unwrapped from.
+ *
+ * `identity` is `undefined` for an entry written before that rule existed — a
+ * hot reload of an older module can leave one in the map — and that is exactly
+ * why `cachedKeyFor` refuses it rather than treating "both undefined" as a
+ * match. The pair is declared here rather than inline so the two readers
+ * (`cachedKeyFor`, the exit-time wipe) cannot drift apart.
+ */
+export interface CachedOscryptKey {
+  key?: Buffer
+  identity?: string
+}
+
+/** A recorded unwrap failure, and the `Local State` version it describes. */
+export interface UnwrapFailure {
+  reason: string
+  at: number
+  identity?: string
+}
+
+/**
+ * Where a diagnostic message goes: the plugin entry's logger, once it has
+ * installed one. Everything this module reports is one string, so a sink that
+ * takes two arguments is accepted but never given a second one.
+ */
+export type DiagnosticSink = (message: string) => void
+
+/** The knobs both unwrap entry points take. `force` is the only one today. */
+export interface UnwrapOptions {
+  /**
+   * Ignore the failure window and unwrap again. Reserved for the explicit user
+   * action ("重读登录"), where suppressing the attempt would make the button a
+   * no-op; every automatic caller leaves it unset.
+   */
+  force?: boolean
+}
+
+/**
+ * What one child-process run answers with.
+ *
+ * The sync runner returns `undefined`; the async one returns a promise of it.
+ * `runUnwrap` distinguishes them at runtime with a `typeof … .then` probe, so
+ * the union has to admit both rather than being narrowed to the promise.
+ */
+export type UnwrapSpawn = (
+  powershell: string,
+  args: string[],
+  options: Parameters<typeof execFileSync>[2],
+) => Promise<unknown> | unknown
+
+/** The outcome of reading the hand-off file: a key, or why there is none. */
+interface UnwrappedKeyRead {
+  key?: Buffer
+  failure?: string
+}
+
+/**
+ * One credential as read from a Qoder app, or minted from an environment PAT.
+ *
+ * This is the record `index.ts` caches per region and the shim is handed. Every
+ * field is PRESENT rather than optional — the readers below fill in `''`/`0`
+ * for what a given layout does not publish, because the account panel renders
+ * these directly and an `undefined` would surface as "undefined" on screen.
+ *
+ * `source` distinguishes the two clocks {@link isCredentialUsable} treats
+ * differently: an app credential carries `expired` computed at read time, while
+ * an `env-pat` is exchanged upstream and expires on `expiresAt` instead.
+ */
+export interface LoadedCredential {
+  region: string
+  appName: string
+  userID: string
+  name: string
+  email: string
+  token: string
+  refreshToken: string
+  refreshTokenExpiresAt: number
+  expiresAt: number
+  expired: boolean
+  userType: string
+  userTag: string
+  machineID: string
+  source: 'app' | 'env-pat'
+  /** The plan summary row, decoded but unvalidated — display only. */
+  plan: unknown
+  /** The credit/quota snapshot row, decoded but unvalidated — display only. */
+  usage: unknown
+}
+
+/**
+ * How a key is obtained for one app directory.
+ *
+ * May answer with a key, `undefined`, or a PROMISE of either — `loadCredential`
+ * passes the synchronous readers and `loadCredentialAsync` the asynchronous
+ * ones, and `loadCredentialWith` probes for the thenable at runtime rather than
+ * being told which mode it is in. That probe is what lets the two public
+ * entries keep one copy of the layout order instead of two that must be kept in
+ * step by hand.
+ */
+export type KeyProvider = (appDir: string) => Buffer | undefined | PromiseLike<Buffer | undefined>
+
+/** Either a credential or a promise of one, decided by the {@link KeyProvider}. */
+type MaybeCredential = LoadedCredential | undefined | PromiseLike<LoadedCredential | undefined>
 
 /** SQLite key holding the sign-in identity, including its access token. */
 const USER_INFO_KEY = 'secret://aicoding.auth.userInfo'
@@ -72,8 +179,13 @@ const OSCRYPT_MARKER = '.dsh-oscrypt'
  * `appDirs` is the ordered list of Electron user-data directory names that may
  * hold this region's sign-in; the first one that yields a readable credential
  * wins. `appNames` is the matching list of `%APPDATA%` roots.
+ *
+ * Typed as `Region[]` (from `domain.ts`) rather than left to infer: these two
+ * entries ARE the only instances of that interface in the whole plugin, so
+ * naming the type here is what makes a missing or misspelled URL family a
+ * compile error at the definition instead of `undefined` at the request.
  */
-export const REGIONS = [
+export const REGIONS: Region[] = [
   {
     id: 'qoder-cn',
     mode: 'cn',
@@ -236,7 +348,7 @@ try {
  * rewrite of identical size is the one case this cannot see, and it is also the
  * one case where the old key is still correct.
  */
-const keyCache = new Map()
+const keyCache = new Map<string, CachedOscryptKey>()
 
 /**
  * The reason the most recent unwrap of one app directory failed, and when.
@@ -259,7 +371,7 @@ const keyCache = new Map()
  * one attempt per window. A user who fixes the machine and immediately retries
  * waits at most {@link UNWRAP_FAILURE_TTL_MS}.
  */
-const lastUnwrapFailure = new Map()
+const lastUnwrapFailure = new Map<string, UnwrapFailure>()
 
 /**
  * How long a failed unwrap is remembered before another is attempted.
@@ -284,7 +396,7 @@ export const UNWRAP_FAILURE_TTL_MS = 60 * 1000
  * @param now - the current instant, injectable for tests.
  * @returns the recorded reason, or `undefined`.
  */
-export function describeUnwrapFailure(appDir, now = Date.now()) {
+export function describeUnwrapFailure(appDir: string, now = Date.now()): string | undefined {
   const entry = lastUnwrapFailure.get(appDir)
   if (entry === undefined) return undefined
   if (now - entry.at >= UNWRAP_FAILURE_TTL_MS) return undefined
@@ -299,9 +411,9 @@ export function describeUnwrapFailure(appDir, now = Date.now()) {
  * the plugin used to have; the entry installs the host logger here so the cause
  * lands in the same stream as every other plugin message.
  */
-let diagnosticSink
-export function setCredentialDiagnosticSink(sink) {
-  diagnosticSink = typeof sink === 'function' ? sink : undefined
+let diagnosticSink: DiagnosticSink | undefined
+export function setCredentialDiagnosticSink(sink: unknown): void {
+  diagnosticSink = typeof sink === 'function' ? (sink as DiagnosticSink) : undefined
 }
 
 /**
@@ -312,7 +424,7 @@ export function setCredentialDiagnosticSink(sink) {
  * thread without a busy loop; the wait is in microseconds and the timeout is in
  * milliseconds, so the value itself is irrelevant.
  */
-function sleepSync(ms) {
+function sleepSync(ms: number): void {
   try {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
   } catch {
@@ -331,8 +443,8 @@ function sleepSync(ms) {
  * and when nobody is listening, it falls back to a process warning so the
  * condition is still observable.
  */
-function reportCleanupFailure(message) {
-  const where = diagnosticSink ?? ((text) => process.emitWarning(text))
+function reportCleanupFailure(message: string): void {
+  const where: DiagnosticSink = diagnosticSink ?? ((text: string) => process.emitWarning(text))
   where(`dsh-connect-qoder: ${message}`)
 }
 
@@ -357,7 +469,7 @@ process.on('exit', () => {
  * @param statePath - absolute path to the app's `Local State`.
  * @returns `"<mtimeMs>:<size>"`, or `undefined` when the file cannot be stat'd.
  */
-function localStateIdentity(statePath) {
+function localStateIdentity(statePath: string): string | undefined {
   try {
     const stats = statSync(statePath)
     return `${stats.mtimeMs}:${stats.size}`
@@ -388,16 +500,20 @@ function localStateIdentity(statePath) {
  * @param identity - the current file identity, or `undefined` when absent.
  * @returns the reusable key, or `undefined` when a fresh unwrap is required.
  */
-export function cachedKeyFor(cached, identity) {
+export function cachedKeyFor(cached: unknown, identity: string | undefined): Buffer | undefined {
   if (cached === undefined || cached === null) return undefined
-  if (cached.key === undefined || cached.key === null) return undefined
+  // Narrowed rather than assumed: the caller passes whatever the cache holds,
+  // and on a hot reload that can be the bare Buffer an older module cached
+  // before this shape existed — the doc comment below relies on that.
+  const entry = cached as CachedOscryptKey
+  if (entry.key === undefined || entry.key === null) return undefined
   // Both sides must be PRESENT and equal. Comparing `undefined === undefined`
   // would otherwise pass for an entry with no recorded identity against a
   // missing file, handing out a key whose provenance is unknown — the test
   // `a legacy entry is never trusted` pins exactly that.
-  if (cached.identity === undefined || identity === undefined) return undefined
-  if (cached.identity !== identity) return undefined
-  return cached.key
+  if (entry.identity === undefined || identity === undefined) return undefined
+  if (entry.identity !== identity) return undefined
+  return entry.key
 }
 
 /**
@@ -417,7 +533,11 @@ export function cachedKeyFor(cached, identity) {
  * @param now - the current instant, injectable for tests.
  * @returns true when the attempt should be skipped.
  */
-export function failureStillBlocks(entry, identity, now = Date.now()) {
+export function failureStillBlocks(
+  entry: UnwrapFailure | undefined | null,
+  identity: string | undefined,
+  now = Date.now(),
+): boolean {
   if (entry === undefined || entry === null) return false
   if (now - entry.at >= UNWRAP_FAILURE_TTL_MS) return false
   // A rewritten `Local State` ends the window early: the failure described a
@@ -450,8 +570,11 @@ export function failureStillBlocks(entry, identity, now = Date.now()) {
  *   would make the button a no-op; every automatic caller leaves it unset.
  * @returns the 32-byte AES key, or `undefined` when it cannot be obtained.
  */
-export function oscryptKeyFor(appDir, options = {}) {
-  return runUnwrap(appDir, options, spawnUnwrapSync)
+export function oscryptKeyFor(appDir: string, options: UnwrapOptions = {}): Buffer | undefined {
+  // The sync runner never returns a thenable, so this is a key or nothing. The
+  // cast states that instead of widening the caller's return type to a promise
+  // it can never receive.
+  return runUnwrap(appDir, options, spawnUnwrapSync) as Buffer | undefined
 }
 
 /**
@@ -469,8 +592,13 @@ export function oscryptKeyFor(appDir, options = {}) {
  * @returns a promise of the 32-byte AES key, or `undefined` when it cannot be
  *   obtained.
  */
-export async function oscryptKeyForAsync(appDir, options = {}) {
-  return runUnwrap(appDir, options, spawnUnwrapAsync)
+export async function oscryptKeyForAsync(
+  appDir: string,
+  options: UnwrapOptions = {},
+): Promise<Buffer | undefined> {
+  // Async runner, so the thenable branch is the one that runs; the cast keeps
+  // the union out of every call site.
+  return runUnwrap(appDir, options, spawnUnwrapAsync) as Promise<Buffer | undefined>
 }
 
 /**
@@ -486,7 +614,11 @@ export async function oscryptKeyForAsync(appDir, options = {}) {
  * @param spawn - the child-process runner.
  * @returns the key, or a promise of it, depending on `spawn`.
  */
-function runUnwrap(appDir, options, spawn) {
+function runUnwrap(
+  appDir: string,
+  options: UnwrapOptions,
+  spawn: UnwrapSpawn,
+): Buffer | undefined | PromiseLike<Buffer | undefined> {
   const statePath = join(appDir, 'Local State')
   // Read before the cache lookup, not after: a stat is a few microseconds and
   // it is the only thing standing between a reinstall and a permanent
@@ -507,9 +639,12 @@ function runUnwrap(appDir, options, spawn) {
     // normal outcome of probing the several names a region knows.
     return recordUnwrapFailure(appDir, 'no Local State file', identity)
   }
-  let dir
-  let key
-  let lastFailure
+  // `dir` and `lastFailure` are assigned inside `settle`, which runs AFTER the
+  // child exits on the async path — so they cannot be `const`, and both need
+  // their types stated for the same reason: no initializer to infer from.
+  let dir: string | undefined
+  let key: Buffer | undefined
+  let lastFailure: string | undefined
   /**
    * Zero the hand-off file and remove the directory, then hand back the key.
    *
@@ -517,7 +652,7 @@ function runUnwrap(appDir, options, spawn) {
    * async path discovers the key AFTER the child exits: a closure would capture
    * `undefined` and the cleanup would return the wrong answer.
    */
-  const settle = (found) => {
+  const settle = (found: Buffer | undefined): Buffer | undefined => {
     key = found
     if (dir !== undefined) {
       // Zero the key bytes before unlink: removing the file does not clear
@@ -556,12 +691,19 @@ function runUnwrap(appDir, options, spawn) {
       timeout: 30000,
       env: unwrapEnv(appDir, outFile),
     })
-    if (spawned !== undefined && typeof spawned?.then === 'function') {
+    // The sync runner answers `undefined` and the async one a promise, so the
+    // branch is decided on the VALUE. `PromiseLike<unknown>` rather than a bare
+    // `unknown` because `.then` is called on it two lines down — the probe is
+    // what makes the cast safe, not a wish.
+    if (
+      spawned !== undefined &&
+      typeof (spawned as PromiseLike<unknown>).then === 'function'
+    ) {
       // The async path. The cleanup cannot run until the child is done, or the
       // temp directory would be removed underneath a live process — so it runs
       // in the promise chain rather than in a `finally`, and the whole tail of
       // the synchronous function is mirrored by the two handlers below.
-      return spawned.then(
+      return (spawned as PromiseLike<unknown>).then(
         () => {
           const read = readUnwrappedKey(outFile)
           if (read.failure !== undefined) lastFailure = read.failure
@@ -602,7 +744,7 @@ function runUnwrap(appDir, options, spawn) {
  *   than one value because a wrong-size key is a DIFFERENT failure from an
  *   empty file, and both are reported.
  */
-function readUnwrappedKey(outFile) {
+function readUnwrappedKey(outFile: string): UnwrappedKeyRead {
   const text = readFileSync(outFile, 'utf8').trim()
   if (text.length === 0) return { failure: 'the unwrap produced an empty key file' }
   const candidate = Buffer.from(text, 'base64')
@@ -620,17 +762,26 @@ function readUnwrappedKey(outFile) {
  * probing several app names and stays out of the log, everything else is a real
  * problem the user has to see.
  */
-function recordUnwrapFailure(appDir, reason, identity) {
-  lastUnwrapFailure.set(appDir, { reason, at: Date.now(), identity })
+function recordUnwrapFailure(
+  appDir: string,
+  reason: string | undefined,
+  identity: string | undefined,
+): undefined {
+  lastUnwrapFailure.set(appDir, { reason: String(reason), at: Date.now(), identity })
   if (reason !== 'no Local State file') {
-    const where = diagnosticSink ?? ((message) => process.emitWarning(message))
+    const where: DiagnosticSink = diagnosticSink ?? ((message: string) => process.emitWarning(message))
     where(`dsh-connect-qoder: could not unwrap the OSCrypt key for ${appDir}: ${reason}`)
   }
   return undefined
 }
 
 /** The one place a fresh key replaces a remembered failure, and vice versa. */
-function finishUnwrap(appDir, key, lastFailure, identity) {
+function finishUnwrap(
+  appDir: string,
+  key: Buffer | undefined,
+  lastFailure: string | undefined,
+  identity: string | undefined,
+): Buffer | undefined {
   if (key === undefined) return recordUnwrapFailure(appDir, lastFailure, identity)
   lastUnwrapFailure.delete(appDir)
   keyCache.set(appDir, { key, identity })
@@ -638,20 +789,29 @@ function finishUnwrap(appDir, key, lastFailure, identity) {
 }
 
 /** Name the cause of a failed child, keeping enough to diagnose it. */
-function describeUnwrapError(error) {
-  return error?.status !== undefined
-    ? `PowerShell exited ${error.status}${error.signal ? ` (${error.signal})` : ''}`
-    : (error?.message ?? String(error))
+function describeUnwrapError(error: unknown): string {
+  const failure = error as { status?: unknown; signal?: unknown; message?: unknown } | undefined
+  return failure?.status !== undefined
+    ? `PowerShell exited ${String(failure.status)}${failure.signal ? ` (${String(failure.signal)})` : ''}`
+    : String(failure?.message ?? error)
 }
 
 /** Run the DPAPI child, blocking. */
-function spawnUnwrapSync(powershell, args, options) {
+function spawnUnwrapSync(
+  powershell: string,
+  args: string[],
+  options: Parameters<typeof execFileSync>[2],
+): undefined {
   execFileSync(powershell, args, options)
   return undefined
 }
 
 /** Run the DPAPI child without blocking the event loop. */
-function spawnUnwrapAsync(powershell, args, options) {
+function spawnUnwrapAsync(
+  powershell: string,
+  args: string[],
+  options: Parameters<typeof execFileSync>[2],
+): Promise<undefined> {
   return new Promise((resolve, reject) => {
     execFile(powershell, args, options, (error) => {
       if (error) reject(error)
@@ -708,7 +868,7 @@ const PS_ENV_ALLOWLIST = [
   'LOGONSERVER',
 ]
 
-function unwrapEnv(appDir, outFile) {
+function unwrapEnv(appDir: string, outFile: string): Record<string, string | undefined> {
   const allowed = new Set(PS_ENV_ALLOWLIST.map((name) => name.toLowerCase()))
   const env: Record<string, string | undefined> = {}
   for (const [name, value] of Object.entries(process.env)) {
@@ -745,8 +905,8 @@ function unwrapEnv(appDir, outFile) {
  * @returns `true` when the file is gone or was fully zeroed, `false` when it
  *   still exists with its bytes intact, or is not a plain file to begin with.
  */
-function zeroOutFile(file, attempts = 4) {
-  let stat
+function zeroOutFile(file: string, attempts = 4): boolean {
+  let stat: ReturnType<typeof lstatSync>
   try {
     stat = lstatSync(file)
   } catch {
@@ -766,10 +926,10 @@ function zeroOutFile(file, attempts = 4) {
   }
   if (stat.size <= 0) return true
   const size = stat.size
-  let lastError
+  let lastError: unknown
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) sleepSync(ZERO_RETRY_BACKOFF_MS * attempt)
-    let fd
+    let fd: number
     try {
       fd = openSync(file, 'r+')
     } catch (error: any) {
@@ -818,7 +978,7 @@ function zeroOutFile(file, attempts = 4) {
   // Say so, loudly, unless the truncate above won the race and cleared it.
   if (existsSync(file) && currentSize(file) > 0) {
     reportCleanupFailure(
-      `could not zero ${file} after ${attempts} attempts (${lastError?.message ?? 'unknown'})`,
+      `could not zero ${file} after ${attempts} attempts (${(lastError as { message?: string } | undefined)?.message ?? 'unknown'})`,
     )
     return false
   }
@@ -826,7 +986,7 @@ function zeroOutFile(file, attempts = 4) {
 }
 
 /** The current byte length of a file, or 0 when it cannot be stat'd (gone). */
-function currentSize(file) {
+function currentSize(file: string): number {
   try {
     return lstatSync(file).size
   } catch {
@@ -841,7 +1001,7 @@ function currentSize(file) {
  * @param key - the 32-byte AES key from {@link oscryptKeyFor}.
  * @returns the plaintext, or `undefined` when authentication fails.
  */
-export function decryptOscrypt(blob, key) {
+export function decryptOscrypt(blob: Buffer, key: Buffer): string | undefined {
   if (blob.length < 3 + 12 + 16) return undefined
   if (blob.subarray(0, 3).toString('latin1') !== 'v10') return undefined
   const body = blob.subarray(3)
@@ -866,7 +1026,7 @@ export function decryptOscrypt(blob, key) {
  * @returns the raw bytes for a Buffer row, a string for a plain row, or
  *   `undefined` when the key is absent.
  */
-function readItem(dbPath, key) {
+function readItem(dbPath: string, key: string): Buffer | string | undefined {
   const db = new DatabaseSync(dbPath, { readOnly: true })
   try {
     const row = db.prepare('SELECT value FROM ItemTable WHERE key = ?').get(key)
@@ -887,7 +1047,7 @@ function readItem(dbPath, key) {
 }
 
 /** Decode one JSON secret row, or `undefined` when absent/undecryptable. */
-function readJsonSecret(dbPath, key, oscryptKey) {
+function readJsonSecret(dbPath: string, key: string, oscryptKey: Buffer): unknown {
   const raw = readItem(dbPath, key)
   if (raw === undefined || typeof raw === 'string') return undefined
   const plain = decryptOscrypt(raw, oscryptKey)
@@ -900,7 +1060,7 @@ function readJsonSecret(dbPath, key, oscryptKey) {
 }
 
 /** Candidate `state.vscdb` paths for one app's Electron user-data directory. */
-function stateDbCandidates(appDir) {
+function stateDbCandidates(appDir: string): string[] {
   return [
     join(appDir, 'User', 'globalStorage', 'state.vscdb'),
     join(appDir, 'User', 'globalStorage', 'state.vscdb.backup'),
@@ -916,7 +1076,7 @@ function stateDbCandidates(appDir) {
  * session. When neither exists a stable value is derived from the app directory
  * so repeated runs still agree with each other.
  */
-function machineIdFor(appDir, fallback) {
+function machineIdFor(appDir: string, fallback: string): string {
   for (const name of ['auth.machine-id', 'machineid', 'machineId']) {
     const p = join(appDir, name)
     if (!existsSync(p)) continue
@@ -945,33 +1105,43 @@ function machineIdFor(appDir, fallback) {
  * @returns a credential record, or `undefined` when the file is absent or
  *   cannot be decoded.
  */
-function loadNewCredential(region, appDir, oscryptKey) {
+function loadNewCredential(region: Region, appDir: string, oscryptKey: Buffer): LoadedCredential | undefined {
   const file = join(appDir, 'auth.v1.dat')
   if (!existsSync(file)) return undefined
   const plain = decryptOscrypt(readFileSync(file), oscryptKey)
   if (plain === undefined) return undefined
-  let session
+  // `JSON.parse` answers `any`, so this is the one place the shape of the
+  // decrypted session is guaranteed rather than checked — hence the narrowing
+  // immediately below, before any field is read.
+  let session: unknown
   try {
     session = JSON.parse(plain)
   } catch {
     return undefined
   }
   if (session === null || typeof session !== 'object') return undefined
-  if (typeof session.token !== 'string' || session.token.length === 0) return undefined
-  const user = session.user !== null && typeof session.user === 'object' ? session.user : {}
+  const record = session as Record<string, unknown>
+  if (typeof record.token !== 'string' || record.token.length === 0) return undefined
+  const user =
+    record.user !== null && typeof record.user === 'object'
+      ? (record.user as Record<string, unknown>)
+      : {}
   const userID = typeof user.id === 'string' ? user.id : ''
   if (userID.length === 0) return undefined
-  // The new file carries ISO timestamps rather than epoch millis.
-  const expiresAt = Date.parse(session.expiresAt)
-  const refreshExpiresAt = Date.parse(session.refreshTokenExpiresAt)
+  // The new file carries ISO timestamps rather than epoch millis. `Date.parse`
+  // on a non-string answers NaN rather than throwing, and NaN is what the
+  // `Number.isFinite` guards below exist to catch — so the cast is confined to
+  // this line instead of being spread over four.
+  const expiresAt = Date.parse(String(record.expiresAt))
+  const refreshExpiresAt = Date.parse(String(record.refreshTokenExpiresAt))
   return {
     region: region.id,
     appName: basename(appDir),
     userID,
     name: typeof user.name === 'string' ? user.name : '',
     email: typeof user.email === 'string' ? user.email : '',
-    token: session.token,
-    refreshToken: typeof session.refreshToken === 'string' ? session.refreshToken : '',
+    token: record.token,
+    refreshToken: typeof record.refreshToken === 'string' ? record.refreshToken : '',
     refreshTokenExpiresAt: Number.isFinite(refreshExpiresAt) ? refreshExpiresAt : 0,
     expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
     expired: Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt <= Date.now() : false,
@@ -1005,7 +1175,7 @@ function loadNewCredential(region, appDir, oscryptKey) {
  * @returns the 32-byte AES key if one is already cached and current, else
  *   `undefined`.
  */
-export function cachedOscryptKeyFor(appDir) {
+export function cachedOscryptKeyFor(appDir: string): Buffer | undefined {
   return cachedKeyFor(keyCache.get(appDir), localStateIdentity(join(appDir, 'Local State')))
 }
 
@@ -1033,17 +1203,21 @@ export interface LoadCredentialOptions {
   force?: boolean
 }
 
-export function loadCredential(region: any, appDataRoot?: any, options: LoadCredentialOptions = {}) {
+export function loadCredential(
+  region: Region,
+  appDataRoot?: string,
+  options: LoadCredentialOptions = {},
+): LoadedCredential | undefined {
   // `cachedOnly` is how the account route reads: it answers from the key cache
   // and never spawns the unwrap. See `cachedOscryptKeyFor` for why that matters.
   // `force` is the opposite end, for the explicit user-driven re-read.
-  const keyFor =
+  const keyFor: KeyProvider =
     options.cachedOnly === true
       ? cachedOscryptKeyFor
       : options.force === true
-        ? (appDir) => oscryptKeyFor(appDir, { force: true })
+        ? (appDir: string) => oscryptKeyFor(appDir, { force: true })
         : oscryptKeyFor
-  return loadCredentialWith(region, appDataRoot, keyFor)
+  return loadCredentialWith(region, appDataRoot, keyFor) as LoadedCredential | undefined
 }
 
 /**
@@ -1057,14 +1231,18 @@ export function loadCredential(region: any, appDataRoot?: any, options: LoadCred
  *
  * @returns a promise of a credential record, or `undefined`.
  */
-export async function loadCredentialAsync(region: any, appDataRoot?: any, options: LoadCredentialOptions = {}) {
-  const keyFor =
+export async function loadCredentialAsync(
+  region: Region,
+  appDataRoot?: string,
+  options: LoadCredentialOptions = {},
+): Promise<LoadedCredential | undefined> {
+  const keyFor: KeyProvider =
     options.cachedOnly === true
       ? cachedOscryptKeyFor
       : options.force === true
-        ? (appDir) => oscryptKeyForAsync(appDir, { force: true })
+        ? (appDir: string) => oscryptKeyForAsync(appDir, { force: true })
         : oscryptKeyForAsync
-  return loadCredentialWith(region, appDataRoot, keyFor)
+  return loadCredentialWith(region, appDataRoot, keyFor) as Promise<LoadedCredential | undefined>
 }
 
 /**
@@ -1080,19 +1258,25 @@ export async function loadCredentialAsync(region: any, appDataRoot?: any, option
  * @returns a credential record or `undefined`, or a promise of one when
  *   `keyFor` is asynchronous.
  */
-function loadCredentialWith(region, appDataRoot, keyFor) {
+function loadCredentialWith(
+  region: Region,
+  appDataRoot: string | undefined,
+  keyFor: KeyProvider,
+): MaybeCredential {
   // 0.3.x: `com.<vendor>.app.stable/auth.v1.dat`.
   for (const appName of region.newAppNames ?? []) {
-    const appDir = join(appDataRoot, appName)
+    const appDir = join(appDataRoot ?? '', appName)
     if (!existsSync(appDir)) continue
     const pending = keyFor(appDir)
-    if (pending !== undefined && typeof pending?.then === 'function') {
+    if (pending !== undefined && typeof (pending as PromiseLike<Buffer | undefined>).then === 'function') {
       // The first candidate that exists may still be the one that blocks, so the
       // loop has to become a chain from here on. The remaining layouts are
       // handled by the same function, which is why the order is expressed once.
-      return pending.then((key) => finishCandidate(region, appDataRoot, keyFor, appDir, key))
+      return (pending as PromiseLike<Buffer | undefined>).then((key) =>
+        finishCandidate(region, appDataRoot, keyFor, appDir, key),
+      )
     }
-    const credential = finishCandidate(region, appDataRoot, keyFor, appDir, pending)
+    const credential = finishCandidate(region, appDataRoot, keyFor, appDir, pending as Buffer | undefined)
     if (credential !== undefined) return credential
   }
   return credentialFromLegacyLayouts(region, appDataRoot, keyFor)
@@ -1103,7 +1287,13 @@ function loadCredentialWith(region, appDataRoot, keyFor) {
  *
  * @returns a credential record, or a promise of one when the key was a promise.
  */
-function finishCandidate(region, appDataRoot, keyFor, appDir, key) {
+function finishCandidate(
+  region: Region,
+  appDataRoot: string | undefined,
+  keyFor: KeyProvider,
+  appDir: string,
+  key: Buffer | undefined,
+): MaybeCredential {
   if (key === undefined) return credentialFromLegacyLayouts(region, appDataRoot, keyFor)
   const credential = safeRead(() => loadNewCredential(region, appDir, key))
   if (credential !== undefined) return credential
@@ -1113,15 +1303,21 @@ function finishCandidate(region, appDataRoot, keyFor, appDir, key) {
 /**
  * The legacy `<AppName>/User/globalStorage/state.vscdb` layouts.
  */
-function credentialFromLegacyLayouts(region, appDataRoot, keyFor) {
+function credentialFromLegacyLayouts(
+  region: Region,
+  appDataRoot: string | undefined,
+  keyFor: KeyProvider,
+): MaybeCredential {
   for (const appName of region.appNames) {
-    const appDir = join(appDataRoot, appName)
+    const appDir = join(appDataRoot ?? '', appName)
     if (!existsSync(appDir)) continue
     const pending = keyFor(appDir)
-    if (pending !== undefined && typeof pending?.then === 'function') {
-      return pending.then((key) => readLegacyCredential(region, appDir, appName, key))
+    if (pending !== undefined && typeof (pending as PromiseLike<Buffer | undefined>).then === 'function') {
+      return (pending as PromiseLike<Buffer | undefined>).then((key) =>
+        readLegacyCredential(region, appDir, appName, key),
+      )
     }
-    const credential = readLegacyCredential(region, appDir, appName, pending)
+    const credential = readLegacyCredential(region, appDir, appName, pending as Buffer | undefined)
     if (credential !== undefined) return credential
   }
   return undefined
@@ -1130,13 +1326,22 @@ function credentialFromLegacyLayouts(region, appDataRoot, keyFor) {
 /**
  * Read one legacy store, or `undefined` when this app holds nothing usable.
  */
-function readLegacyCredential(region, appDir, appName, oscryptKey) {
+function readLegacyCredential(
+  region: Region,
+  appDir: string,
+  appName: string,
+  oscryptKey: Buffer | undefined,
+): LoadedCredential | undefined {
   if (oscryptKey === undefined) return undefined
   for (const dbPath of stateDbCandidates(appDir)) {
     if (!existsSync(dbPath)) continue
-    let userInfo
+    let userInfo: Record<string, unknown> | undefined
     try {
-      userInfo = readJsonSecret(dbPath, USER_INFO_KEY, oscryptKey)
+      const decoded = readJsonSecret(dbPath, USER_INFO_KEY, oscryptKey)
+      // `readJsonSecret` answers `unknown` because the row is unvalidated JSON.
+      // The field checks below are the validation; they need a record to read.
+      userInfo =
+        decoded !== null && typeof decoded === 'object' ? (decoded as Record<string, unknown>) : undefined
     } catch {
       continue
     }
@@ -1166,7 +1371,7 @@ function readLegacyCredential(region, appDir, appName, oscryptKey) {
 }
 
 /** Run a reader, mapping any failure to `undefined`. */
-function safeRead(fn) {
+function safeRead<T>(fn: () => T): T | undefined {
   try {
     return fn()
   } catch {
@@ -1181,7 +1386,10 @@ function safeRead(fn) {
  * path, so it is honoured as a fallback when no app sign-in is present. The
  * token is exchanged for a job token by {@link module:dsh-connect-qoder/upstream}.
  */
-export function loadEnvCredential(region, env = process.env) {
+export function loadEnvCredential(
+  region: Region,
+  env: NodeJS.ProcessEnv = process.env,
+): LoadedCredential | undefined {
   for (const name of region.patEnvNames) {
     const value = env[name]
     if (typeof value === 'string' && value.trim().length > 0) {
@@ -1225,7 +1433,10 @@ export function loadEnvCredential(region, env = process.env) {
  * @param now - current epoch milliseconds.
  * @returns true when the cached value may be reused.
  */
-export function isCredentialUsable(cached, now = Date.now()) {
+export function isCredentialUsable(
+  cached: LoadedCredential | undefined | null,
+  now = Date.now(),
+): boolean {
   if (cached === undefined || cached === null) return false
   if (cached.source === 'env-pat') return Number(cached.expiresAt) > now
   return cached.expired !== true

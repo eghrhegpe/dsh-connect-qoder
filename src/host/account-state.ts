@@ -43,6 +43,7 @@ import {
   describeUnwrapFailure as readUnwrapFailure,
   appDataRootFor,
 } from './credentials.ts'
+import type { Region } from './domain.ts'
 
 /** The four states {@link readAccountState} can return. */
 export const ACCOUNT_STATES = ['ok', 'expired', 'needs-app', 'signed-out'] as const
@@ -55,18 +56,18 @@ export type AccountState = (typeof ACCOUNT_STATES)[number]
  *
  * `appNames` / `newAppNames` are the two directory spellings it probes; `id`,
  * `displayName`, `manageUrl` and `downloadUrl` are echoed into the card payload
- * verbatim. Declared here rather than reusing `Region` from `domain.ts` because
- * the region table also carries credential-facing fields this module has no
- * business touching.
+ * verbatim.
+ *
+ * It EXTENDS `Region` rather than being an independent narrower shape, which is
+ * what it used to be. The narrowing was the right instinct — this module has no
+ * business reading `baseUrl` or `patEnvNames` — but a standalone interface also
+ * refused to accept an actual region: `loadCredential` now takes a `Region`, and
+ * an `AccountRegion` argument is not one, because it lacks five fields the
+ * callee legitimately needs. Extending keeps the intent (this module still only
+ * reads the four groups below; nothing here can reach the rest by accident)
+ * while making the value a region in fact as well as in spirit.
  */
-export interface AccountRegion {
-  id: string
-  displayName: string
-  manageUrl?: string
-  downloadUrl?: string
-  appNames: string[]
-  newAppNames?: string[]
-}
+export interface AccountRegion extends Region {}
 
 /** Identity for display — never a credential. See the module header. */
 export interface AccountIdentity {

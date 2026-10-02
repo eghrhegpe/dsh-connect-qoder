@@ -290,14 +290,20 @@ test('both paths share one implementation, and differ only in the child spawn', 
     1,
     'there must be exactly one unwrap body, parameterised by the spawner',
   )
+  // The two patterns below deliberately do not pin the parameter lists or the
+  // return annotations: this assertion is about WHICH shared body each entry
+  // delegates to, and pinning the spelling made a pure type annotation
+  // (`options` → `options: UnwrapOptions`, plus a stated return type) look like
+  // the delegation had been removed. The spawner each entry passes — the thing
+  // the test is actually about — is still pinned exactly.
   assert.match(
     source,
-    /export function oscryptKeyFor\(appDir, options = \{\}\) \{\s*return runUnwrap\(appDir, options, spawnUnwrapSync\)/,
+    /export function oscryptKeyFor\([^)]*\)[^{]*\{[\s\S]*?return runUnwrap\(appDir, options, spawnUnwrapSync\)/,
     'the sync entry must delegate to the shared body',
   )
   assert.match(
     source,
-    /export async function oscryptKeyForAsync\(appDir, options = \{\}\) \{\s*return runUnwrap\(appDir, options, spawnUnwrapAsync\)/,
+    /export async function oscryptKeyForAsync\([^)]*\)[^{]*\{[\s\S]*?return runUnwrap\(appDir, options, spawnUnwrapAsync\)/,
     'the async entry must delegate to the SAME body',
   )
   // `execFileSync` must not survive anywhere on the async path.
