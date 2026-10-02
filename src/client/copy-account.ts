@@ -19,10 +19,14 @@ export const zhAccount = {
 	"account.download": "没装 Qoder 客户端？到「下载」区安装 {edition}，装好后登录",
 	"account.downloadLink": "下载 {edition}",
 	"account.error": "读取账号状态失败",
-	"account.offer": "模型",
-	"account.offerTitle": "取消勾选就关闭这个版本：它的模型不会出现在 DSH 的模型下拉框里；登录、用量与模型设置都会保留，重新勾选即恢复。",
+	// Now a VISIBLE label on the switch, not a tooltip. It used to be "模型"
+	// with the whole explanation living in a 57-character `title` that a touch
+	// user or a keyboard focus never saw — and the switch sat inside the region
+	// pill, eight pixels from a tab button that did something else entirely.
+	"account.offer": "启用此版本",
+	"account.offerTitle": "关闭后这个版本的模型不会出现在 DSH 的模型下拉框里；登录、用量与模型设置都会保留，重新开启即恢复。",
 	"account.offerOff": "已关闭：该版本的模型不会出现在 DSH 的模型下拉框里",
-	"account.offerError": "保存「模型」开关失败：{detail}",
+	"account.offerError": "保存「启用此版本」开关失败：{detail}",
 	"account.regionTabs": "版本：点哪个就看哪个版本的账号、用量与模型"
 };
 /** English — account panel copy. */
@@ -46,9 +50,9 @@ export const enAccount = {
 	"account.downloadLink": "Download {edition}",
 	"account.confirmExpired": "Confirmed: sign-in expired — sign in again in the Qoder client, then re-read",
 	"account.error": "Could not read the account states",
-	"account.offer": "Models",
-	"account.offerTitle": "Unchecking disables this edition: its models no longer appear in DSH's model picker; the sign-in, usage and model settings are kept, and re-checking restores them.",
+	"account.offer": "Offer this edition",
+	"account.offerTitle": "Turning this off hides the edition's models from DSH's model picker; the sign-in, usage and model settings are kept, and turning it back on restores them.",
 	"account.offerOff": "Disabled: this edition's models are not offered to the model picker",
-	"account.offerError": "Could not save the models switch: {detail}",
+	"account.offerError": "Could not save the edition switch: {detail}",
 	"account.regionTabs": "Editions: pick which one's account, usage and models to view"
 };

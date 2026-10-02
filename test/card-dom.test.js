@@ -330,6 +330,34 @@ test('a save the host endpoint refuses surfaces the reason, not a "saved" banner
   )
 })
 
+// The card's sharpest edge. The switch used to sit inside the region pill,
+// eight pixels from the tab button, with no text of its own: the pill read as
+// one control while its two halves did opposite things — the name switched the
+// VIEW, the switch wrote a setting that drops the whole edition from DSH's
+// model picker, and the only thing saying so was a tooltip. Both halves of
+// that are pinned here: no switch in the tab strip, and the switch that does
+// exist carries a visible label.
+test('the region tab strip carries no switch, and the setting is labelled where it lives', async () => {
+  const { container } = await mount()
+
+  const strip = container.querySelector('.dsm-qoder-region-tabs')
+  assert.ok(strip !== null, 'no region strip rendered')
+  assert.equal(
+    strip.querySelectorAll('input[type="checkbox"]').length,
+    0,
+    'a tab strip must not carry a control that writes a setting',
+  )
+
+  const account = container.querySelector('.dsm-qoder-account')
+  const offer = account.querySelector('.dsm-qoder-offer-toggle')
+  assert.ok(offer !== null, 'the provider switch belongs to the account card')
+  assert.match(
+    text(offer.closest('.dsm-qoder-switch')),
+    /启用此版本/,
+    'the switch must say what flipping it does, not rely on a tooltip',
+  )
+})
+
 test('a provider switch the host refuses reverts and names the reason', async () => {
   // The account panel's region switch writes through the settings pipeline
   // (host endpoint first, scope mirror second) with the COMPLETE map. A
@@ -340,10 +368,13 @@ test('a provider switch the host refuses reverts and names the reason', async ()
   // region is (not) offered when it still is (isn't).
   const { container, react } = await mount({ saveStatus: 503, scopePersist: false })
 
-  const toggles = [...container.querySelectorAll('.dsm-qoder-region-toggle')]
-  assert.equal(toggles.length, 2, 'one provider switch per region')
-  const qoder = toggles[1]
-  assert.equal(qoder.checked, true, 'the region starts offered')
+  // The switch now lives in the account card and covers the SELECTED edition,
+  // so there is one of them rather than one per region — selected by tab, not
+  // by index. Flipping it still writes the complete map, so a sibling edition
+  // cannot be lost either way.
+  const qoder = container.querySelector('.dsm-qoder-offer-toggle')
+  assert.ok(qoder !== null, 'no provider switch rendered')
+  assert.equal(qoder.checked, true, 'the selected edition starts offered')
 
   await update(react, () => qoder.click())
   // The write is a two-hop chain (endpoint 503, then the scope read-back);
@@ -357,7 +388,7 @@ test('a provider switch the host refuses reverts and names the reason', async ()
   )
   const notes = [...container.querySelectorAll('.dsm-qoder-account-note-error')].map((n) => text(n))
   assert.ok(
-    notes.some((n) => n.startsWith('保存「模型」开关失败')),
+    notes.some((n) => n.startsWith('保存「启用此版本」开关失败')),
     `the refusal must be shown with its reason, not swallowed; saw: ${JSON.stringify(notes)}`,
   )
 })

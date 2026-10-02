@@ -179,18 +179,24 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-account-note{margin:0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary,#999)}",
 	".dsm-qoder-account-note-error{color:var(--dsw-alias-state-error-primary,#d92d20)}",
 	".dsm-qoder-account-note a{color:inherit}",
-	// The per-region provider switch, WorkBuddy's tab-switch shape: a
-	// compact 30x17 track with a sliding thumb. Unchecked = the region's
-	// models are not offered to DSH; the row dimming (below) is the
-	// resting look of an off region. The ON track takes the same
-	// success green as the region's "ok" status dot, so a tab reads
-	// green when it is signed in AND offered.
-	".dsm-qoder-region-toggle-cell{display:inline-flex;align-items:center;gap:6px;flex:none;cursor:pointer}",
-	".dsm-qoder-region-toggle{appearance:none;-webkit-appearance:none;width:30px;height:17px;margin:0;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#2a2b31);border:1px solid var(--dsw-alias-border-l2,#36373b);position:relative;cursor:pointer;transition:background .15s,border-color .15s;flex:none}",
-	".dsm-qoder-region-toggle::before{content:\"\";position:absolute;top:1.5px;left:1.5px;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-label-tertiary,#999);transition:transform .15s,background .15s}",
-	".dsm-qoder-region-toggle:checked{background:var(--dsw-alias-state-success-primary,#12b76a);border-color:var(--dsw-alias-state-success-primary,#12b76a)}",
-	".dsm-qoder-region-toggle:checked::before{transform:translateX(13px);background:#fff}",
-	".dsm-qoder-region-toggle:disabled{cursor:default;opacity:.55}",
+	// The per-region provider switch, WorkBuddy's tab-switch shape: a compact
+	// 30x17 track with a sliding thumb. Unchecked = this edition's models are
+	// not offered to DSH; the row dimming (below) is the resting look of an
+	// off region.
+	//
+	// It used to sit INSIDE the region pill, next to the tab button, with no
+	// text of its own: the pill read as one control while the two halves did
+	// opposite things — clicking the name switched the VIEW, clicking the
+	// switch wrote a setting that drops the whole edition from DSH's model
+	// picker. Eight pixels apart, and the only thing saying so was a 57-character
+	// `title` that a touch user or a keyboard focus never sees. The switch now
+	// lives in the account card, under the edition it controls, with a visible
+	// label; the pill is only a tab again.
+	".dsm-qoder-offer-toggle{appearance:none;-webkit-appearance:none;width:30px;height:17px;margin:0;border-radius:999px;background:var(--dsw-alias-bg-layer-2,#2a2b31);border:1px solid var(--dsw-alias-border-l2,#36373b);position:relative;cursor:pointer;transition:background .15s,border-color .15s;flex:none}",
+	".dsm-qoder-offer-toggle::before{content:\"\";position:absolute;top:1.5px;left:1.5px;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-label-tertiary,#999);transition:transform .15s,background .15s}",
+	".dsm-qoder-offer-toggle:checked{background:var(--dsw-alias-state-success-primary,#12b76a);border-color:var(--dsw-alias-state-success-primary,#12b76a)}",
+	".dsm-qoder-offer-toggle:checked::before{transform:translateX(13px);background:#fff}",
+	".dsm-qoder-offer-toggle:disabled{cursor:default;opacity:.55}",
 	".dsm-qoder-account-row-off .dsm-qoder-account-id,.dsm-qoder-account-row-off .dsm-qoder-button{opacity:.55}",
 	// The region tab strip, WorkBuddy's convergence: each region is one
 	// pill — status dot + name + provider switch — and selecting the

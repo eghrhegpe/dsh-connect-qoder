@@ -262,22 +262,22 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 										if (entry.state !== "ok") void reload();
 									}}
 								>
-									<span aria-hidden="true" className={`dsm-qoder-region-dot${dotClassOf(entry.state)}`} />
-									<span className="dsm-qoder-region-name">{entry.regionName ?? regionId}</span>
-								</button>
-								<label className="dsm-qoder-region-toggle-cell" title={t("account.offerTitle")}>
-									<input
-										type="checkbox"
-										className="dsm-qoder-region-toggle"
-										checked={offered}
-										disabled={toggling}
-										onChange={(event: CheckboxEvent) => {
-											void toggleRegion(regionId, event.target.checked);
-										}}
-										aria-label={`${t("account.offer")}: ${entry.regionName ?? regionId}`}
-									/>
-								</label>
-							</div>
+								<span aria-hidden="true" className={`dsm-qoder-region-dot${dotClassOf(entry.state)}`} />
+								<span className="dsm-qoder-region-name">{entry.regionName ?? regionId}</span>
+							</button>
+							{/* No switch here any more. The pill used to carry
+							    one beside the tab button with no text of its
+							    own, so the two halves looked like one control
+							    while doing opposite things: the name switched
+							    the view, the switch wrote a setting that drops
+							    the whole edition from DSH's model picker — and
+							    the only thing saying which was which was a
+							    tooltip a touch user never sees. The switch is
+							    now in the account card below, labelled. The
+							    pill is a tab and nothing else; `offered` still
+							    dims the name so a disabled edition reads as
+							    disabled at a glance. */}
+						</div>
 						);
 					})}
 				</div>
@@ -315,8 +315,32 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 											<span className="dsm-qoder-account-meta">{activeMeta.join(" · ")}</span>
 										) : null}
 									</span>
-									<span className="dsm-qoder-usage-spacer" />
-									{activeEntry.source !== undefined && activeRegionId !== undefined ? (
+								<span className="dsm-qoder-usage-spacer" />
+								{/* The provider switch, moved out of the region
+								    pill: it belongs to the edition whose
+								    sign-in is on this line, and it now carries
+								    a visible label so "启用此版本" says what
+								    flipping it does. It still writes straight
+								    away (the COMPLETE map, so a sibling
+								    edition can never be lost) and still
+								    reverts with the reason if the host
+								    refuses — see `toggleRegion`. */}
+								{activeRegionId !== undefined ? (
+									<label className="dsm-qoder-switch" title={t("account.offerTitle")}>
+										<input
+											type="checkbox"
+											className="dsm-qoder-offer-toggle"
+											checked={activeOffered}
+											disabled={toggling}
+											aria-label={`${t("account.offer")}: ${activeEdition}`}
+											onChange={(event: CheckboxEvent) => {
+												void toggleRegion(activeRegionId, event.target.checked);
+											}}
+										/>
+										<span>{t("account.offer")}</span>
+									</label>
+								) : null}
+								{activeEntry.source !== undefined && activeRegionId !== undefined ? (
 										<button
 											type="button"
 											className="dsm-qoder-button"
