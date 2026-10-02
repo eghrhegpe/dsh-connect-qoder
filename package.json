@@ -1,8 +1,8 @@
 {
   "name": "@eghrhegpe/dsh-connect-qoder",
   "displayName": "DSH Connect Qoder",
-  "description": "将本机已登录的 Qoder（国内版 Qoder CN / 国际版 Qoder）模型接入 DeepSeek Harness —— bring locally signed-in Qoder models into DeepSeek Harness with zero configuration.",
-  "version": "0.4.3",
+  "description": "Bring the Qoder models already signed in on this machine into DeepSeek Harness with zero configuration.",
+  "version": "0.4.4",
   "author": "eghrhegpe",
   "homepage": "https://github.com/eghrhegpe/dsh-connect-qoder",
   "repository": {
@@ -44,10 +44,12 @@
     },
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "locale/*.json",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md"
