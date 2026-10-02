@@ -103,6 +103,7 @@ npm run verify             # typecheck + 两道 audit + build + test + host/bund
 | 改某个已知问题前 | `docs/issues/README.md` 索引 → 对应 `docs/issues/NN-*.md`（19 份，含证据 file:line 与验收标准） |
 | 改 client 构建/产物链路 | `scripts/build-client.mjs` 头部注释（loader ABI、字节比对、REQUIRED 闸门都是契约）+ `docs/issues/03`、`17` |
 | 市场 `github:` 源安装 / lib 为何入库 | `docs/issues/19`（pnpm 11 allowBuilds 审批流 + 本机 profile 实锤；CI 新鲜度门禁在 `.github/workflows/test.yml`） |
+| 发版前 | `RELEASING.md`（根目录：唯一权威发布流程——状态判定表、不可逆点、人机 handoff 契约；母版为 sensenova 兄弟插件同名文档） |
 | 了解已知差距与未做项 | `docs/KNOWN_GAPS.md` |
 | 对 Qoder 平台事实（计费系数、Credits、签到、免费模型） | `docs/docs-qoder-cn/`（上游官方文档转换件） |
 | 探测宿主版本/协议漂移 | `docs/howto/host-version-probe.md`、`test/protocol-drift.test.js` |
