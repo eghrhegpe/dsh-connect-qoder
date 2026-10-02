@@ -497,3 +497,39 @@ test('a swallowed catalog write is shown as not-persisted, not as a fresh stamp'
     `the persist copy must name the restart consequence, got ${JSON.stringify(persist)}`,
   )
 })
+
+test('toggling the max-window switch does not erase the load-failure detail', async () => {
+  // The models route refuses. The card must keep showing WHY the roster did not
+  // load even after an unrelated view toggle: the banner renders
+  // `请求失败: ${notice}`, and clearing `notice` here would leave an empty
+  // detail after the colon — the user's only hint gone on a toggle that has
+  // nothing to do with the load.
+  const base = routeStub()
+  const fetch = (url, init) => (
+    String(url).includes('/models')
+      ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) })
+      : base(url, init)
+  )
+  const { container, react } = await mount({ fetch })
+
+  // Yield enough turns for the models read to settle into the error state.
+  for (let i = 0; i < 4; i++) await update(react, () => {})
+
+  const error = container.querySelector('.dsm-qoder-error')
+  assert.ok(error !== null, 'a refused models read must render the error banner')
+  assert.ok(
+    text(error).includes('HTTP 500'),
+    `the banner must carry the reason before the toggle; saw: ${text(error)}`,
+  )
+
+  const maxWindow = container.querySelector('.dsm-qoder-switch input[type="checkbox"]')
+  assert.ok(maxWindow !== null, 'no max-window switch rendered')
+  await update(react, () => maxWindow.click())
+
+  const errorAfter = container.querySelector('.dsm-qoder-error')
+  assert.ok(errorAfter !== null, 'the error banner must survive the toggle')
+  assert.ok(
+    text(errorAfter).includes('HTTP 500'),
+    `the failure reason must survive the toggle; saw: ${text(errorAfter)}`,
+  )
+})

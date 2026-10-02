@@ -353,7 +353,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	 * the first load: a refresh must not clobber edits the user has staged
 	 * but not yet saved.
 	 */
-	const load = react.useCallback(async (refresh, signal?: AbortSignal) => {
+	const load = react.useCallback(async (refresh: boolean, signal?: AbortSignal) => {
 		if (refresh) setRefreshing(true);
 		try {
 			// The model read goes through the card's only fetch surface, the
@@ -747,7 +747,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 								aria-label={t("row.maxWindow")}
 								onChange={(event: unknown) => {
 									setMaxWindow((event as CheckboxEvent).target.checked);
-									setNotice(undefined);
+									if (status !== "error") setNotice(undefined); // 只在非 error 态清：error 态下 notice 是失败唯一详情，清了冒号后就剩空白
 								}}
 							/>
 							<span>{t("row.maxWindow")}</span>

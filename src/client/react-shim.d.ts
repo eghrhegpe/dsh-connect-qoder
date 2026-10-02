@@ -67,15 +67,17 @@ declare module 'react' {
    * 记忆化回调。签名刻意不用 `T extends (...args: never[]) => unknown`——
    * 那个约束会让「把回调传给 `useCallback` 再调用」的推断塌成 `never`
    * （卡片里 `load(true)`、`setNotice(undefined)` 等十几处会因此报
-   * 「not assignable to parameter of type 'never'」）。这里改成泛型函数，
-   * 参数表原样保留在 `T` 里，调用点拿到的就是自己写下的那个签名。
+   * 「not assignable to parameter of type 'never'」）。这里把参数表抽成
+   * `A`、返回值抽成 `R`，返回类型 `(...args: A) => R` 既保持可调用，又
+   * 不会像旧写法 `T extends (...args: any[]) => any` 那样给未标注参数
+   * 一个上下文 `any` ——未标注的参数会报 implicit any（与真 React 一致）。
    *
    * `deps` 可省略：卡片里既有 `[deps]` 也有完全省略的写法。
    */
-  export function useCallback<T extends (...args: any[]) => any>(
-    callback: T,
+  export function useCallback<A extends unknown[], R>(
+    callback: (...args: A) => R,
     deps?: readonly unknown[],
-  ): T
+  ): (...args: A) => R
 
   /**
    * 订阅一个外部 store 并读其快照。`subscribe` 与 `getSnapshot` 都以裸函数

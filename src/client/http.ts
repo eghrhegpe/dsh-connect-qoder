@@ -31,8 +31,15 @@ export async function getJson<T = unknown>(path: string, options?: { signal?: Ab
 		credentials: "same-origin",
 		signal: options?.signal,
 	});
-	if (!response.ok) throw new Error(`HTTP ${response.status}`);
 	const value = (await response.json().catch((): undefined => undefined)) as T | undefined;
+	if (!response.ok) {
+		// A refused GET can carry the host's own `error` — e.g. the loopback
+		// origin check answers `{ error: "origin-not-trusted" }`. Surfacing it
+		// is what the module doc above promises; throwing a bare "HTTP 403"
+		// would hand the user a status code and drop the diagnosis.
+		const message = (value as { error?: unknown } | undefined)?.error;
+		throw new Error(typeof message === "string" && message !== "" ? message : `HTTP ${response.status}`);
+	}
 	if (value === undefined) throw new Error(`unparseable JSON body (HTTP ${response.status})`);
 	return value as T;
 }

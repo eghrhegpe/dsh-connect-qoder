@@ -26,12 +26,14 @@
  * `describeThrown` lives here, next to the other display helpers, not in
  * `card.tsx` as it used to. It is a browser-free formatting rule (no React, no
  * DOM) shared by every card `catch` block that shows a failure reason, and the
- * panel containers (`account-panel.tsx` / `usage-panel.tsx`) import it from
- * this module — which imports nothing client-side — instead of reaching back
- * into `card.tsx`, which would close two circular-import pairs around the
- * assembly module. The duplication of `host/errors.ts#describeThrown` is still
- * on purpose: no client file imports from `src/host/`, and hoisting a two-line
- * narrowing into the generated `lib/client.js` is not worth that coupling.
+ * panel containers (`account-panel.tsx` / `usage-panel.tsx`) and the editable
+ * state machine (`controller.ts`) import it from this module — which imports
+ * nothing client-side — instead of reaching back into `card.tsx`, which would
+ * close two circular-import pairs around the assembly module. `controller.ts`
+ * had its own private twin until it was merged here; the client now holds one
+ * copy. Duplicating `host/errors.ts#describeThrown` is still on purpose: no
+ * client file imports from `src/host/`, and hoisting a two-line narrowing into
+ * the generated `lib/client.js` is not worth that coupling.
  */
 
 /** One model row as the models route serves it. */
@@ -371,13 +373,14 @@ export function refreshNoticeKey(value: unknown): string | null {
  * rendering as `[object Object]`, and a thrown `undefined` rendering as the
  * literal text `"undefined"`: a failure message that says nothing at all.
  *
- * This is a LOCAL copy of `host/errors.ts#describeThrown` on purpose. The
- * card is a separate bundle built by `scripts/build-client.mjs`, and no
- * client file imports from `src/host/`, so sharing one implementation would
- * mean either bundling host code into the browser card or hoisting this
- * helper into the generated `lib/client.js`. The duplication is two lines of
- * narrowing against a stable language rule; the coupling is not worth that
- * price.
+ * This is the ONE client-side copy: `card.tsx`, both panels and `controller.ts`
+ * (whose private twin was merged into this one) all import it. It is still a
+ * deliberate LOCAL copy of `host/errors.ts#describeThrown`. The card is a
+ * separate bundle built by `scripts/build-client.mjs`, and no client file
+ * imports from `src/host/`, so sharing one implementation would mean either
+ * bundling host code into the browser card or hoisting this helper into the
+ * generated `lib/client.js`. Two lines of narrowing against a stable language
+ * rule is worth less than that coupling.
  */
 export function describeThrown(error: unknown): string {
 	const message = (error as { message?: unknown } | null | undefined)?.message;

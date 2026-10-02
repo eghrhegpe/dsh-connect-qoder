@@ -110,7 +110,7 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 		autoReloaded.current = true;
 		void reload();
 	}, [status, accounts, reload]);
-	const confirm = react.useCallback(async (regionId) => {
+	const confirm = react.useCallback(async (regionId: string) => {
 		setConfirmBusy((current) => ({ ...current, [regionId]: true }));
 		setConfirmState((current) => {
 			const next = { ...current };
@@ -155,7 +155,7 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 	// the switch settles on the authoritative state rather than an
 	// optimistic guess; on failure the switch reverts and the reason
 	// is shown instead of a silent no-op.
-	const toggleRegion = react.useCallback(async (regionId, nextOn) => {
+	const toggleRegion = react.useCallback(async (regionId: string, nextOn: boolean) => {
 		setToggling(true);
 		setOfferError(undefined);
 		const next = { ...enabledRegions, [regionId]: nextOn };

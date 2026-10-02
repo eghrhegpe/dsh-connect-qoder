@@ -32,6 +32,7 @@
  */
 import { writeSettingsField } from "./settings-write.ts";
 import type { SettingsScope } from "./settings-write.ts";
+import { describeThrown } from "./card-model.ts";
 
 /** The three per-model image choices this card writes. */
 export const IMAGE_MODES = ["auto", "on", "off"] as const;
@@ -354,12 +355,4 @@ export class QoderCardController<M extends ControllerModelRow = ControllerModelR
 			visibleTicked,
 		};
 	}
-}
-
-/** A readable description of a thrown value, for the save-failure notice. */
-function describeThrown(error: unknown): string {
-	const message = (error as { message?: unknown } | null | undefined)?.message;
-	if (typeof message === "string" && message !== "") return message;
-	if (typeof error === "string") return error;
-	return String(error);
 }
