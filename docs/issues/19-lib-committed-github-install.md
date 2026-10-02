@@ -65,10 +65,13 @@
       `packageShouldBeBuilt = false`——不触发构建、不需要 `allowBuilds` 审批；`git check-ignore lib/index.js` 退出 1（未被忽略）
 - [x] 推上远端（`9d6c66a`，main 快进；feature 分支同步）；全新 `git clone` 远端 main 复验：`lib/` 在场、
       未被忽略、`packageShouldBeBuilt = false`——`github:` 源安装自该提交起零配置
-- [ ] CI build job 新增的 "The committed lib/ matches a fresh build" 步骤绿（main run `37053204303` 跟踪中）
+- [x] CI build job 新增的 "The committed lib/ matches a fresh build" 步骤绿（main run `37053204303`：
+      build + 4 组测试矩阵全 success）
+- [x] 门禁自检（故意破坏）：一次性分支改 `src/host/index.ts` 不重建 `lib/`（run `37053873694`）→
+      build job 恰在 "The committed lib/ matches a fresh build" 一步 failure、后续 verify 步骤
+      skipped，测试矩阵 4 组全 success——拦截信号干净；分支已删
 - [ ] DSH 对话框「添加插件」粘贴 `github:eghrhegpe/dsh-connect-qoder` 安装：**无**构建脚本审批提示，
-      卡片与模型路由正常（需人工在 DSH 里点一遍）
-- [ ] 再改一次 `src/` 只提交源码不提交 `lib/` → CI 新鲜度门禁红
+      卡片与模型路由正常（安装前置条件已满足：远端 main 带 `lib/`、pnpm 判据 `false`）——最后一步待人工点验
 
 ## 与上游布局的关系
 
