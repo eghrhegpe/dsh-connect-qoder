@@ -217,6 +217,40 @@ function classifyUpstreamError(
 }
 
 /**
+ * Read a `Retry-After` hint as seconds, from either spelling the gateway uses.
+ *
+ * The header (and the JSON `retryAfterSeconds` field the frame path carries)
+ * reach this as an `unknown`: it has been a bare number, a numeric string, and
+ * an HTTP-date string ("Wed, 21 Oct 2026 07:28:00 GMT") across builds. The delta
+ * form is the wait itself; the date form is resolved against the wall clock, so
+ * a stale absolute deadline reads as `0` rather than a negative number that a
+ * caller would then have to clamp again.
+ *
+ * It is a pure function with no imports so the throttle gate (see
+ * `credential-cache.ts`) can honour a platform-stated window without inventing
+ * one — and so a test can feed it each real spelling.
+ *
+ * @param value - the header or field value, still `unknown`.
+ * @param now - the wall clock the date form is measured against; defaults to now.
+ * @returns whole seconds to wait (never negative), or `undefined` when the value
+ *   names no window at all. `undefined` and `0` differ: the first means "the
+ *   platform said nothing" and a caller falls back to its own backoff; the second
+ *   means "it said wait zero", which is already open.
+ */
+export function parseRetryAfterSeconds(value: unknown, now: number = Date.now()): number | undefined {
+  if (value === undefined || value === null) return undefined
+  // A number or a numeric string is a delta in seconds, the common case.
+  const asNumber = Number(value)
+  if (Number.isFinite(asNumber)) return Math.max(0, Math.round(asNumber))
+  // Anything else that is a string may be an HTTP-date (RFC 9110 §15.5.1).
+  if (typeof value === 'string') {
+    const at = Date.parse(value)
+    if (Number.isFinite(at)) return Math.max(0, Math.ceil((at - now) / 1000))
+  }
+  return undefined
+}
+
+/**
  * Whether an upstream failure means the cached credential has gone stale.
  *
  * A sign-in rejection is the one failure that must invalidate the cached

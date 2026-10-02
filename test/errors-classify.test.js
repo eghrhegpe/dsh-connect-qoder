@@ -19,7 +19,29 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { classifyUpstreamError } from '../src/host/errors.ts'
+import { classifyUpstreamError, parseRetryAfterSeconds } from '../src/host/errors.ts'
+
+test('parseRetryAfterSeconds reads every spelling the gateway has used', () => {
+  // The exchange throttle honours a platform-stated window through this one
+  // function, so its two jobs are: parse all three real spellings, and answer
+  // `undefined` (never a fabricated 0) when the value names no window — `0`
+  // would read as "already open" and release the gate early.
+  assert.strictEqual(parseRetryAfterSeconds('120'), 120, 'a delta as a numeric string')
+  assert.strictEqual(parseRetryAfterSeconds(120), 120, 'a delta as a number')
+  assert.strictEqual(parseRetryAfterSeconds('0'), 0, 'a zero delta is a real answer')
+
+  // An HTTP-date is resolved against the wall clock; `now` is a parameter so a
+  // test can pin it rather than race the second.
+  const now = Date.UTC(2026, 9, 2, 12, 0, 0)
+  assert.strictEqual(parseRetryAfterSeconds('Wed, 02 Oct 2026 12:02:00 GMT', now), 120, 'a date two minutes out')
+  assert.strictEqual(parseRetryAfterSeconds('Wed, 02 Oct 2026 11:00:00 GMT', now), 0, 'a past date reads 0, never negative')
+
+  // No window named, in any of the shapes that arrive off a missing header.
+  assert.strictEqual(parseRetryAfterSeconds(null), undefined)
+  assert.strictEqual(parseRetryAfterSeconds(undefined), undefined)
+  assert.strictEqual(parseRetryAfterSeconds('not a number or date'), undefined)
+  assert.strictEqual(parseRetryAfterSeconds({}), undefined)
+})
 
 test('an exact 10605 is a queue, whatever the body contains', () => {
   // Rule 1. The code decides, not the text — a gateway that mislabels the body

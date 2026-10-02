@@ -23,7 +23,7 @@ import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { classifyUpstreamError, describeThrown, errorMessage, ProtocolShapeChangedError, SignInExpiredError, thrownFlag } from './errors.ts'
+import { classifyUpstreamError, describeThrown, errorMessage, parseRetryAfterSeconds, ProtocolShapeChangedError, SignInExpiredError, thrownFlag } from './errors.ts'
 import { windowIsOpen } from './offpeak.ts'
 import { toEpochMs } from './time.ts'
 import { checkinStateFrom } from './claim.ts'
@@ -1198,7 +1198,33 @@ export async function exchangePat(
     signal,
   })
   if (!response.ok) {
-    throw new Error(`Qoder PAT exchange failed: HTTP ${response.status} ${(await response.text()).slice(0, 300)}`)
+    const text = (await response.text()).slice(0, 300)
+    // Carry what a throttle gate needs to honour the platform's own window
+    // rather than invent one: the HTTP status classifies the refusal (a 429 is
+    // a rate limit, a 401/403 is a dead credential), and `Retry-After` — read
+    // off the header, falling back to a `retryAfterSeconds` field in the body —
+    // is the wait the platform asked for. The gate reads both off the thrown
+    // error's flags; see `CredentialCache`. An error whose prototype is lost
+    // across the throw boundary still carries them, which is why they are plain
+    // fields and not a subclass.
+    const error = new Error(`Qoder PAT exchange failed: HTTP ${response.status} ${text}`) as Error & {
+      status: number
+      retryAfterSeconds?: number
+    }
+    error.status = response.status
+    let retryAfter = parseRetryAfterSeconds(response.headers.get('retry-after'))
+    if (retryAfter === undefined) {
+      // A body-carried window is a second source the gateway has used; it lives
+      // in the JSON, not a header. Parse leniently — a non-JSON body is already
+      // covered by the header path and leaves no wait.
+      const bodySeconds = /"retryAfterSeconds"\s*:\s*(\d+)/.exec(text)
+      if (bodySeconds?.[1] !== undefined) {
+        const parsed = Number(bodySeconds[1])
+        if (Number.isFinite(parsed) && parsed > 0) retryAfter = parsed
+      }
+    }
+    if (retryAfter !== undefined) error.retryAfterSeconds = retryAfter
+    throw error
   }
   const data = await readJson(response, 'Qoder PAT exchange')
   // The gateway has answered this field three different ways across builds, so

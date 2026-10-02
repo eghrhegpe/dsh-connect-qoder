@@ -262,3 +262,217 @@ test('a non sign-in failure must not invalidate the cache', async () => {
   await cache.resolve()
   assert.strictEqual(store.reads, 1, 'a queue rejection must not cause a re-read')
 })
+
+// === the exchange throttle ==================================================
+//
+// The PAT exchange is this plugin's sign-in: every catalog refresh, panel
+// re-read, and chat turn funnels through resolve(), and for an env PAT that
+// means a POST to the exchange endpoint whenever the job token is not live.
+// A platform refusal without a local gate is therefore re-probed on a
+// schedule — which is how one transient lockout becomes a permanent one. The
+// sibling plugin (dsh-connect-sensenova-token-plan) shipped this gate for its
+// IAM login and documented the property this block asserts: the exchange
+// COUNTER is the evidence that no re-probe happened, not the cache's word.
+//
+// The cache is built over an injected `now` so windows are exact, and the
+// exchange stub throws errors shaped like `exchangePat`'s real ones — the
+// fields (`status`, `retryAfterSeconds`) are exactly what upstream.ts attaches.
+
+/** A cache wired for the throttle: env PAT only, scripted exchange, fixed clock. */
+function throttleOver(exchangePat, { now = () => 1_000_000, throttleStore } = {}) {
+  const state = { calls: 0 }
+  const cache = new CredentialCache({
+    loadApp: () => {
+      state.appReads = (state.appReads ?? 0) + 1
+      return undefined
+    },
+    loadEnv: () => ({ source: 'env-pat', token: 'pat-1', userID: '', expiresAt: 0 }),
+    exchangePat: async (credential) => {
+      state.calls += 1
+      return exchangePat(credential, state.calls)
+    },
+    throttleStore,
+    now,
+  })
+  return { cache, state }
+}
+
+const exchangeFail = (status, retryAfterSeconds) => {
+  const error = new Error(`Qoder PAT exchange failed: HTTP ${status}`)
+  error.status = status
+  if (retryAfterSeconds !== undefined) error.retryAfterSeconds = retryAfterSeconds
+  return error
+}
+
+test('a rate-limited exchange honours the platform window and refuses to re-probe on the next poll', async () => {
+  // The exact symptom from the sibling's fix, on our exchange endpoint: a 429
+  // that states "wait 120 s", followed by the poll loop this plugin runs for
+  // its catalog and panel. Without the gate the second resolve() posts again.
+  let t = 1_000_000
+  const { cache, state } = throttleOver(
+    async (credential, call) => {
+      if (call === 1) throw exchangeFail(429, 120)
+      return { token: 'job-token', refreshToken: 'r', expiresAt: t + 600_000 }
+    },
+    { now: () => t },
+  )
+
+  // The first refusal reaches the platform — no throttle existed yet.
+  await assert.rejects(() => cache.resolve(), /HTTP 429/)
+  assert.strictEqual(state.calls, 1)
+
+  // A poll inside the stated window must NOT reach the platform. The call
+  // counter is the whole point of this assertion.
+  t += 30_000
+  await assert.rejects(
+    () => cache.resolve(),
+    (error) => {
+      assert.match(error.message, /waiting out a rate-limit window/, 'the gate speaks its own reason')
+      // The platform-stated window rides out through the error, the shape the
+      // shim's retryAfterHeader already turns into `Retry-After`.
+      assert.strictEqual(error.retryAfterSeconds, 90, 'the remaining wait is what a poll reports')
+      return true
+    },
+  )
+  assert.strictEqual(state.calls, 1, 'the poll was refused locally and never re-probed the platform')
+
+  // One step past the deadline, the gate allows exactly one attempt.
+  t += 90_001
+  const resolved = await cache.resolve()
+  assert.strictEqual(resolved.token, 'job-token')
+  assert.strictEqual(state.calls, 2)
+
+  // A success clears the gate: a much later refusal starts its backoff fresh.
+  assert.strictEqual(cache.throttle, null)
+})
+
+test('a second refusal at the deadline doubles the wait instead of resuming a fast re-probe', async () => {
+  // The ladder this repo's own queue logic learned the hard way: if an elapsed
+  // window reset the counter, a platform locked out in 60 s steps would be
+  // poked in 60 s steps forever.
+  let t = 0
+  const { cache, state } = throttleOver(
+    async (credential, call) => {
+      // No stated window: the backoff is the cache's own invention.
+      throw exchangeFail(429)
+    },
+    { now: () => t },
+  )
+
+  await assert.rejects(() => cache.resolve())
+  assert.strictEqual(cache.throttle.until, 60_000, 'the first unstated refusal waits one minute')
+
+  // Refused again at the deadline: the attempt counter carried through, so the
+  // second wait is double the first.
+  t = 60_000
+  await assert.rejects(() => cache.resolve())
+  assert.strictEqual(state.calls, 2)
+  assert.strictEqual(cache.throttle.attempt, 2)
+  assert.strictEqual(cache.throttle.until, 180_000, '60s wait from t=60s: doubled, not reset')
+
+  // And inside THAT window, the re-probe stops again.
+  t = 61_000
+  await assert.rejects(() => cache.resolve())
+  assert.strictEqual(state.calls, 2, 'still one call, still gated')
+})
+
+test('a refused credential parks and is released only by a deliberate re-read', async () => {
+  // A 401/403 is not a lockout with a deadline — the token will not become
+  // valid by waiting. Re-exchanging it on every poll is the same runaway with
+  // a different start date, so the refusal parks indefinitely.
+  let t = 0
+  const { cache, state } = throttleOver(
+    async (credential, call) => {
+      if (call === 1) throw exchangeFail(401)
+      return { token: 'fresh-job-token', refreshToken: 'r', expiresAt: t + 600_000 }
+    },
+    { now: () => t },
+  )
+
+  await assert.rejects(() => cache.resolve(), /HTTP 401/)
+  assert.strictEqual(cache.throttle.parked, true)
+
+  // Any later time, any number of polls: the park holds and the platform is
+  // never re-probed.
+  t += 24 * 60 * 60 * 1000
+  await assert.rejects(
+    () => cache.resolve(),
+    (error) => {
+      assert.match(error.message, /needs to be re-entered/)
+      assert.strictEqual(error.retryAfterSeconds, undefined, 'a park has no countdown')
+      return true
+    },
+  )
+  assert.strictEqual(state.calls, 1)
+
+  // The deliberate re-read — what the card's "重读登录" button does — is the
+  // one release. The next exchange is allowed and succeeds.
+  cache.invalidate()
+  const resolved = await cache.resolve()
+  assert.strictEqual(resolved.token, 'fresh-job-token')
+  assert.strictEqual(state.calls, 2)
+})
+
+test('a transient exchange failure (5xx, no status) is not gated', async () => {
+  // The gate exists for the two states a poll loop can turn permanent. A 503
+  // from a hiccupping gateway is not one of them: refusing the next minute of
+  // resolves for one dropped response would make the plugin worse than it was.
+  const { cache, state } = throttleOver(async () => {
+    throw exchangeFail(503)
+  })
+  await assert.rejects(() => cache.resolve())
+  assert.strictEqual(cache.throttle, null)
+  await assert.rejects(() => cache.resolve())
+  assert.strictEqual(state.calls, 2, 'a transient failure must leave the next poll free to retry')
+})
+
+test('the throttle is read from the persisted store, so a restart keeps honouring the wait', async () => {
+  // The file-backed store is `throttle-store.test.js`'s subject; what belongs
+  // to THIS file is the wiring claim: a cache that starts with a window on
+  // disk refuses its first resolve without ever calling the exchange. That is
+  // the exact property a restart breaks, and the whole reason the store exists.
+  const persisted = { kind: 'rate-limit', parked: false, until: 100_000, attempt: 1 }
+  const { cache, state } = throttleOver(
+    async () => ({ token: 'job', refreshToken: 'r', expiresAt: 200_000 }),
+    { now: () => 50_000, throttleStore: { read: () => persisted, write: () => {}, clear: () => {} } },
+  )
+  await assert.rejects(
+    () => cache.resolve(),
+    (error) => {
+      assert.strictEqual(error.retryAfterSeconds, 50)
+      return true
+    },
+  )
+  assert.strictEqual(state.calls, 0, 'the restored window was honoured without a platform call')
+})
+
+test('the throttle is written to the store for a live window and cleared on a deliberate re-read', async () => {
+  // Asserts both ends of the persistence seam from the cache side: only a
+  // future rate-limit window is written, and `invalidate` → resolve clears
+  // the persisted record — otherwise a restart would resurrect a wait for a
+  // credential the user has just fixed.
+  const writes = []
+  let cleared = 0
+  const store = {
+    read: () => null,
+    write: (held) => writes.push({ ...held }),
+    clear: () => {
+      cleared += 1
+    },
+  }
+  const { cache } = throttleOver(
+    async () => {
+      throw exchangeFail(429, 120)
+    },
+    { throttleStore: store },
+  )
+  await assert.rejects(() => cache.resolve())
+  assert.strictEqual(writes.length, 1, 'the refusal was persisted')
+  assert.strictEqual(writes[0].kind, 'rate-limit')
+  assert.strictEqual(writes[0].until, 1_000_000 + 120_000)
+
+  cache.invalidate()
+  await assert.rejects(() => cache.resolve())
+  assert.ok(cleared >= 1, 'a deliberate re-read must clear the persisted window')
+})
+

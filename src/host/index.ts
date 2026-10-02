@@ -34,6 +34,7 @@ import {
 } from './credentials.ts'
 import { buildAccountPayload } from './account-payload.ts'
 import { CredentialCache } from './credential-cache.ts'
+import { FileThrottleStore } from './throttle-store.ts'
 import { applySettingsSave, settingsNamespaceOf } from './settings-save.ts'
 import type { SettingsService } from './settings-save.ts'
 import { createSingleFlight } from './single-flight.ts'
@@ -357,6 +358,17 @@ class RegionRuntime {
       loadApp: () => loadCredentialAsync(this.region, appDataRootFor()),
       loadEnv: () => loadEnvCredential(this.region),
       exchangePat: async (credential) => exchangePat(this.region, credential.token),
+      // The PAT exchange throttle is persisted so a platform-stated rate-limit
+      // window survives a DSH restart. Without it the first poll after a restart
+      // would re-POST an exchange the platform had just locked out, extending a
+      // transient lockout toward permanent — the runaway the gate exists to
+      // break. A parked dead-credential refusal is deliberately NOT written; a
+      // restart is that refusal's release valve, and only a deliberate re-read
+      // inside a live process clears it. See `throttle-store.ts`.
+      throttleStore: new FileThrottleStore({
+        path: qoderCatalogPath(`.qoder-exchange-throttle.${region.id}.json`),
+        logger: ctx.logger,
+      }),
     })
     this.refreshTimer = undefined
     /** Last usage reading and when it was taken; see {@link RegionRuntime.readUsage}. */
@@ -1483,10 +1495,27 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           const region = REGIONS.find((entry) => entry.id === posted.region)
           if (region === undefined) return sendJson(res, 400, { error: 'unknown region' })
           const runtime = started.find((entry) => entry.region.id === region.id)?.runtime
-          const credential =
-            runtime !== undefined
-              ? await runtime.resolveCredential()
-              : loadCredential(region, appDataRootFor()) ?? loadEnvCredential(region)
+          // Resolving a credential can now throw two ways the route has to
+          // answer for: a failed PAT exchange, and — the new one — the exchange
+          // throttle refusing to re-probe a window the platform stated. The
+          // gate throws where an exchange used to be attempted, so without this
+          // catch the confirmation press would reach the web server's catch-all
+          // as a bare 400 (no body, undiagnosable in the card) for a whole
+          // window at a time. The card maps `available: false` to "unavailable"
+          // and carries the detail through, so the refusal reads as what it is.
+          let credential
+          try {
+            credential =
+              runtime !== undefined
+                ? await runtime.resolveCredential()
+                : loadCredential(region, appDataRootFor()) ?? loadEnvCredential(region)
+          } catch (error) {
+            return sendJson(res, 200, {
+              region: region.id,
+              available: false,
+              detail: describeThrown(error).slice(0, 300),
+            })
+          }
           if (credential === undefined) return sendJson(res, 200, { region: region.id, available: false })
           try {
             const info = await fetchUserInfo(region, credential)

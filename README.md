@@ -206,7 +206,8 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/catalog-entry.ts` | 目录条目的归一化、模型过滤（含按区域开关）与卡片行投影（无 peer 依赖） |
 | `src/host/catalog-store.ts` | 目录的磁盘缓存与原子落盘（无 peer 依赖） |
 | `src/host/catalog-refresh.ts` | 一次目录刷新的结果如何落地：**空目录也是结果**（照实清空并推进 `fetchedAt`），只有失败才保留上一份，且失败按 `credential` / `no-credential` / `fetch` / `protocol-shape-changed` 分档（无 peer 依赖） |
-| `src/host/credential-cache.ts` | 凭据缓存与「登录失效后重读」规则（无 peer 依赖） |
+| `src/host/credential-cache.ts` | 凭据缓存与「登录失效后重读」规则，以及 env-PAT 兑换的 429 节流闸门（平台自述窗口优先、否则指数退避；401/403 停泊，仅「重读登录」释放；无 peer 依赖） |
+| `src/host/throttle-store.ts` | 兑换节流闸门的磁盘持久化（只存未过期的 rate-limit 窗口、parked 停泊与令牌一律不落盘，原子写，无 peer 依赖） |
 | `src/host/account-payload.ts` | 账号面板三条路由共用的那份应答：逐区域状态 + 开关映射，以及「渲染读缓存 / 重读登录读真」这一个开关（从 `index.ts` 抽出以便直测，无 peer 依赖） |
 | `src/host/account-state.ts` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖）；三种读取模式（默认 / `cachedOnly` 不解包 / `force` 忽略失败窗口） |
 | `src/host/settings-save.ts` | 设置命名空间的解析（0.1.7 由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
@@ -356,7 +357,15 @@ PowerShell，这些在别的平台上行为不同。
   直接从产物里提取卡片的 `offPeakState` 并执行——删掉那行门控会让它变红，
   而只会让 `model-row.test.js` 保持绿色。**副本不是防线。**
 - `test/credential-cache.test.js` —— 「重新登录无需重启」这条卖点的完整链路：
-  网关拒绝 → 谓词判定 → 置失效标志 → 下次请求重读。此前只有两端被测。
+  网关拒绝 → 谓词判定 → 置失效标志 → 下次请求重读。此前只有两端被测。也覆盖
+  env-PAT 兑换的 429 节流闸门：平台自述窗口被 honour、窗口内的 poll 不重探
+  （兑换计数是证据）、二次拒绝指数翻倍、401/403 停泊仅「重读登录」释放、5xx 不闸门。
+- `test/exchange-throttle-e2e.test.js` —— 上面那条闸门的端到端版：真实的
+  `exchangePat` 走 `fetch` 打到真实 fake platform，「poll 有没有重探」的答案是
+  fake 自己的请求计数器，而不是插件自述。与姊妹插件的 429 e2e 同一标准。
+- `test/throttle-store.test.js` —— 节流闸门的磁盘持久化，用真实临时目录跑：
+  未过期的 rate-limit 窗口跨重启读回、parked 与令牌一律不落盘、过期窗口在读取时
+  丢弃、原子写不留半截文件。
 - `test/credential-invalidation.test.js` —— 上面那条链路上的两个纯谓词。
 - `test/account-state.test.js` —— 账号状态四档判定（`src/host/account-state.ts`）：
   全注入的存储读器 + 真实临时目录跑目录存在性检查，钉住「判定只信本地证据」
