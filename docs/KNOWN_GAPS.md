@@ -47,8 +47,12 @@
 
 **已经测到哪一步**：`toPiModel` 原先住在这里，是整个插件最关键也最无防护的函数——
 它那行 `compat: { supportsDeveloperRole: false }` 决定了每个请求会不会被 403
-`10605` 拒绝，而「故意不声明 `maxTokens`」决定了长推理回复会不会被截断成
-`finish: max-tokens`。两处此前都只有注释守着。现已抽出到 `src/host/pi-model.ts`
+`10605` 拒绝。`maxTokens` 这条的教训翻转了一次：旧决策是「故意不声明」，但
+不声明不等于无上限——peer 的 `resolveEntry` 走 `entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens`
+兜到 32768，长推理回复全被掐在 32K；2026-10-02 翻转为钉住实测平台上限
+`PROBED_MAX_TOKENS`（65536，平台 400 原文「max_tokens 不能超过 65536」），
+测试从「断言不存在」改为「断言值」，将来谁删掉它都会判红。两处此前都只有
+注释守着。现已抽出到 `src/host/pi-model.ts`
 （纯函数、不碰任何 pi-ai API）并由 `test/pi-model.test.js` 覆盖；
 它消费的 `rateNow` / `offPeakActive` / `offPeakRemaining` 早前已移到
 `src/host/offpeak.ts` 并被完整覆盖。

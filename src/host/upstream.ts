@@ -1062,17 +1062,21 @@ export async function fetchModels(
     const canDisableThinking = config?.disabled !== undefined
 
     // The catalog publishes its selectable context windows as `context_config`
-    // (`{ "1M": {...}, "200K": { is_default: true }, ... }`) and publishes no
-    // output ceiling anywhere. Both facts matter downstream:
+    // (`{ "1M": {...}, "200K": { is_default: true }, ... }`). It publishes no
+    // output ceiling anywhere, so the catalog entry deliberately carries no
+    // output-ceiling field: the ceiling is a platform-wide constant, probed
+    // once and pinned in `pi-model.ts` (`PROBED_MAX_TOKENS`), not per-model
+    // catalog data.
     //
     // - `context_config` is the only place the offered window sizes exist, and
     //   the entry flagged `is_default` is the one the app itself starts on, so
     //   these become the choices the model picker can offer.
-    // - No output ceiling is reported on purpose. Declaring one makes
-    //   dsh-llm-pi-ai record it as the model's *configured* max tokens, and a
-    //   long reasoned reply then ends with `finish: max-tokens` — the visible
-    //   text is cut off mid-sentence. Leaving it undeclared lets the harness
-    //   use its own default instead.
+    // - The output ceiling is pinned, not omitted. `pi-model.ts` declares
+    //   `PROBED_MAX_TOKENS` (65536) in every pi-ai descriptor, and
+    //   dsh-llm-pi-ai's `resolveEntry` uses it as the per-turn cap. That pin
+    //   matters: an omitted ceiling falls through to `resolveEntry`'s 32768
+    //   default, which truncated long reasoned turns mid-sentence. See the
+    //   `pi-model.ts` module header, item 2, for the chain and provenance.
     const windows = entry.context_config
     const contextOptions: number[] = []
     let defaultContextWindow = 0
@@ -1312,11 +1316,11 @@ export async function* streamChat(
   // for those and thinking is only ever requested positively.
   //
   // `max_tokens` is forwarded only when the caller actually specifies one. The
-  // harness sizes its request from the model's declared ceiling, and this
-  // plugin deliberately declares none, so inventing a number here would
-  // reintroduce the very truncation that omission avoids: reasoning and the
-  // answer share this budget upstream, so an over-large value is not harmless
-  // and an absent one lets Qoder apply its own.
+  // caller is the harness, and it now passes the declared `PROBED_MAX_TOKENS`
+  // ceiling (see `pi-model.ts`) through as `request.maxTokens`. Forwarding is
+  // the whole job: an over-small value is harmful because reasoning and the
+  // answer share this budget upstream, so we never invent or lower it here —
+  // and an absent value sends NO key rather than a made-up default.
   // Mixed value types by design (booleans and numbers, and only the keys the
   // caller actually asked for), so the honest type is a record of unknowns.
   // The three assignments below are what prove each value is the right one.

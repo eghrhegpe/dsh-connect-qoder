@@ -16,12 +16,16 @@
  *     gateway answers a request whose system message was dropped with
  *     `403 {"code":"10605"}` on every attempt, an error reading "your request is
  *     already in the queue" that has nothing to do with a queue.
- *   - the ABSENCE of `maxTokens`. A declared value becomes the model's output
- *     ceiling; reasoning shares that budget, so a long reasoned reply gets
- *     truncated mid-sentence and the harness reports `finish: max-tokens`.
+ *   - `maxTokens` pinned to `PROBED_MAX_TOKENS` (65536), the platform's probed
+ *     single-call output ceiling. Omitting it is NOT "no cap": dsh-llm-pi-ai's
+ *     `resolveEntry` runs `entry.maxTokens ?? base?.maxTokens ??
+ *     request.defaultMaxTokens`, which bottoms out at a 32768 default and
+ *     silently truncated long reasoned turns at 32K.
  *
- * The first is asserted on the value; the second can only be asserted on its
- * absence, which is the whole point.
+ * The first is asserted on the value; the second is asserted on the VALUE too
+ * (the probed constant, not just key presence), so a future "simplification"
+ * that drops the pin back to omission fails this suite instead of re-halving
+ * the ceiling.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -29,6 +33,7 @@ import assert from 'node:assert/strict'
 import {
   FALLBACK_CONTEXT_WINDOW,
   NO_COST,
+  PROBED_MAX_TOKENS,
   contextWindowLabelFor,
   displayNameFor,
   formatContextWindow,
@@ -88,24 +93,28 @@ test('the system-prompt role is forced to system, not developer', () => {
   }
 })
 
-test('no output ceiling is declared', () => {
-  // Declaring one truncates long reasoned replies and the harness reports
-  // `finish: max-tokens` with the visible text stopping mid-sentence.
+test('the output ceiling is pinned to the probed platform cap', () => {
+  // Omitting `maxTokens` is not "no cap": dsh-llm-pi-ai's `resolveEntry` runs
+  // `entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens`, which
+  // bottoms out at a 32768 default and silently truncated long reasoned turns
+  // at 32K. The descriptor must pin the probed ceiling, and the test asserts
+  // the VALUE (the probed constant), not just key presence, so a future
+  // "simplification" that drops the pin back to omission fails this suite.
   const descriptor = model()
   assert.strictEqual(
     descriptor.maxTokens,
-    undefined,
-    'a declared maxTokens truncates replies; it must be omitted so the harness applies its own',
+    PROBED_MAX_TOKENS,
+    'maxTokens must be the probed platform cap, not omitted to the 32768 fallback',
   )
   assert.ok(
-    !Object.prototype.hasOwnProperty.call(descriptor, 'maxTokens'),
-    'the key must be absent, not merely undefined',
+    Object.prototype.hasOwnProperty.call(descriptor, 'maxTokens'),
+    'the key must be present; an absent key lets resolveEntry fall through to its default',
   )
 })
 
 test('the max-tokens field name is the snake_case one the endpoint expects', () => {
-  // The complement of the omission above: when a ceiling IS supplied, pi-ai
-  // must send it as `max_tokens`, not `max_completion_tokens`.
+  // The companion to the pin above: pi-ai must send the ceiling as `max_tokens`,
+  // not `max_completion_tokens`.
   assert.strictEqual(model().compat?.maxTokensField, 'max_tokens')
 })
 

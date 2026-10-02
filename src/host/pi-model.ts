@@ -19,12 +19,24 @@
  *    `role: "developer"`, which Qoder does not have. The result is a permanent
  *    `403 {"code":"10605"}` on every attempt, no matter how long DSH retries,
  *    with an error message about being "in the queue" that is pure fiction.
- * 2. `maxTokens` is deliberately ABSENT. A declared value becomes the model's
- *    configured output ceiling and pi-ai sends it as `max_tokens`; reasoning
- *    shares that budget with the answer, so a declared ceiling truncates long
- *    replies mid-sentence and the harness reports `finish: max-tokens`.
+ * 2. `maxTokens` is pinned to `PROBED_MAX_TOKENS` (65536), the platform's
+ *    probed single-call output ceiling. This used to be the opposite — "no
+ *    value, on purpose" — and that was the more expensive mistake, because
+ *    omission does NOT mean "no ceiling". dsh-llm-pi-ai's `resolveEntry` runs
+ *    `entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens`, and
+ *    that chain bottoms out at a 32768 default: an undeclared ceiling was
+ *    silently capping every reply (reasoning and answer share the budget), so
+ *    a long reasoned turn ended in a forced stop at 32K while the platform
+ *    itself would have allowed 64K. The pin is the probed value, not a
+ *    documented one — the platform's 400-body says "max_tokens 不能超过
+ *    65536", and the re-probe (`scripts/probe-max-tokens.mjs`) is the rule:
+ *    the accepted value must still be accepted, and twice it must still be
+ *    rejected, on whatever machine has credentials.
  *
- * Neither is a cosmetic field, and neither was asserted anywhere.
+ * Neither is a cosmetic field. Both are now asserted in `test/pi-model.test.js`
+ * — the value of `maxTokens` on purpose, not just its presence, so a future
+ * "simplification" that drops it back to omission fails the suite instead of
+ * re-halving the ceiling.
  *
  * @module dsh-connect-qoder/pi-model
  */
@@ -37,6 +49,31 @@ export const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
 /** Default context window when the catalog declares no usable one. */
 export const FALLBACK_CONTEXT_WINDOW = 200000
+
+/**
+ * The platform's single-call output ceiling, in tokens: 64K.
+ *
+ * This is the value every descriptor declares as `maxTokens`, and it is the
+ * number that replaces the old "deliberately absent" decision — see the module
+ * header, item 2, for the fallback chain that made omission a trap.
+ *
+ * Provenance, so the number is never re-invented from memory: the sibling
+ * plugin's live probe (dsh-connect-agnes-token-plan, 2026-10-01) sent
+ * 32768 / 65536 / omitted (all accepted, HTTP 200) and 131072 (rejected, HTTP
+ * 400, platform's own words: "max_tokens 不能超过 65536"). The ceiling is
+ * therefore platform-stated, not guessed. Per the live-contract discipline
+ * the guide pins (§5: values to be pinned are probed, not documented), a
+ * machine with Qoder credentials must re-run `scripts/probe-max-tokens.mjs`
+ * before trusting the constant: 65536 must still be accepted, and 131072
+ * must still be rejected.
+ *
+ * The effective per-turn cap is `min(PROBED_MAX_TOKENS, contextWindow − prompt
+ * − 4096)` — the 4096 is pi-ai's `clampMaxTokensToContext` safety margin
+ * (`CONTEXT_SAFETY_TOKENS`). With this plugin's context windows (≥ 200K) the
+ * clamp never binds, which is also why the margin does not need a constant
+ * here.
+ */
+export const PROBED_MAX_TOKENS = 65_536
 
 /**
  * Whether one model may receive images.
@@ -264,13 +301,20 @@ export function toPiModel(
     ...(thinkingLevelMap === undefined ? {} : { thinkingLevelMap }),
     cost: NO_COST,
     contextWindow: resolveContextWindow(entry, preferMaximumContext),
+    // Pin the probed platform ceiling rather than omitting it. Omission is not
+    // "no cap": dsh-llm-pi-ai's `resolveEntry` runs
+    // `entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens`, which
+    // bottoms out at a 32768 default, so an undeclared ceiling silently
+    // truncated every long reasoned turn at 32K. See the module header, item 2,
+    // and the `PROBED_MAX_TOKENS` doc for provenance and the re-probe rule.
+    maxTokens: PROBED_MAX_TOKENS,
     // `supportsDeveloperRole: false` is load-bearing, not cosmetic. See the
     // module header for what happens without it: every request 403s with a
     // fictional "you are in the queue" error, and DSH retries forever.
     //
     // `maxTokensField: 'max_tokens'` is the other half — the field name pi-ai
-    // should send the output ceiling under. There is deliberately no `maxTokens`
-    // VALUE here: see the module header on why declaring one truncates replies.
+    // sends the output ceiling under. The VALUE now lives in `maxTokens`
+    // (above), pinned to the probed ceiling.
     compat: { maxTokensField: 'max_tokens', supportsDeveloperRole: false },
     // Qoder's own key for this model, carried for the shim's wire request.
     upstreamKey: entry.key,
