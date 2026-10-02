@@ -8,8 +8,10 @@
  * class at all (its own chrome is hashed CSS modules), so without this
  * block the frame silently depends on whichever sibling plugin happens
  * to be installed, and uninstalling it would strip the border, header
- * and caret. The copy is byte-identical to WorkBuddy's on purpose, so
- * both plugins render the same even when loaded together.
+ * and caret. The copy is verbatim to WorkBuddy's on purpose, so
+ * both plugins render the same even when loaded together. WorkBuddy's
+ * icon sizing rule is not copied: this card's header renders no icon
+ * element, so that rule would be dead CSS nothing applies.
  *
  * Every colour is a theme token with a literal fallback, so the card
  * follows the active theme instead of pinning one.
@@ -32,7 +34,6 @@ const QODER_CARD_CSS = [
 	".dsm-plugin-card-chevron::before{content:\"\";display:block;position:absolute;left:4px;top:5px;width:7px;height:7px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(45deg)}",
 	".dsm-plugin-card-chevron-open{transform:rotate(180deg)}",
 	".dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}",
-	".dsm-plugin-card-icon{width:32px;height:32px;flex:none;border-radius:7px}",
 	// --- Card body, owned by this plugin ---
 	".dsm-qoder-body{padding:12px 14px;display:flex;flex-direction:column;gap:12px}",
 	".dsm-qoder-hint{margin:0;color:var(--dsw-alias-label-primary,#1a1a1a);font-size:12px;line-height:1.6}",
@@ -42,6 +43,12 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-row-main{display:flex;align-items:center;gap:8px;min-width:0}",
 	".dsm-qoder-name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
 	".dsm-qoder-badge{font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap}",
+	// The model-row "活动价" highlight. This class was drifting: `card.tsx`
+	// applied `dsm-qoder-badge-offer` to the off-peak badge but styles.ts had
+	// never defined it, so an active promotion rendered identically to a
+	// normal badge. The rule is the success-colour modifier the usage block's
+	// own offer badge (`.dsm-qoder-usage-badge-offer`) already carries.
+	".dsm-qoder-badge-offer{border-color:var(--dsw-alias-state-success-primary,#12b76a);color:var(--dsw-alias-state-success-primary,#12b76a)}",
 	".dsm-qoder-select{font-size:12px;padding:3px 6px;border-radius:6px;background:var(--dsw-alias-bg-layer-3,#202126);color:inherit;border:1px solid var(--dsw-alias-border-l2,#36373b)}",
 	".dsm-qoder-state{margin:0;font-size:12px;color:var(--dsw-alias-label-primary,#1a1a1a)}",
 	".dsm-qoder-error{margin:0;font-size:12px;color:var(--dsw-alias-state-error-primary,#d92d20)}",

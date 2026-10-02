@@ -533,3 +533,4 @@ test('toggling the max-window switch does not erase the load-failure detail', as
     `the failure reason must survive the toggle; saw: ${text(errorAfter)}`,
   )
 })
+

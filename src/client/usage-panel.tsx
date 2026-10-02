@@ -44,6 +44,12 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 	const [claimBusy, setClaimBusy] = react.useState(false);
 	const [claimNotice, setClaimNotice] = react.useState<{ kind?: string; message?: string; amount?: number } | undefined>(undefined);
 	const mounted = react.useRef(true);
+	// The read sequence: `load` runs from the mount effect, the card's
+	// refreshToken bump, the refresh button and after every check-in claim,
+	// and a slower read can still be in flight when a newer one starts. Only
+	// the newest may apply its answer — an out-of-date quota overwriting a
+	// just-refreshed one would be a stale render.
+	const loadSeq = react.useRef(0);
 	react.useEffect(() => {
 		mounted.current = true;
 		return () => {
@@ -51,19 +57,27 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 		};
 	}, []);
 	const load = react.useCallback(async (refresh: boolean) => {
+		const seq = ++loadSeq.current;
 		setBusy(true);
 		try {
 			const value = await getJson<{ regions?: unknown }>(`${QODER_USAGE_PATH}${refresh ? "?refresh=1" : ""}`);
+			// A later read started while this one was in flight supersedes it;
+			// applying an out-of-date answer would show the quota from before
+			// the refresh that just landed.
+			if (seq !== loadSeq.current) return;
 			if (!mounted.current) return;
 			setRegions(Array.isArray(value.regions) ? (value.regions as CardUsageRegion[]) : []);
 			setStatus("ready");
 			setNotice(undefined);
 		} catch (error) {
+			if (seq !== loadSeq.current) return;
 			if (!mounted.current) return;
 			setStatus("error");
 			setNotice(describeThrown(error));
 		} finally {
-			if (mounted.current) setBusy(false);
+			// Only the newest read releases the spinner; a superseded one
+			// finishing must not hide it while its successor is still going.
+			if (seq === loadSeq.current && mounted.current) setBusy(false);
 		}
 	}, []);
 	// The daily check-in goes through the host rather than to Qoder: only the
