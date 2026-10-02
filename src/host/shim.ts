@@ -26,6 +26,7 @@ import type {
   ChatStream,
   ChatTurnRequest,
   PluginLogger,
+  QoderCredential,
   Region,
   RunChat,
   UpstreamChunk,
@@ -35,12 +36,12 @@ import type {
 /**
  * The credential the upstream calls present.
  *
- * Typed as an open record rather than a concrete credential: the Qoder auth
- * path signs with a per-request derived key and a user id, and the values are
- * produced by `credentials.ts`. Naming the individual fields here would be a
- * guess about a peer-owned shape — see the note on `domain.ts`.
+ * An alias of {@link QoderCredential}, kept as a name because the shim's own
+ * `resolveCredential` may legitimately answer `null`/`undefined` — see the
+ * falsy check in the chat route, where a `null` once walked past the guard and
+ * surfaced as a 502 instead of a 401.
  */
-export type ShimCredential = Record<string, unknown>
+export type ShimCredential = QoderCredential | null | undefined
 
 /** A tool call accumulated across non-streaming chunks. */
 interface ToolCallAccumulator {
@@ -51,7 +52,7 @@ interface ToolCallAccumulator {
 
 /** The knobs `createQoderShim` is built from; every reader is a function on purpose. */
 export interface ShimOptions {
-  resolveCredential: () => Promise<ShimCredential | null | undefined> | ShimCredential | null | undefined
+  resolveCredential: () => Promise<ShimCredential> | ShimCredential
   resolveModels: () => CatalogEntry[]
   resolveUpstreamKey?: (modelId: unknown) => string | undefined
   resolveAlwaysThinking?: (modelId: unknown) => boolean | undefined

@@ -44,6 +44,7 @@ import {
 } from './preferences.ts'
 import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.ts'
 import { normalizeEntry, projectModelRow, buildModelRowsPayload } from './catalog-entry.ts'
+import type { FetchedEntry } from './catalog-entry.ts'
 import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
 import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
 import { exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.ts'
@@ -427,7 +428,13 @@ class RegionRuntime {
     try {
       const raw = await fetchModels(this.region, credential, signal)
       if (isRefreshObsolete(this)) return
-      this.applyOutcome({ ok: true, entries: raw.map(normalizeEntry) })
+      // `fetchModels` answers with rows this plugin only partly trusts: every
+      // field is optional on the wire, and `normalizeEntry` is what mints the
+      // id and fills the defaults. The cast states that division of labour —
+      // the reader hands over the upstream's raw object, the normalizer is the
+      // one that gives it a shape — rather than pretending `fetchModels`
+      // already validated fields it deliberately passes through untouched.
+      this.applyOutcome({ ok: true, entries: raw.map((entry) => normalizeEntry(entry as FetchedEntry)) })
     } catch (error: any) {
       // A dispose mid-fetch is not a failure worth reporting: the runtime is
       // gone, there is nobody left to tell, and logging it would put a warning

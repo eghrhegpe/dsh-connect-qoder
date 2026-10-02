@@ -50,8 +50,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
  * for real also reports the ~91 TS7031/TS7018 VARIABLE sites (`let x = …` with
  * no type and no inference), which a parameter-shaped count misses. Starting
  * the ratchet at 445 would have failed on the first run.
+ *
+ * Lowered batch by batch as the host modules were annotated: 536 → 502 → 445 →
+ * 387 → 354 → 289. Everything still on the list is `src/host/credentials.ts`,
+ * `src/host/index.ts`, or the client — see the per-file breakdown under
+ * `--write`.
  */
-const BUDGET = 536
+const BUDGET = 289
 
 // Flags from tsconfig's `strict` family that `noImplicitAny` implies. Passing
 // these explicitly keeps this script's count identical whether or not the

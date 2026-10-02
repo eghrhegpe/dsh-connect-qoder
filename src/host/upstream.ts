@@ -27,6 +27,7 @@ import { classifyUpstreamError, ProtocolShapeChangedError } from './errors.ts'
 import { windowIsOpen } from './offpeak.ts'
 import { toEpochMs } from './time.ts'
 import { checkinStateFrom } from './claim.ts'
+import type { Campaign, ChatTurnRequest, QoderCredential, Region, UpstreamChunk } from './domain.ts'
 
 /** Public key the gateway expects the per-request AES key to be wrapped with. */
 const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -121,22 +122,25 @@ function sleep(ms: number, signal?: AbortSignal) {
  * @param fallbackCode - code to assume when the payload names none (the HTTP
  *   status, on the transport path).
  */
-function readFailure(chunk, fallbackCode = '') {
+function readFailure(chunk: unknown, fallbackCode = ''):
+  | { kind: string; retryAfterSeconds: number; code: string; detail: string }
+  | undefined {
   if (chunk === null || typeof chunk !== 'object' || Array.isArray(chunk)) return undefined
   // A frame is only a failure if it carries identifying detail. Bare status or
   // keepalive frames (`{ success: true }`, `{ success: false }` with no code
   // and no message, plain arrays, etc.) must not kill the stream.
-  const hasCode = chunk.code != null || chunk.errorCode != null
+  const frame = chunk as Record<string, unknown>
+  const hasCode = frame.code != null || frame.errorCode != null
   const hasMessage =
-    (typeof chunk.message === 'string' && chunk.message.length > 0) ||
-    (typeof chunk.errorMessage === 'string' && chunk.errorMessage.length > 0)
+    (typeof frame.message === 'string' && frame.message.length > 0) ||
+    (typeof frame.errorMessage === 'string' && frame.errorMessage.length > 0)
   if (!hasCode && !hasMessage) {
     // No identifying fields at all. A `fallbackCode` (HTTP status) still
     // identifies the failure on the transport path; without it, this is not
     // an error frame.
     if (fallbackCode === '') return undefined
   }
-  const { code, detail } = unwrapFailure(chunk)
+  const { code, detail } = unwrapFailure(frame)
   const effective = code !== '' ? code : fallbackCode
   const kind = classifyUpstreamError(chunk, effective, detail)
   return { kind: kind.kind, retryAfterSeconds: kind.retryAfterSeconds ?? 0, code: effective, detail }
@@ -204,7 +208,7 @@ const ENCODE_TABLE = (() => {
  * @param plaintext - the JSON body bytes.
  * @returns the encoded bytes to send as the request body.
  */
-export function encodeBody(plaintext) {
+export function encodeBody(plaintext: Buffer | string): Buffer {
   const bytes = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext)
   const std = bytes.toString('base64')
   const n = std.length
@@ -218,7 +222,7 @@ export function encodeBody(plaintext) {
 }
 
 /** AES-128-CBC encrypt with the key doubling as the IV, base64-encoded. */
-function aesEncryptCBCBase64(plaintext, keyString) {
+function aesEncryptCBCBase64(plaintext: string, keyString: string): string {
   const key = Buffer.from(keyString)
   const cipher = crypto.createCipheriv('aes-128-cbc', key, key)
   return cipher.update(plaintext, 'utf8', 'base64') + cipher.final('base64')
@@ -228,7 +232,7 @@ function aesEncryptCBCBase64(plaintext, keyString) {
  * The path the signature covers: the request path with a leading `/algo`
  * stripped, because the gateway routes that prefix away before verifying.
  */
-export function signaturePath(url) {
+export function signaturePath(url: string): string {
   let path = new URL(url).pathname
   if (path.startsWith('/algo')) path = path.slice('/algo'.length)
   return path
@@ -242,7 +246,11 @@ export function signaturePath(url) {
  * @param credential - `{ userID, token, name, email, machineID }`.
  * @returns the headers to merge into the request.
  */
-export function authHeaders(body, url, credential) {
+export function authHeaders(
+  body: Buffer,
+  url: string,
+  credential: QoderCredential,
+): Record<string, string> {
   const aesKey = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
   const infoB64 = aesEncryptCBCBase64(
     JSON.stringify({
@@ -312,27 +320,27 @@ export function authHeaders(body, url, credential) {
 }
 
 /** URL listing the models this account may use. */
-export function modelListUrl(region) {
+export function modelListUrl(region: Region): string {
   return `${region.baseUrl}algo/api/v2/model/list?Encode=1`
 }
 
 /** URL of the streaming chat endpoint. */
-export function chatUrl(region) {
+export function chatUrl(region: Region): string {
   return `${region.baseUrl}algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`
 }
 
 /** URL exchanging a personal access token for a job token. */
-export function exchangeUrl(region) {
+export function exchangeUrl(region: Region): string {
   return `${region.openApiUrl}/api/v1/jobToken/exchange`
 }
 
 /** URL returning the signed-in account's profile. */
-export function userInfoUrl(region) {
+export function userInfoUrl(region: Region): string {
   return `${region.openApiUrl}/api/v1/userinfo`
 }
 
 /** URL returning the account's quota usage. */
-export function usageUrl(region) {
+export function usageUrl(region: Region): string {
   return `${region.openApiUrl}/api/v2/quota/usage`
 }
 
@@ -345,7 +353,7 @@ export function usageUrl(region) {
  * `quota/usage` route returns only the plan and add-on halves, so this is the
  * one to prefer and the other is the fallback.
  */
-export function usagePresentationUrl(region) {
+export function usagePresentationUrl(region: Region): string {
   return `${region.openApiUrl}/sash/api/v2/me/usage`
 }
 
@@ -357,7 +365,7 @@ export function usagePresentationUrl(region) {
  * end date. The quota routes do not carry that text, so it is read separately
  * and merged in.
  */
-export function campaignsUrl(region) {
+export function campaignsUrl(region: Region): string {
   return `${region.openApiUrl}/sash/api/v1/me/campaigns`
 }
 
@@ -379,7 +387,7 @@ export function campaignsUrl(region) {
  * list back to the banner). CN needs no umid block: its campaigns are
  * served complete to a plain-bearer GET.
  */
-export function openApiHeaders(credential, region) {
+export function openApiHeaders(credential: QoderCredential, region: Region): Record<string, string> {
   return {
     Accept: 'application/json',
     Authorization: `Bearer ${credential.token}`,
@@ -389,8 +397,15 @@ export function openApiHeaders(credential, region) {
   }
 }
 
+/** The validated umid block, or `null` when the binary is absent or uncooperative. */
+interface UmidBlock {
+  machineToken: string
+  machineCode: string
+  machineType: string
+}
+
 /** One cached umid read per process: the binary is slow enough to matter, cheap enough to run once. */
-let umidInfo
+let umidInfo: UmidBlock | null | undefined
 
 /**
  * Test seam: a global function, when present, replaces the binary read
@@ -438,7 +453,7 @@ export function __dshQoderUmidCacheReset() {
  * @param {object|undefined} region - the region descriptor.
  * @returns `{ 'Cosy-MachineToken', 'Cosy-MachineCode', 'Cosy-MachineType' }` or `{}`.
  */
-function umidHeadersFor(region) {
+function umidHeadersFor(region: Region): Record<string, string> {
   if (umidInfo === undefined) umidInfo = readUmidInfo(region)
   if (umidInfo === null) return {}
   return {
@@ -453,11 +468,12 @@ function umidHeadersFor(region) {
  * non-string, or empty. A partial block must not surface partially — the
  * header set is all-or-nothing.
  */
-function normalizeUmidBlock(answer) {
-  if (typeof answer?.machineToken !== 'string' || answer.machineToken.length === 0) return null
-  if (typeof answer?.machineType !== 'string' || answer.machineType.length === 0) return null
-  if (typeof answer?.machineCode !== 'string' || answer.machineCode.length === 0) return null
-  return { machineToken: answer.machineToken, machineType: answer.machineType, machineCode: answer.machineCode }
+function normalizeUmidBlock(answer: unknown): UmidBlock | null {
+  const block = answer as Partial<UmidBlock> | null | undefined
+  if (typeof block?.machineToken !== 'string' || block.machineToken.length === 0) return null
+  if (typeof block?.machineType !== 'string' || block.machineType.length === 0) return null
+  if (typeof block?.machineCode !== 'string' || block.machineCode.length === 0) return null
+  return { machineToken: block.machineToken, machineType: block.machineType, machineCode: block.machineCode }
 }
 
 /**
@@ -475,11 +491,11 @@ function normalizeUmidBlock(answer) {
  *   the install root.
  * @returns the parsed block or `null`.
  */
-function readUmidInfo(region) {
+function readUmidInfo(region: Region): UmidBlock | null {
   // The test seam stands in for the whole binary read: a probe that answers
   // `null` models "the binary is absent on this machine", which is the
   // production behaviour on a CN-only install or a CI runner.
-  const probe = globalThis.__dshQoderUmidProbe
+  const probe = (globalThis as { __dshQoderUmidProbe?: () => unknown }).__dshQoderUmidProbe
   if (typeof probe === 'function') {
     try {
       return normalizeUmidBlock(probe())
@@ -499,7 +515,7 @@ function readUmidInfo(region) {
       continue
     }
     try {
-      const info = JSON.parse(output)
+      const info = JSON.parse(output) as Partial<UmidBlock>
       if (typeof info?.machineToken !== 'string' || info.machineToken.length === 0) continue
       if (typeof info?.machineType !== 'string' || typeof info?.machineCode !== 'string') continue
       return { machineToken: info.machineToken, machineType: info.machineType, machineCode: info.machineCode }
@@ -517,7 +533,7 @@ function readUmidInfo(region) {
  * leaving a thin launcher tree at `Programs\Qoder\resources` that carries
  * the shared `umid` binary; the CN app keeps its own `Programs\QoderCN` tree.
  */
-function umidRootsFor(region) {
+function umidRootsFor(region: Region): string[] {
   const localAppData = process.env.LOCALAPPDATA
   if (localAppData === undefined) return []
   const programs = join(localAppData, 'Programs')
@@ -542,7 +558,7 @@ function umidRootsFor(region) {
  * @param context - short label for the error message (e.g. "Qoder model list").
  * @returns the parsed JSON value.
  */
-async function readJson(response, context) {
+async function readJson(response: Response, context: string): Promise<any> {
   const text = await response.text()
   try {
     return JSON.parse(text)
@@ -573,7 +589,11 @@ async function readJson(response, context) {
  *
  * @returns the parsed campaigns document.
  */
-export async function readCampaigns(region: any, credential: any, signal?: AbortSignal) {
+export async function readCampaigns(
+  region: Region,
+  credential: QoderCredential,
+  signal?: AbortSignal,
+): Promise<{ campaigns?: Campaign[] } & Record<string, unknown>> {
   const response = await fetch(campaignsUrl(region), {
     method: 'GET',
     headers: openApiHeaders(credential, region),
@@ -590,17 +610,33 @@ export async function readCampaigns(region: any, credential: any, signal?: Abort
  * @param {unknown} payload - the raw campaigns document.
  * @returns `[{ key, title, description, detailUrl, endsAt }]`.
  */
-export function projectCampaignRows(payload) {
-  const list = Array.isArray(payload?.campaigns) ? payload.campaigns : []
-  const rows = []
-  for (const campaign of list) {
-    if (campaign === null || typeof campaign !== 'object') continue
-    const placements = Array.isArray(campaign?.placements) ? campaign.placements : []
-    const usage = placements.find((entry) => entry?.type === 'USAGE')
+export function projectCampaignRows(payload: unknown): Array<{
+  key: string
+  title: string
+  description: string
+  detailUrl: string
+  endsAt?: number
+}> {
+  const list = Array.isArray((payload as { campaigns?: unknown } | null | undefined)?.campaigns)
+    ? (payload as { campaigns: unknown[] }).campaigns
+    : []
+  const rows: Array<{ key: string; title: string; description: string; detailUrl: string; endsAt?: number }> = []
+  for (const raw of list) {
+    if (raw === null || typeof raw !== 'object') continue
+    const campaign = raw as {
+      placements?: unknown
+      endAt?: unknown
+      campaignKey?: unknown
+      campaignId?: unknown
+    }
+    const placements = Array.isArray(campaign.placements) ? campaign.placements : []
+    const usage = placements.find(
+      (entry) => (entry as { type?: unknown } | null | undefined)?.type === 'USAGE',
+    ) as { content?: Record<string, unknown> } | undefined
     if (usage === undefined) continue
     // The panel is bilingual; prefer the Simplified Chinese copy to match the
     // rest of this card, and fall back to English when only that exists.
-    const content = usage.content?.zh ?? usage.content?.['zh-CN'] ?? usage.content?.en ?? {}
+    const content = (usage.content?.zh ?? usage.content?.['zh-CN'] ?? usage.content?.en ?? {}) as Record<string, unknown>
     const endsAt = toEpochMs(campaign.endAt)
     rows.push({
       key: String(campaign.campaignKey ?? campaign.campaignId ?? ''),
@@ -613,7 +649,11 @@ export function projectCampaignRows(payload) {
   return rows
 }
 
-export async function fetchCampaigns(region, credential, signal) {
+export async function fetchCampaigns(
+  region: Region,
+  credential: QoderCredential,
+  signal?: AbortSignal,
+): Promise<Array<{ key: string; title: string; description: string; detailUrl: string; endsAt?: number }>> {
   return projectCampaignRows(await readCampaigns(region, credential, signal))
 }
 
@@ -628,7 +668,7 @@ export async function fetchCampaigns(region, credential, signal) {
  * campaign list immediately before claiming: the daily round is re-issued with
  * a new id each day, so an id remembered from an earlier read is a stale one.
  */
-export function claimCampaignUrl(region, campaignId) {
+export function claimCampaignUrl(region: Region, campaignId: string): string {
   return `${region.openApiUrl}/sash/api/v1/me/campaigns/${encodeURIComponent(campaignId)}/claim`
 }
 
@@ -642,7 +682,12 @@ export function claimCampaignUrl(region, campaignId) {
  *
  * @returns the parsed claim response.
  */
-export async function claimCampaign(region: any, credential: any, campaignId: string, signal?: AbortSignal) {
+export async function claimCampaign(
+  region: Region,
+  credential: QoderCredential,
+  campaignId: string,
+  signal?: AbortSignal,
+): Promise<any> {
   if (typeof campaignId !== 'string' || campaignId.length === 0) {
     throw new Error('Qoder check-in failed: no campaign id to claim')
   }
@@ -665,16 +710,26 @@ export async function claimCampaign(region: any, credential: any, campaignId: st
   }
 }
 
+/** One quota bucket as the usage panel renders it. */
+interface QuotaBucket {
+  total: number
+  used: number
+  remaining: number
+  percentage: number
+  unit?: string
+}
+
 /** Coerce one quota bucket into `{ total, used, remaining, percentage, unit }`. */
-function normalizeQuotaBucket(value) {
+function normalizeQuotaBucket(value: unknown): QuotaBucket | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const total = Number(value.total)
-  const used = Number(value.used)
+  const bucket = value as Record<string, unknown>
+  const total = Number(bucket.total)
+  const used = Number(bucket.used)
   if (!Number.isFinite(total) || total <= 0) return undefined
   const safeUsed = Number.isFinite(used) ? Math.max(0, used) : 0
-  const remainingRaw = Number(value.remaining)
+  const remainingRaw = Number(bucket.remaining)
   const remaining = Number.isFinite(remainingRaw) ? Math.max(0, remainingRaw) : Math.max(0, total - safeUsed)
-  const percentageRaw = Number(value.percentage)
+  const percentageRaw = Number(bucket.percentage)
   const percentage = Number.isFinite(percentageRaw)
     ? percentageRaw > 1
       ? percentageRaw / 100
@@ -685,7 +740,7 @@ function normalizeQuotaBucket(value) {
     used: safeUsed,
     remaining,
     percentage: Math.min(1, Math.max(0, percentage)),
-    unit: typeof value.unit === 'string' && value.unit.length > 0 ? value.unit : 'credits',
+    unit: typeof bucket.unit === 'string' && bucket.unit.length > 0 ? bucket.unit : 'credits',
   }
 }
 
@@ -697,33 +752,54 @@ function normalizeQuotaBucket(value) {
  * rather than to the account as a whole. Packages that declare no usable total
  * are dropped, matching the client's own filtering.
  */
-function normalizeDedicatedPackage(value) {
+/** One dedicated (per-model) resource package, as the IDE panel renders it. */
+interface DedicatedPackage {
+  id: string
+  name: string
+  description: string
+  total: number
+  used: number
+  remaining: number
+  percentage: number
+  unit: string
+  expiresAt?: number
+  /**
+   * Whether the package may still be used. Carried from the upstream rather
+   * than recomputed: an allowance the gateway has already switched off is not
+   * the same as one whose quota is spent, and the panel renders them
+   * differently.
+   */
+  available: boolean
+}
+
+function normalizeDedicatedPackage(value: unknown): DedicatedPackage | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const id = typeof value.id === 'string' ? value.id.trim() : ''
-  const total = Number(value.total)
+  const pkg = value as Record<string, unknown>
+  const id = typeof pkg.id === 'string' ? pkg.id.trim() : ''
+  const total = Number(pkg.total)
   if (id === '' || !Number.isFinite(total) || total <= 0) return undefined
-  const used = Number(value.used)
-  const remainingRaw = Number(value.remaining)
+  const used = Number(pkg.used)
+  const remainingRaw = Number(pkg.remaining)
   const safeUsed = Number.isFinite(used) ? Math.max(0, used) : 0
   const remaining = Number.isFinite(remainingRaw) ? Math.max(0, remainingRaw) : Math.max(0, total - safeUsed)
-  const percentageRaw = Number(value.percentage)
+  const percentageRaw = Number(pkg.percentage)
   const percentage = Number.isFinite(percentageRaw)
     ? percentageRaw > 1
       ? percentageRaw / 100
       : percentageRaw
     : safeUsed / total
-  const expiresAt = toEpochMs(value.expiresAt)
+  const expiresAt = toEpochMs(pkg.expiresAt)
   return {
     id,
-    name: typeof value.name === 'string' ? value.name : '',
-    description: typeof value.description === 'string' ? value.description : '',
+    name: typeof pkg.name === 'string' ? pkg.name : '',
+    description: typeof pkg.description === 'string' ? pkg.description : '',
     total,
     used: safeUsed,
     remaining,
     percentage: Math.min(1, Math.max(0, percentage)),
-    unit: typeof value.unit === 'string' && value.unit.length > 0 ? value.unit : 'credits',
+    unit: typeof pkg.unit === 'string' && pkg.unit.length > 0 ? pkg.unit : 'credits',
     ...(expiresAt !== undefined ? { expiresAt } : {}),
-    available: value.available !== false,
+    available: pkg.available !== false,
   }
 }
 
@@ -740,16 +816,20 @@ function normalizeDedicatedPackage(value) {
  *   dedicatedPackages, campaigns, checkin, isQuotaExceeded, source }`, or
  *   `undefined` when neither route answered.
  */
-export async function fetchUsage(region: any, credential: any, signal?: AbortSignal) {
+export async function fetchUsage(
+  region: Region,
+  credential: QoderCredential,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown> | undefined> {
   const headers = openApiHeaders(credential, region)
 
-  const read = async (url) => {
+  const read = async (url: string): Promise<any> => {
     const response = await fetch(url, { method: 'GET', headers, redirect: 'error', signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return readJson(response, 'Qoder usage')
   }
 
-  let payload
+  let payload: any
   let source = 'presentation'
   try {
     payload = await read(usagePresentationUrl(region))
@@ -775,8 +855,8 @@ export async function fetchUsage(region: any, credential: any, signal?: AbortSig
   // failure here must not cost the user their quota numbers. The same payload
   // answers whether there is a daily check-in to claim, so both are read from
   // this one round trip rather than two that could disagree.
-  let campaigns = []
-  let checkin
+  let campaigns: ReturnType<typeof projectCampaignRows> = []
+  let checkin: ReturnType<typeof checkinStateFrom> | undefined
   try {
     const raw = await readCampaigns(region, credential, signal)
     campaigns = projectCampaignRows(raw)
@@ -843,21 +923,25 @@ export async function fetchUsage(region: any, credential: any, signal?: AbortSig
  * @returns the `chat` array of raw rows.
  * @throws {ProtocolShapeChangedError} for either drift shape.
  */
-export function readModelCatalogShape(data: any, _region: any = { displayName: 'Qoder' }) {
+export function readModelCatalogShape(
+  data: unknown,
+  _region: { displayName: string } = { displayName: 'Qoder' },
+): unknown[] {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     throw new ProtocolShapeChangedError(
       `top level is ${Array.isArray(data) ? 'an array' : typeof data}, not a group envelope`,
     )
   }
-  if (!('chat' in data)) {
+  const envelope = data as Record<string, unknown>
+  if (!('chat' in envelope)) {
     // The useful part of the message is what DID arrive: a renamed group reads
     // instantly ("it is called `models` now"), where "no chat" alone would
     // leave the maintainer guessing.
     throw new ProtocolShapeChangedError(
-      `no \`chat\` group; groups present: ${Object.keys(data).slice(0, 12).join(', ') || '(none)'}`,
+      `no \`chat\` group; groups present: ${Object.keys(envelope).slice(0, 12).join(', ') || '(none)'}`,
     )
   }
-  const chat = data.chat
+  const chat = envelope.chat
   if (!Array.isArray(chat)) {
     throw new ProtocolShapeChangedError(`\`chat\` is ${chat === null ? 'null' : typeof chat}, not an array`)
   }
@@ -875,7 +959,11 @@ export function readModelCatalogShape(data: any, _region: any = { displayName: '
  * @throws {ProtocolShapeChangedError} when the 200 body is not an envelope
  *   this code recognises — see {@link readModelCatalogShape}.
  */
-export async function fetchModels(region, credential, signal) {
+export async function fetchModels(
+  region: Region,
+  credential: QoderCredential,
+  signal?: AbortSignal,
+): Promise<unknown[]> {
   const url = modelListUrl(region)
   const headers = authHeaders(Buffer.alloc(0), url, credential)
   const response = await fetch(url, {
@@ -890,13 +978,16 @@ export async function fetchModels(region, credential, signal) {
   const data = await readJson(response, 'Qoder model list')
   const chat = readModelCatalogShape(data, region)
   if (chat.length === 0) return []
-  const models = []
-  for (const entry of chat) {
-    if (entry === null || typeof entry !== 'object') continue
+  const models: unknown[] = []
+  for (const raw of chat) {
+    if (raw === null || typeof raw !== 'object') continue
+    const entry = raw as Record<string, unknown>
     if (typeof entry.key !== 'string' || entry.key.length === 0) continue
     if (entry.enable === false) continue
     if (typeof entry.display_name !== 'string' || entry.display_name.length === 0) continue
-    const config = entry.thinking_config
+    const config = entry.thinking_config as
+      | { enabled?: { efforts?: unknown }; disabled?: unknown }
+      | undefined
     const efforts = config?.enabled?.efforts
     // `efforts` is an object keyed by level (`{ high: {}, max: {} }`), not an
     // array, and `disabled` is present only on models that permit turning
@@ -919,15 +1010,16 @@ export async function fetchModels(region, credential, signal) {
     //   long reasoned reply then ends with `finish: max-tokens` — the visible
     //   text is cut off mid-sentence. Leaving it undeclared lets the harness
     //   use its own default instead.
-    const windows: any = entry.context_config
-    const contextOptions = []
+    const windows = entry.context_config
+    const contextOptions: number[] = []
     let defaultContextWindow = 0
     if (windows !== null && typeof windows === 'object') {
-      for (const value of Object.values(windows) as any[]) {
-        const tokens = Number(value?.token_count)
+      for (const value of Object.values(windows as Record<string, unknown>)) {
+        const option = value as { token_count?: unknown; is_default?: unknown } | null
+        const tokens = Number(option?.token_count)
         if (!Number.isFinite(tokens) || tokens <= 0) continue
         contextOptions.push(tokens)
-        if (value?.is_default === true) defaultContextWindow = tokens
+        if (option?.is_default === true) defaultContextWindow = tokens
       }
       contextOptions.sort((left, right) => left - right)
     }
@@ -981,19 +1073,23 @@ export async function fetchModels(region, credential, signal) {
  *   beforePromotionPriceFactor, badge, description }`, or `undefined` when the
  *   model carries no promotion.
  */
-export function normalizePromotion(value, now = new Date()) {
+export function normalizePromotion(value: unknown, now: Date = new Date()) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const discountFactor = Number(value.discount_factor)
-  const before = Number(value.before_promotion_price_factor)
-  const windowStart = typeof value.window_start === 'string' ? value.window_start : ''
-  const windowEnd = typeof value.window_end === 'string' ? value.window_end : ''
+  const promotion = value as Record<string, unknown>
+  const discountFactor = Number(promotion.discount_factor)
+  const before = Number(promotion.before_promotion_price_factor)
+  const windowStart = typeof promotion.window_start === 'string' ? promotion.window_start : ''
+  const windowEnd = typeof promotion.window_end === 'string' ? promotion.window_end : ''
   const hasWindow = /^\d{2}:\d{2}$/.test(windowStart) && /^\d{2}:\d{2}$/.test(windowEnd)
   if (!Number.isFinite(discountFactor) && !Number.isFinite(before) && !hasWindow) return undefined
-  const timezone = typeof value.timezone === 'string' && value.timezone.length > 0 ? value.timezone : 'Asia/Shanghai'
+  const timezone =
+    typeof promotion.timezone === 'string' && promotion.timezone.length > 0
+      ? promotion.timezone
+      : 'Asia/Shanghai'
   // The catalog is bilingual; prefer the Simplified Chinese copy to match the
   // rest of the card, falling back to English when only that is present.
-  const pick = (field) => {
-    const source = value[field]
+  const pick = (field: string): string => {
+    const source = promotion[field] as Record<string, unknown> | null | undefined
     if (source === null || typeof source !== 'object') return ''
     const text = source.zh ?? source['zh-CN'] ?? source.en
     return typeof text === 'string' ? text : ''
@@ -1003,8 +1099,8 @@ export function normalizePromotion(value, now = new Date()) {
   // nothing here to reinterpret, and guessing campaigns into existence is
   // worse than staying quiet. Without a parseable window there is no clock to
   // re-read against either, so those falses also stand as reported.
-  const active = value.active === true
-    || (value.active === false && hasWindow && !windowIsOpen(windowStart, windowEnd, timezone, now))
+  const active = promotion.active === true
+    || (promotion.active === false && hasWindow && !windowIsOpen(windowStart, windowEnd, timezone, now))
   return {
     active,
     windowStart: hasWindow ? windowStart : '',
@@ -1022,7 +1118,11 @@ export function normalizePromotion(value, now = new Date()) {
  *
  * @returns `{ token, refreshToken, expiresAt }`.
  */
-export async function exchangePat(region: any, pat: any, signal?: AbortSignal) {
+export async function exchangePat(
+  region: Region,
+  pat: string,
+  signal?: AbortSignal,
+): Promise<{ token: string; refreshToken: string; expiresAt: number }> {
   const response = await fetch(exchangeUrl(region), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -1062,7 +1162,11 @@ export async function exchangePat(region: any, pat: any, signal?: AbortSignal) {
  *
  * @returns `{ userID, name, email }`.
  */
-export async function fetchUserInfo(region: any, credential: any, signal?: AbortSignal) {
+export async function fetchUserInfo(
+  region: Region,
+  credential: QoderCredential,
+  signal?: AbortSignal,
+): Promise<{ userID: string; name: string; email: string }> {
   const response = await fetch(userInfoUrl(region), {
     method: 'GET',
     headers: openApiHeaders(credential, region),
@@ -1095,10 +1199,37 @@ export async function fetchUserInfo(region: any, credential: any, signal?: Abort
  *   those the flag is omitted entirely rather than sent as `false`.
  * @yields OpenAI-shaped chat completion chunks.
  */
-export async function* streamChat(region, credential, request, signal) {
+/** One message as Qoder's chat route wants it. */
+interface QoderMessage {
+  role?: string
+  content?: unknown
+  [field: string]: unknown
+}
+
+/**
+ * One chat turn, streamed.
+ *
+ * Yields plain objects in the OpenAI chunk vocabulary
+ * (`{ choices: [{ delta, finish_reason }] }`) so the caller can forward them
+ * without knowing about Qoder's envelope.
+ *
+ * @param region - the region descriptor.
+ * @param credential - `{ userID, token, name, email, machineID }`.
+ * @param request - `{ model, messages, tools, maxTokens, enableThinking, alwaysThinking, reasoningEffort, sessionId }`.
+ *   `alwaysThinking` marks a model that rejects `enable_thinking: false`; for
+ *   those the flag is omitted entirely rather than sent as `false`.
+ * @yields OpenAI-shaped chat completion chunks.
+ */
+export async function* streamChat(
+  region: Region,
+  credential: QoderCredential,
+  request: ChatTurnRequest,
+  signal?: AbortSignal,
+): AsyncGenerator<UpstreamChunk> {
   const model = request.model
   const recordID = crypto.randomUUID()
-  const lastUser = [...request.messages].reverse().find((m) => m.role === 'user')
+  const messages = request.messages as QoderMessage[]
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user')
   const lastText = typeof lastUser?.content === 'string' ? lastUser.content : ''
 
   // A model that always thinks answers `enable_thinking: false` with a
@@ -1124,7 +1255,24 @@ export async function* streamChat(region, credential, request, signal) {
     parameters.enable_thinking = false
   }
 
-  const body = {
+  // The literal is annotated rather than inferred: every `null` and every `[]`
+  // below is a REQUIRED field the gateway expects to see present, and inference
+  // widens them to `any`/`never[]` precisely because their emptiness is the
+  // point. `image_urls: null` is not "no images" vs "images" — the key has to
+  // be there as null, and a future edit that drops it should be a type error.
+  const body: {
+    image_urls: null
+    messages: unknown
+    tools: unknown
+    chat_context: {
+      chatPrompt: string
+      imageUrls: null
+      extra: { context: unknown[]; modelConfig: { key: unknown; is_reasoning: boolean }; originalContent: string }
+      features: unknown[]
+      text: string
+    }
+    [field: string]: unknown
+  } = {
     request_id: crypto.randomUUID(),
     request_set_id: recordID,
     chat_record_id: recordID,
@@ -1180,7 +1328,7 @@ export async function* streamChat(region, credential, request, signal) {
    * Nothing is yielded until the first frame arrives, so a queue rejection
    * raised here is still safe to retry: the caller has seen no output yet.
    */
-  async function* readFrames(response) {
+  async function* readFrames(response: Response): AsyncGenerator<UpstreamChunk> {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -1269,7 +1417,7 @@ export async function* streamChat(region, credential, request, signal) {
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Accept-Encoding': 'identity',
-      'X-Model-Key': model,
+      'X-Model-Key': String(model),
       'X-Model-Source': 'system',
       ...authHeaders(bodyBytes, url, credential),
     }
@@ -1284,7 +1432,14 @@ export async function* streamChat(region, credential, request, signal) {
       response = await fetch(url, {
         method: 'POST',
         headers,
-        body: bodyBytes,
+        // `Buffer` is a `Uint8Array` and `fetch` accepts binary bodies at
+        // runtime, but `BodyInit` in the DOM/Node lib types does not list it —
+        // it is spelled as the `URLSearchParams` / `Blob` / `ReadableStream`
+        // union. The bytes handed over are exactly the encoded body
+        // `authHeaders` just signed, and the signature is computed over THESE
+        // bytes, so re-encoding or re-copying them here would break the
+        // pairing. One cast at the type boundary, with no runtime effect.
+        body: bodyBytes as unknown as BodyInit,
         redirect: 'error',
         signal: attemptSignal,
       })
@@ -1519,13 +1674,15 @@ class DailyLimitRejection extends Error {
  *   asserted against the real function rather than a copy of the arithmetic —
  *   the old clamp broke it in a way no reader of `streamChat` could see.
  */
-export function queueWaitFor(error, waitedMs, attempt) {
-  if (error?.retryable !== true) return undefined
+export function queueWaitFor(error: unknown, waitedMs: number, attempt: number): number | undefined {
+  if ((error as { retryable?: unknown } | null | undefined)?.retryable !== true) return undefined
   const remaining = QUEUE_WAIT_BUDGET_MS - waitedMs
   if (remaining <= 0) return undefined
 
   const hinted =
-    Number(error.retryAfterSeconds) > 0 ? Number(error.retryAfterSeconds) * 1000 : QUEUE_WAIT_MIN_SLEEP_MS
+    Number((error as { retryAfterSeconds?: unknown }).retryAfterSeconds) > 0
+      ? Number((error as { retryAfterSeconds?: unknown }).retryAfterSeconds) * 1000
+      : QUEUE_WAIT_MIN_SLEEP_MS
 
   // Leave the first few attempts on the gateway's own advice; only start
   // backing off further once it is clear the hint is not clearing the queue.
@@ -1571,19 +1728,21 @@ function failureMessage(failure: any, region: any, status?: number, statusText?:
 /**
  * Parse a string that is expected to hold a JSON object, else `undefined`.
  */
-function tryJsonObject(text) {
+function tryJsonObject(text: string): Record<string, unknown> | undefined {
   const trimmed = text.trim()
   if (!trimmed.startsWith('{')) return undefined
   try {
     const parsed = JSON.parse(trimmed)
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined
   } catch {
     return undefined
   }
 }
 
 /** Whether a value is a plain (non-array) object. */
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
@@ -1607,10 +1766,10 @@ function isPlainObject(value) {
  * @returns `{ code, detail }`, the most specific code and the most informative
  *   detail text found.
  */
-function unwrapFailure(chunk) {
+function unwrapFailure(chunk: Record<string, unknown>): { code: string; detail: string } {
   let code = ''
   let detail = ''
-  let node = chunk
+  let node: Record<string, unknown> = chunk
   let descended = false
 
   for (let depth = 0; depth < 8; depth++) {
@@ -1660,9 +1819,10 @@ function unwrapFailure(chunk) {
  * @param messages - messages in either vocabulary.
  * @returns Qoder-shaped messages.
  */
-export function toQoderMessages(messages) {
-  const out = []
-  for (const message of messages) {
+export function toQoderMessages(messages: unknown): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = []
+  for (const raw of messages as Array<Record<string, unknown>>) {
+    const message = raw
     if (message === null || typeof message !== 'object') continue
 
     if (message.role === 'system' || message.role === 'developer') {
@@ -1783,12 +1943,12 @@ export function toQoderMessages(messages) {
 }
 
 /** Flatten a DSH content value into plain text. */
-function textOf(content) {
+function textOf(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   let text = ''
-  for (const block of content) {
-    if (block?.type === 'text') text += block.text ?? ''
+  for (const block of content as Array<{ type?: unknown; text?: unknown }>) {
+    if (block?.type === 'text') text += typeof block.text === 'string' ? block.text : ''
   }
   return text
 }
@@ -1805,9 +1965,19 @@ function textOf(content) {
  * @param tools - tool descriptors in either shape.
  * @returns OpenAI-shaped tool entries.
  */
-export function toQoderTools(tools) {
+export function toQoderTools(tools: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(tools)) return []
-  return tools.map((tool, index) => {
+  // One tool, in either of the two vocabularies described above. Declared
+  // loosely on purpose: the branches below narrow it field by field, and a
+  // closed shape here would just be a claim about pi-ai's internals — see the
+  // note on peer types in `domain.ts`.
+  type ToolDescriptor = {
+    function?: { name?: unknown; description?: unknown; parameters?: unknown }
+    name?: unknown
+    description?: unknown
+    parameters?: unknown
+  }
+  return (tools as ToolDescriptor[]).map((tool, index) => {
     if (tool?.function != null && typeof tool.function === 'object') {
       const name = tool.function.name
       if (typeof name !== 'string' || name.length === 0) {

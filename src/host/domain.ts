@@ -35,11 +35,35 @@
 /**
  * One Qoder region: the CN edition, or the global edition.
  *
- * The plugin's own descriptor, built in `host/index.ts` — not a peer type.
+ * The plugin's own descriptor, declared in `credentials.ts#REGIONS` — not a
+ * peer type. The three URL families are deliberately separate fields rather
+ * than one `baseUrl`: the gateway serves the chat protocol, the openapi host
+ * serves model metadata, and the center host serves usage, and they are NOT
+ * the same origin on either edition. Collapsing them was never done and must
+ * not be.
+ *
+ * `appNames` / `newAppNames` are the two Electron user-data directory layouts,
+ * newest first; `patEnvNames` are the environment variables that may carry a
+ * personal access token for this region.
  */
 export interface Region {
   id: string
+  /** `'cn'` or `'global'` — selects protocol and locale differences. */
+  mode: string
   displayName: string
+  /** `%APPDATA%`-style roots, tried in order. */
+  appNames: string[]
+  /** The 0.3.x `com.<vendor>.app.<channel>` layout, tried first. */
+  newAppNames?: string[]
+  /** The COSY gateway root; chat and signing live here. */
+  baseUrl: string
+  /** Model metadata host — a different origin from {@link Region.baseUrl}. */
+  openApiUrl: string
+  /** Usage/quota host — a third origin again. */
+  centerUrl: string
+  manageUrl: string
+  downloadUrl: string
+  patEnvNames: string[]
 }
 
 /**
@@ -106,14 +130,38 @@ export interface CatalogEntry {
 }
 
 /**
- * The credential a region resolved to, or nothing.
+ * The credential one region resolved to, or nothing.
  *
  * `expired` is read with `=== true` everywhere it is consulted, because a
  * truthy-but-not-true value is not something this plugin produces and treating
  * it as expired would refuse to publish a working region.
+ *
+ * The identity fields are what `authHeaders` signs: the gateway verifies an
+ * `info` blob encrypted under a per-request AES key containing exactly these,
+ * so a missing `userID` or `token` is not a degraded call — it produces a
+ * signature the gateway will reject.
  */
 export interface ResolvedCredential {
   expired?: boolean
+  [field: string]: unknown
+}
+
+/**
+ * The credential as the signing and chat paths consume it.
+ *
+ * A closed shape, not an open record, because every one of these is READ by
+ * `authHeaders` and by `streamChat` — a field that is merely optional here
+ * still has to be handled there, and typing them as `string` makes that
+ * visible. `machineID` is the one that may legitimately be empty: it is a
+ * machine fingerprint, and an absent one is sent as the empty string rather
+ * than failing the request.
+ */
+export interface QoderCredential {
+  userID: string
+  token: string
+  name?: string
+  email?: string
+  machineID?: string
   [field: string]: unknown
 }
 
