@@ -63,9 +63,11 @@
 - [x] 落地提交后本地模拟 CI 门禁：重建 + `git diff --exit-code -- lib` 退出 0；`verify:bundle` 输出 `behaviour: IDENTICAL`
 - [x] pnpm 判据实测（按 pnpm 11.8 `exec/prepare-package` 逻辑模拟）：`main: ./lib/index.js` 存在 →
       `packageShouldBeBuilt = false`——不触发构建、不需要 `allowBuilds` 审批；`git check-ignore lib/index.js` 退出 1（未被忽略）
-- [ ] CI build job 新增的 "The committed lib/ matches a fresh build" 步骤绿
-- [ ] DSH 市场粘 `github:eghrhegpe/dsh-connect-qoder` 安装：**无**构建脚本审批提示，卡片与模型路由正常
-      （待 push 后可测；push 前远端克隆仍无 `lib/`）
+- [x] 推上远端（`9d6c66a`，main 快进；feature 分支同步）；全新 `git clone` 远端 main 复验：`lib/` 在场、
+      未被忽略、`packageShouldBeBuilt = false`——`github:` 源安装自该提交起零配置
+- [ ] CI build job 新增的 "The committed lib/ matches a fresh build" 步骤绿（main run `37053204303` 跟踪中）
+- [ ] DSH 对话框「添加插件」粘贴 `github:eghrhegpe/dsh-connect-qoder` 安装：**无**构建脚本审批提示，
+      卡片与模型路由正常（需人工在 DSH 里点一遍）
 - [ ] 再改一次 `src/` 只提交源码不提交 `lib/` → CI 新鲜度门禁红
 
 ## 与上游布局的关系
