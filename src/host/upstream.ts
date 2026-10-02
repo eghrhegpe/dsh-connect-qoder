@@ -187,7 +187,16 @@ export const STD_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxy
 // transform. A test that copied the lookup table would only prove the copy
 // agrees with itself.
 
-/** Positional translation table from standard to custom alphabet. */
+/**
+ * Positional translation table from standard to custom alphabet.
+ *
+ * A `Uint8Array` of exactly 256 entries, so every read below is in bounds by
+ * construction — but the TYPE cannot know that (`noUncheckedIndexedAccess` is
+ * on, which is why the reads go through `encodeByteAt` below rather than
+ * straight at the table). The table maps a character code to its replacement
+ * code, which is what makes a byte-for-byte translation of the base64 string
+ * possible without building a new string character by character.
+ */
 const ENCODE_TABLE = (() => {
   const table = new Uint8Array(256)
   for (let i = 0; i < table.length; i++) table[i] = i
@@ -197,6 +206,19 @@ const ENCODE_TABLE = (() => {
   table['='.charCodeAt(0)] = '$'.charCodeAt(0)
   return table
 })()
+
+/**
+ * The translation for one already-validated byte.
+ *
+ * The `?? byte` is unreachable given a 256-entry table and a byte in 0..255,
+ * and it is spelled as a fallback rather than a `!` so that the TOTAL
+ * behaviour is defined: an identity translation is the correct answer for a
+ * byte the table does not name, whereas a non-null assertion would be a
+ * promise this function cannot keep if the table ever shrank.
+ */
+function encodeByteAt(byte: number): number {
+  return ENCODE_TABLE[byte] ?? byte
+}
 
 /**
  * Encode a request body the way the `Encode=1` flag requires.
@@ -215,9 +237,9 @@ export function encodeBody(plaintext: Buffer | string): Buffer {
   const third = Math.floor(n / 3)
   const out = Buffer.allocUnsafe(n)
   let dst = 0
-  for (let i = n - third; i < n; i++) out[dst++] = ENCODE_TABLE[std.charCodeAt(i)]
-  for (let i = third; i < n - third; i++) out[dst++] = ENCODE_TABLE[std.charCodeAt(i)]
-  for (let i = 0; i < third; i++) out[dst++] = ENCODE_TABLE[std.charCodeAt(i)]
+  for (let i = n - third; i < n; i++) out[dst++] = encodeByteAt(std.charCodeAt(i))
+  for (let i = third; i < n - third; i++) out[dst++] = encodeByteAt(std.charCodeAt(i))
+  for (let i = 0; i < third; i++) out[dst++] = encodeByteAt(std.charCodeAt(i))
   return out
 }
 
@@ -295,7 +317,11 @@ export function authHeaders(
     .update(path)
     .digest('hex')
 
-  const machineID = credential.machineID
+  // Sent as the empty string when absent, which is what `QoderCredential`
+  // documents: the machine fingerprint is not a thing to fail a request over.
+  // (Before this was spelled out, an absent fingerprint reached `fetch` as
+  // `undefined`, and the header came out as the literal text "undefined".)
+  const machineID = credential.machineID ?? ''
   return {
     Authorization: `Bearer COSY.${payloadB64}.${sig}`,
     'Cosy-Key': cosyKey,
@@ -1268,8 +1294,13 @@ export async function* streamChat(
   // answer share this budget upstream, so an over-large value is not harmless
   // and an absent one lets Qoder apply its own.
   const parameters: any = {}
-  if (Number.isSafeInteger(request.maxTokens) && request.maxTokens > 0) {
-    parameters.max_tokens = request.maxTokens
+  // Bound first: `Number.isSafeInteger` is not a type predicate, so testing
+  // `request.maxTokens` directly leaves it `number | undefined` inside the
+  // branch. Testing the local narrows it, and the comment above is why an
+  // absent value must send NO key rather than a default.
+  const maxTokens = request.maxTokens
+  if (maxTokens !== undefined && Number.isSafeInteger(maxTokens) && maxTokens > 0) {
+    parameters.max_tokens = maxTokens
   }
   if (request.enableThinking === true) {
     parameters.enable_thinking = true
@@ -1354,7 +1385,17 @@ export async function* streamChat(
    * raised here is still safe to retry: the caller has seen no output yet.
    */
   async function* readFrames(response: Response): AsyncGenerator<UpstreamChunk> {
-    const reader = response.body.getReader()
+    // A response with no body is not a stream that ended — it is an answer this
+    // transport cannot read, and `getReader()` on `null` would throw a
+    // TypeError that the caller would classify as an ordinary fetch failure.
+    // Naming it here keeps the retry path and the error message honest; the
+    // caller's `try` already covers it, since a generator body does not run
+    // until the first `next()`.
+    const body = response.body
+    if (body === null) {
+      throw new Error(`dsh-connect-qoder: response ${response.status} carried no body to stream`)
+    }
+    const reader = body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let streamDone = false

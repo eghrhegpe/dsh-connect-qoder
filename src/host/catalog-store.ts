@@ -22,7 +22,16 @@ export const CATALOG_TTL_MS = 30 * 60 * 1000
 export const CATALOG_FORMAT_VERSION = 1
 
 export interface CatalogStoreOptions {
-  path?: string
+  /**
+   * Where the catalog file lives. Required, not optional.
+   *
+   * A store with no path has nothing to read or write, so there is no such
+   * thing as a meaningful default and no caller has ever omitted it — every
+   * construction site (the entry, and every test) names one. Declaring it
+   * optional while the field below is `string` was a mismatch that only
+   * `strictNullChecks` exposed.
+   */
+  path: string
   ttlMs?: number
   logger?: { warn?: (message: string, error?: unknown) => void }
 }
@@ -46,7 +55,7 @@ export class CatalogStore {
    * @param options.ttlMs - how long a fetch stays fresh; injectable for tests.
    * @param options.logger - optional, for a failed save.
    */
-  constructor({ path, ttlMs = CATALOG_TTL_MS, logger }: CatalogStoreOptions = {}) {
+  constructor({ path, ttlMs = CATALOG_TTL_MS, logger }: CatalogStoreOptions) {
     this.path = path
     this.ttlMs = ttlMs
     this.logger = logger

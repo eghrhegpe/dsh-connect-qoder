@@ -181,9 +181,14 @@ export function isLoopbackAuthority(authority: unknown): boolean {
   const text = String(authority).toLowerCase()
   // Strip the port, keeping an IPv6 literal's brackets intact: `[::1]:19387`
   // is loopback, `::1:19387` is not a valid authority to compare.
+  //
+  // `?? text` on the split: `split` always yields at least one element, so the
+  // fallback is unreachable — but `noUncheckedIndexedAccess` types the read as
+  // possibly-undefined, and falling back to the whole authority is the right
+  // answer for a string with no colon at all (which is every host with no port).
   const withoutPort = text.startsWith('[')
     ? (text.indexOf(']') === -1 ? text : text.slice(0, text.indexOf(']') + 1))
-    : text.split(':')[0]
+    : (text.split(':')[0] ?? text)
   const bare = withoutPort.startsWith('[') && withoutPort.endsWith(']')
     ? withoutPort.slice(1, -1)
     : withoutPort

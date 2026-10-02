@@ -100,7 +100,12 @@ export function applyCatalogOutcome(
   }
   // Empty is a value. `replace([])` advances `fetchedAt`, so the TTL refreshes
   // and the card's "last fetched" stops aging as if nothing were known.
-  runtime.catalog.replace(outcome.entries)
+  //
+  // `catalog` is optional on `RefreshableRuntime` (test stand-ins omit it), so
+  // the commit is guarded rather than assumed. A runtime with no catalog has
+  // nowhere to put the answer; it still gets `refreshFailed` cleared and the
+  // invalidation below, which is all the notification such a runtime can use.
+  runtime.catalog?.replace(outcome.entries)
   runtime.refreshFailed = undefined
   // Called unconditionally, including for the empty result: a group that has to
   // disappear from the picker must be re-advertised as having disappeared, or

@@ -237,7 +237,12 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
     if (typeof header !== 'string') return false
     const match = /^Bearer\s+(.+)$/i.exec(header.trim())
     if (match === null) return false
-    const presented = Buffer.from(match[1])
+    // `match[1]` is the capture group, and a non-null match from this pattern
+    // always has it — but `noUncheckedIndexedAccess` types the read as
+    // possibly-undefined, so it is bound with a guard rather than asserted.
+    const token = match[1]
+    if (token === undefined) return false
+    const presented = Buffer.from(token)
     const expected = Buffer.from(SHARED_SECRET)
     if (presented.length !== expected.length) return false
     return timingSafeEqual(presented, expected)

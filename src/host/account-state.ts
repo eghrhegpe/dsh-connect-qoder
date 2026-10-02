@@ -267,7 +267,12 @@ function signedOutOrNeedsApp(
   unwrapFailure: (path: string) => string | undefined,
 ): AccountStateRecord {
   const present = probeDirs(region, appData)
-  if (present.length > 0) {
+  // Bound rather than re-read as `present[0]` below: the length check proves
+  // the entry exists, but `noUncheckedIndexedAccess` (which this project turns
+  // on) types every indexed read as possibly-undefined regardless. Testing the
+  // entry itself is both what the code means and what satisfies the checker.
+  const first = present[0]
+  if (first !== undefined) {
     // The first recorded cause wins: it is the one for the directory the
     // credential reader tried first, i.e. the one that actually gated the
     // read.
@@ -278,7 +283,7 @@ function signedOutOrNeedsApp(
       ...base,
       state: 'needs-app',
       source: undefined,
-      appName: basename(present[0].path),
+      appName: basename(first.path),
       identity: undefined,
       detail: detail ?? 'the app is present but holds no sign-in',
     }
