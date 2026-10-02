@@ -116,9 +116,15 @@ test('every route registration in the plugin is collected', () => {
     new URL('../src/host/index.ts', import.meta.url),
     'utf8',
   ).replaceAll('\r\n', '\n')
-  const registrations = source.match(/webCtx\.webServer\.register\(\{/g) ?? []
+  // The receiver is spelled `webServer.register` because each `inject`
+  // callback binds the injected service to a local once (`const webServer =
+  // injected(webCtx.webServer, 'webServer')`) rather than reading
+  // `webCtx.webServer` at every site. The guard's subject is the CALL, not the
+  // receiver expression, so it matches either spelling.
+  const registration = /(?:webCtx\.)?webServer\.register\(\{/g
+  const registrations = source.match(registration) ?? []
   assert.ok(registrations.length > 0, 'no route registrations found — the pattern changed')
-  for (const match of source.matchAll(/webCtx\.webServer\.register\(\{/g)) {
+  for (const match of source.matchAll(registration)) {
     const before = source.slice(Math.max(0, match.index - 60), match.index)
     assert.match(
       before,

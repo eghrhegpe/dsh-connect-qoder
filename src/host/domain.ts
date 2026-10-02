@@ -419,16 +419,27 @@ export type RunChat = (
 /**
  * The Cordis service a route registration is made against.
  *
- * Every member is optional and read with the optional-call form (`?.`), because
- * the Host this plugin is loaded into may be older than the service: the plugin
- * has to keep working on a line that has no `webServer`, and the whole reason
- * `ctx.inject` exists here is to be told about that rather than to assume it.
+ * Two separate facts, and keeping them apart is the point:
+ *
+ * 1. The SERVICE is optional — `HostContext.webServer` is `HostService |
+ *    undefined`, because the Host this plugin is loaded into may be older than
+ *    the service. The plugin has to keep working on a line that has no
+ *    `webServer`, and the whole reason `ctx.inject` exists here is to be told
+ *    about that rather than to assume it.
+ * 2. Having the service, `register` is REQUIRED. It is the entire reason the
+ *    service exists; a `webServer` without it is not a service this plugin can
+ *    use, and every call site is inside `inject(['webServer'], …)` — where the
+ *    injection has already established that the service is there.
+ *
+ * Conflating those two put 7 `TS2722`s on code that cannot be reached with a
+ * `webServer` that lacks `register`. An optional method is for a capability
+ * that may be missing from a PRESENT service, which is not this.
  *
  * `register` is typed as returning `unknown` on purpose — that value is handed
  * straight back to the Host's own disposer, and this plugin never inspects it.
  */
 export interface HostService {
-  register?: (options: unknown) => unknown
+  register: (options: unknown) => unknown
 }
 
 /**
@@ -436,10 +447,22 @@ export interface HostService {
  *
  * Declared structurally, from the members this plugin actually touches — not as
  * a copy of Cordis's own `Context` type, which lives in a peer package that is
- * not installed here and whose real shape is larger than anything below. Each
- * member is optional or optional-called, which is the contract the entry code
- * already relies on: a Host without `llm` still gets the card routes, a Host
- * without `webServer` still gets the adapters.
+ * not installed here and whose real shape is larger than anything below.
+ *
+ * WHICH MEMBERS ARE OPTIONAL, AND WHY THE TWO GROUPS DIFFER
+ *
+ * Cordis supplies a fixed set of context members to every plugin, and those are
+ * declared REQUIRED here: `logger`, `inject`, `effect`, `emit`, and `llm`. For
+ * `llm` the guarantee is this plugin's own declaration (`inject = ['llm']` in
+ * index.ts), so `apply` cannot run without it. The rest are on every context.
+ * A Host without any of them is not a Host this plugin can serve.
+ *
+ * The OPTIONAL members are the services a plugin must ask for by name:
+ * `settings`, `webServer`, and the `get(name)` locator. A Host without
+ * `webServer` still gets the adapters; a Host without `settings` still gets
+ * working models, just no configuration surface. That is what `ctx.inject`
+ * exists to communicate, and it is why the code inside those callbacks treats
+ * its service as present — by the time the callback runs, it is.
  *
  * `get(name)` returns `unknown` because it is a service locator: the caller is
  * the only one who knows what it asked for, and the entry narrows each result
@@ -449,26 +472,43 @@ export interface HostContext {
   logger: PluginLogger
   /** `ctx.get` + undefined check is the older service-locator spelling. */
   get?: (name: string) => any
-  /** Declare interest in services; the callback runs once they are ready. */
-  inject?: (names: string[], callback: (ctx: HostContext) => void) => void
-  /** Register a teardown that runs on unload. */
-  effect?: (callback: () => (() => void) | Promise<() => void>) => void
-  /** Broadcast a Host event. */
-  emit?: (event: string, ...args: unknown[]) => void
+  /**
+   * Declare interest in services; the callback runs once they are ready.
+   *
+   * Required — it is a member of every Cordis plugin context, so `apply` always
+   * has it. What is NOT guaranteed is that a given callback ever RUNS: the
+   * `settings` and `webServer` services may never appear, which is why the code
+   * treats everything inside those callbacks as conditional. The distinction
+   * matters and is the reason this is required while `settings` below is not.
+   */
+  inject: (names: string[], callback: (ctx: HostContext) => void) => void
+  /** Register a teardown that runs on unload. Required, like {@link HostContext.inject}. */
+  effect: (callback: () => (() => void) | Promise<() => void>) => void
+  /** Broadcast a Host event. Required, like {@link HostContext.inject}. */
+  emit: (event: string, ...args: unknown[]) => void
   /** Subscribe to a Host event. */
   on?: (event: string, handler: (...args: unknown[]) => void) => void
   /** The plugin's own fiber, handed back to the settings service. */
   fiber?: unknown
-  llm?: {
-    /**
-     * Both registrations answer with a release function, and the entry stores
-     * that answer and calls it later (on a re-publish, and on dispose). The
-     * return is therefore typed as the callable it is used as — `unknown`
-     * would force a cast at every one of the four call sites, which is how a
-     * real "this is not callable" bug gets hidden behind a shrug.
-     */
-    registerAdapter?: (providerIds: string[], adapter: unknown) => (() => void) | undefined
-    registerConfigurableProviders?: (providers: unknown) => (() => void) | undefined
+  /**
+   * The model registry. NOT optional, and neither are its two methods.
+   *
+   * The evidence is declarative, not a guess: `index.ts` exports
+   * `inject = ['llm']`, Cordis's own form for "do not run me until this service
+   * exists". `apply` is therefore invoked with `llm` present, and every read of
+   * it — `publishRegions` and its reload path — is on the far side of that
+   * guarantee. Declaring it optional while calling it unguarded is what put 6
+   * `TS2722`s on code that cannot actually be reached with `llm` missing.
+   *
+   * The two registrations answer with a release function, and the entry stores
+   * that answer and calls it later (on a re-publish, and on dispose). The
+   * return is therefore typed as the callable it is used as — `unknown` would
+   * force a cast at every one of the four call sites, which is how a real
+   * "this is not callable" bug gets hidden behind a shrug.
+   */
+  llm: {
+    registerAdapter: (providerIds: string[], adapter: unknown) => (() => void) | undefined
+    registerConfigurableProviders: (providers: unknown) => (() => void) | undefined
   }
   settings?: {
     register?: (namespace: string, section: unknown) => unknown

@@ -731,6 +731,28 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   }
 
   /**
+   * The service an `inject` callback was handed, as a NON-optional value.
+   *
+   * `ctx.inject(['webServer'], cb)` is Cordis's way of saying "do not call `cb`
+   * until `webServer` exists" — so inside `cb` the service is present. That
+   * fact lives in the `inject` call rather than in the type of
+   * `webCtx.webServer` (which must stay optional: a Host without the service
+   * never runs this callback at all, and `apply` still has to compile for it).
+   *
+   * Rather than sprinkle `!` at the seven registrations, or `?.` on code that
+   * cannot be reached without the service, the guarantee is converted once
+   * here. The throw is unreachable under a correct Host; it exists so that a
+   * Host which fires the callback WITHOUT the service fails loudly at
+   * activation instead of registering routes into `undefined`.
+   */
+  function injected<T>(service: T | undefined, name: string): T {
+    if (service === undefined) {
+      throw new Error(`dsh-connect-qoder: ctx.inject ran for '${name}' without the service`)
+    }
+    return service
+  }
+
+  /**
    * Releases for the card routes this fiber registered, in registration order.
    *
    * Every `webServer.register` result goes through `rememberRouteRelease`, and
@@ -814,8 +836,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     declared: false,
   })
 
-  function publishRegions(): { ok: boolean; error?: unknown } {
-    const previousAdapter = adapter
+  function publishRegions(): { ok: boolean; error?: unknown } {    const previousAdapter = adapter
     const previousProviderIds = started.map(({ runtime }) => runtime.region.id)
     const previousDirectory = started.map(({ runtime }) => providerRowFor(runtime))
     // Nothing started: there is no adapter to publish, and `createQoderAdapter`
@@ -918,7 +939,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   // included. The section is optional: a host without a settings service still
   // gets working models, just no configuration surface.
   ctx.inject(['settings'], (settingsCtx: HostContext) => {
-    const settings = settingsCtx.settings
+    const settings = injected(settingsCtx.settings, 'settings')
     try {
       // FIX 0.1.7: the settings service replaced `installSection` with a
       // configure() auto-form on the 0.1.7 rewrite. Probe both (neither throws
@@ -939,9 +960,8 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         settings.configure({ auto: true }, ctx.fiber)
       } else if (typeof settings.installSection === 'function') {
         settings.installSection(ctx, settingsNs, QODER_SECTION, config, {
-          setSource(source) {
-            preferencesSource = source
-            // Install the live source and fold in its current value at once.
+          setSource(source: unknown) {
+            preferencesSource = source as PreferencesSource            // Install the live source and fold in its current value at once.
             // A source that has not been resolved yet degrades to the startup
             // preferences, so a half-handoff never blanks a field.
             const next = current()
@@ -977,8 +997,13 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   // so it is mounted on the optional webServer context and answers with the
   // catalog the adapter already holds — metadata only, never a credential.
   ctx.inject(['webServer'], (webCtx: HostContext) => {
+    // Injection is the guarantee: `inject(['webServer'], …)` runs this callback
+    // only once that service exists, so binding it to a local states that fact
+    // once instead of re-testing the optional at each of the registrations
+    // below. See `HostContext.webServer` / `HostService.register`.
+    const webServer = injected(webCtx.webServer, 'webServer')
     try {
-      rememberRouteRelease(routeReleases, webCtx.webServer.register({
+      rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_MODELS_PATH,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
@@ -1033,8 +1058,11 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   // the only writer that actually lands the value there is a mutate executed
   // inside the Host process.
   ctx.inject(['webServer', 'settings'], (webCtx: HostContext) => {
+    // Both names in the list are present when this runs; see the note on the
+    // other `inject(['webServer'], …)` callbacks.
+    const webServer = injected(webCtx.webServer, 'webServer')
     try {
-      rememberRouteRelease(routeReleases, webCtx.webServer.register({
+      rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_SAVE_PATH,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
@@ -1098,8 +1126,13 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   // failing region is reported as unavailable rather than failing the panel, so
   // one dead sign-in cannot hide the other region's numbers.
   ctx.inject(['webServer'], (webCtx: HostContext) => {
+    // Injection is the guarantee: `inject(['webServer'], …)` runs this callback
+    // only once that service exists, so binding it to a local states that fact
+    // once instead of re-testing the optional at each of the registrations
+    // below. See `HostContext.webServer` / `HostService.register`.
+    const webServer = injected(webCtx.webServer, 'webServer')
     try {
-      rememberRouteRelease(routeReleases, webCtx.webServer.register({
+      rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_USAGE_PATH,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
@@ -1141,8 +1174,13 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   // round that is open and unclaimed is ever posted at. The card therefore
   // cannot claim a stale round even if it were to render one.
   ctx.inject(['webServer'], (webCtx: HostContext) => {
+    // Injection is the guarantee: `inject(['webServer'], …)` runs this callback
+    // only once that service exists, so binding it to a local states that fact
+    // once instead of re-testing the optional at each of the registrations
+    // below. See `HostContext.webServer` / `HostService.register`.
+    const webServer = injected(webCtx.webServer, 'webServer')
     try {
-      rememberRouteRelease(routeReleases, webCtx.webServer.register({
+      rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_CHECKIN_PATH,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
@@ -1301,8 +1339,13 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   const accountPayload = (options = {}) => buildAccountPayload({ regions: REGIONS, settings: current(), ...options })
 
   ctx.inject(['webServer'], (webCtx: HostContext) => {
+    // Injection is the guarantee: `inject(['webServer'], …)` runs this callback
+    // only once that service exists, so binding it to a local states that fact
+    // once instead of re-testing the optional at each of the registrations
+    // below. See `HostContext.webServer` / `HostService.register`.
+    const webServer = injected(webCtx.webServer, 'webServer')
     try {
-      rememberRouteRelease(routeReleases, webCtx.webServer.register({
+      rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_PATH,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
@@ -1329,7 +1372,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         },
       }))
 
-      rememberRouteRelease(routeReleases, webCtx.webServer.register({
+      rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_RELOAD_PATH,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
@@ -1386,7 +1429,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         },
       }))
 
-      rememberRouteRelease(routeReleases, webCtx.webServer.register({
+      rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_CONFIRM_PATH,
         handler: async (req: IncomingMessage, res: ServerResponse) => {

@@ -33,7 +33,10 @@ function slice(start, end) {
 
 const startRegionBody = slice('async function startRegion(', '\n}\n')
 const startStoppedRegionsBody = slice('async function startStoppedRegions(', '\n  }\n')
-const reloadHandler = slice('path: QODER_ACCOUNT_RELOAD_PATH', 'webCtx.webServer.register')
+// The reload route's body ends where the NEXT registration begins. The
+// receiver is spelled `webServer.register` because each `inject` callback binds
+// the injected service to a local once; see test/lifecycle.test.js.
+const reloadHandler = slice('path: QODER_ACCOUNT_RELOAD_PATH', 'webServer.register')
 
 test('startRegion returns an entry tagged with its region', () => {
   assert.match(
