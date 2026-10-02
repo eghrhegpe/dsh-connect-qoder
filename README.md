@@ -178,15 +178,15 @@ dsh plugin --profile web add <本仓库路径>
   （比对请求自己的 `Host` 头，所以不写死端口、DSH 换端口也不用改），且必须是回环地址。
   判定在 [`src/host/routes.ts`](src/host/routes.ts) 的 `loopbackRequest`，由 `test/route-gates.test.js` 覆盖。
 - 依赖 Qoder 客户端接口（非官方开放 API），Qoder 更新后插件可能需要随之调整。
-- **设置命名空间由宿主决定，不能自选**（0.1.7 起）：`describe()` 用 Loader 条目
+- **设置命名空间由宿主决定，不能自选**（0.2 代起）：`describe()` 用 Loader 条目
   id 作为 `ns`（本 bundle 是 `llm-qoder`，不是 `dsh-connect-qoder`），而「设置 → 模型」
   页按**精确匹配**查 `namespaces.get(entry.settingsNs)`。若插件宣告的命名空间与宿主实际
   服务的不一致，该 provider 会被判为「未配置」，**整行从页面上消失**——不报错、不灰显，
   而插件本身仍在正常注册和应答，非常难查。因此 `settingsNs` 一律经
   `settingsNamespaceOf(ctx)` 从 `ctx.fiber.entry.options.id` 推导，常量只作为宿主不暴露
   条目 id 时的回落值（对齐 WorkBuddy 2.1.0 的同款修复）。
-- **设置保存走插件的 `__save` 主机端点 + 读回校验**（对齐 WorkBuddy 0.1.7 修复）：DSH 0.1.7 的
-  客户端 `settingsScope.set()` 在原子写重试耗尽后会**静默返回成功而不落盘**，卡片改为「主机端点
+- **设置保存走插件的 `__save` 主机端点 + 读回校验**（对齐 WorkBuddy 同修）：DSH 0.2 代的
+  客户端设置 scope `set()` 在原子写重试耗尽后会**静默返回成功而不落盘**，卡片改为「主机端点
   权威写、本地写仅作镜像、写后读回确认」，保存按钮只会显示真实结果。在宿主未为本插件注册设置
   命名空间行的环境（如 `link:` 开发安装）下端点会 503，卡片如实显示失败而不是假"已保存"；
   正式（registry）安装下该端点可用。
@@ -223,7 +223,7 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/throttle-store.ts` | 兑换节流闸门的磁盘持久化（只存未过期的 rate-limit 窗口、parked 停泊与令牌一律不落盘，原子写，无 peer 依赖） |
 | `src/host/account-payload.ts` | 账号面板三条路由共用的那份应答：逐区域状态 + 开关映射，以及「渲染读缓存 / 重读登录读真」这一个开关（从 `index.ts` 抽出以便直测，无 peer 依赖） |
 | `src/host/account-state.ts` | 每区域账号状态四档判定（`ok` / `expired` / `needs-app` / `signed-out`；纯本地证据、不含凭据，无 peer 依赖）；三种读取模式（默认 / `cachedOnly` 不解包 / `force` 忽略失败窗口） |
-| `src/host/settings-save.ts` | 设置命名空间的解析（0.1.7 由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
+| `src/host/settings-save.ts` | 设置命名空间的解析（0.2 代由宿主推导，插件不能自选）、设置写入、按区域合并与落盘读回校验（无 peer 依赖） |
 | `src/host/pi-model.ts` | pi-ai 模型描述符的构造（纯函数，无 peer 依赖） |
 | `src/host/adapter-models.ts` | 单个区域向 DSH 提供的模型列表：区域开关（只认显式 `true`）、勾选过滤、最大上下文开关、逐模型图像模式（从 `adapter.ts` 抽出以便直测，无 peer 依赖） |
 | `src/host/region-gate.ts` | 一个区域能否作为 provider 上线：三档拒绝（无登录 / 已过期 / 读不到）各自的判定与日志级别（从 `index.ts` 抽出以便直测，无 peer 依赖） |
@@ -234,7 +234,7 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/claim.ts` | 每日签到：当轮活动的挑选、可领状态判定与领取结果的归一化（纯函数，无 peer 依赖） |
 | `src/host/errors.ts` | 上游错误帧的判定：105（登录没了）与 10605（在排队）的分诊，队列提示的提取，以及**协议形状变化**这一档（`ProtocolShapeChangedError`，`retryable: false` 所以它不会被当成"排队"慢慢等）（无 peer 依赖） |
 | `src/host/time.ts` | 上游时间戳的单一换算（秒 / 毫秒 / RFC 3339 → epoch 毫秒），曾经的两份副本行为不一致（无 peer 依赖） |
-| `src/host/volatile.ts` | 0.1.7 volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
+| `src/host/volatile.ts` | volatile 活引用 `{ get() }` 的解包，此前散在三处（无 peer 依赖） |
 | `src/host/http-utils.ts` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
 | `src/host/domain.ts` | 各宿主模块标注时共用的领域词表（`Region` / `CatalogEntry` / `Promotion` / `CatalogOutcome` 等）。**只有类型、没有运行时值**，所以不进产物、不改变任何 bundle 字节；刻意不描述任何 peer 模块的形状——那些包由宿主运行时提供、此处只有 `declare module` 空壳，凭空造一个"看起来对"的接口比 `any` 更危险，因为它不会承认自己不知道（无 peer 依赖） |
 | `src/host/routes.ts` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
@@ -398,7 +398,7 @@ PowerShell，这些在别的平台上行为不同。
   与「状态记录不含任何凭据材料」两条不变量。
 - `test/errors-classify.test.js` —— 105 与 10605 的优先级决定了「提示用户重新登录」
   还是「排队等待」，两者弄反的代价完全不同。
-- `test/settings-save.test.js` —— DSH 0.1.7 上 `set()` 会静默成功而不落盘；
+- `test/settings-save.test.js` —— DSH 0.2 代上 `set()` 会静默成功而不落盘；
   这段代码用「写入→读回→深比较」把假成功变成显式失败，测试里直接模拟
   「`mutate` 成功但文档没变」的那个场景。也钉住了两件靠肉眼会漏的事：
   命名空间只做全等匹配（`llm-qoder-extra` 不算我们的），字段白名单用

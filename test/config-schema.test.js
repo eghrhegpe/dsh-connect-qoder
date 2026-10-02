@@ -12,7 +12,7 @@
  *
  * The defect it pins is a real one the card hit in production: the account
  * panel's per-region "models" switch writes `enabledRegions` through
- * `settings.mutate`, and the 0.1.7 host validates every muted field against
+ * `settings.mutate`, and the 0.2 host validates every muted field against
  * the plugin's config schema, refusing anything that is not declared AND
  * volatile with `Config field "enabledRegions" is not volatile`. Declaring the
  * field in the source was the fix; this file is what turns a future deletion
@@ -21,7 +21,7 @@
  *
  * WHAT IS STILL NOT COVERED
  *
- * The host-side acceptance of the mutate itself — that needs a live 0.1.7
+ * The host-side acceptance of the mutate itself — that needs a live 0.2
  * host, which the zero-dependency suite cannot spin up. What is covered is the
  * plugin side of the contract: the field exists in both schema objects, is
  * wrapped the way volatile fields are, and carries the shape the card posts.
@@ -61,23 +61,20 @@ function objectValueOf(binder) {
 }
 
 /**
- * Extract the statement body of one `const NAME = asVolatile( ... )` field
- * definition: from the opening paren of the `asVolatile(` call to its
- * matching close, walked by parens.
+ * Extract the statement body of one `const NAME = z … .volatile()` field
+ * definition: from the binder to the `.volatile()` marker it must end with.
+ *
+ * The 0.5.0 cut dropped the `asVolatile()` no-op fallback (the 0.2 host's
+ * schemastery always carries `Schema.volatile()`), so the field now calls
+ * `.volatile()` directly — and the marker IS the guarantee. A field without
+ * it would be refused by the host with `Config field … is not volatile`.
  */
 function volatileBodyOf(name) {
-  const anchor = new RegExp(`const ${name} = asVolatile\\(`).exec(SOURCE)
-  assert.ok(anchor !== null, `src/host/index.ts no longer declares \`${name}\` as a volatile field`)
-  const start = SOURCE.indexOf('(', anchor.index + anchor[0].length - 1)
-  let depth = 0
-  for (let i = start; i < SOURCE.length; i++) {
-    if (SOURCE[i] === '(') depth++
-    else if (SOURCE[i] === ')') {
-      depth--
-      if (depth === 0) return SOURCE.slice(start, i + 1)
-    }
-  }
-  assert.fail(`unbalanced parens in \`${name}\``)
+  const anchor = new RegExp(`const ${name} = z`).exec(SOURCE)
+  assert.ok(anchor !== null, `src/host/index.ts no longer declares \`${name}\``)
+  const end = SOURCE.indexOf('.volatile()', anchor.index)
+  assert.ok(end !== -1, `\`${name}\` no longer ends in .volatile()`)
+  return SOURCE.slice(anchor.index, end + '.volatile()'.length)
 }
 
 test('the config schema declares enabledRegions as a volatile field', () => {
@@ -101,16 +98,21 @@ test('the config schema declares enabledRegions as a volatile field', () => {
   )
 })
 
-test('the installed section declares the same field', () => {
-  // The 0.1.6 line publishes the section through `settings.installSection`;
-  // without the field there, the same switch dies on that host line with the
-  // same refusal. Both schema objects share the field constants on purpose,
-  // so both must carry it.
-  const section = objectValueOf('const QODER_SECTION')
-  assert.ok(
-    /enabledRegions:\s*ENABLED_REGIONS_FIELD/.test(section),
-    'QODER_SECTION lost its enabledRegions field',
-  )
+test('every config field is marked volatile', () => {
+  // The host validates `settings.mutate` fields against the Loader entry's
+  // config schema and accepts only declared AND volatile fields. Losing the
+  // marker on any of the four turns that field's save into a silent refusal
+  // (the `Config field … is not volatile` refusal the first test pins for
+  // enabledRegions alone). All four go through `__save`, so all four must
+  // carry the marker.
+  for (const field of [
+    'USE_MAXIMUM_CONTEXT_WINDOW_FIELD',
+    'IMAGE_OVERRIDES_FIELD',
+    'ENABLED_MODEL_IDS_FIELD',
+    'ENABLED_REGIONS_FIELD',
+  ]) {
+    volatileBodyOf(field) // throws if the declaration or the marker is gone
+  }
 })
 
 test('the pre-existing fields are still declared', () => {

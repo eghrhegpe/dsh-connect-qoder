@@ -508,9 +508,14 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
         })
       }
     } catch (error) {
-      // Never end a broken stream with [DONE]: that tells the client the
-      // response finished normally, so a half-written answer is shown as a
-      // complete turn. Emitting the failure lets DSH retry or report it.
+      // The stream is already 200-committed, so the failure cannot be a status
+      // code: it travels in-band as an OpenAI `data:` error frame (below).
+      // THAT frame is what makes the client treat the turn as failed — pi-ai's
+      // parser (the OpenAI SDK's `Stream.fromSSEResponse`) throws an `APIError`
+      // at a chunk carrying an `error` field and stops iterating, so the
+      // conventional `[DONE]` written after the frame is never parsed. A broken
+      // stream WITHOUT the error frame is the dangerous shape: its clean
+      // `[DONE]` makes a half-written answer read as a complete turn.
       logger?.warn?.(`dsh-connect-qoder: ${region.displayName} stream broke`, error)
       const retryable = thrownFlag(error, 'retryable') === true
       // A spent daily allowance gets its own kind so the in-band frame says so,
@@ -536,6 +541,10 @@ export function createQoderShim(options: ShimOptions): ShimHandle {
       // `event: error` line: OpenAI SSE carries no event types, and a strict
       // parser would drop or mis-handle it. The error object alone is enough.
       res.write(`data: ${JSON.stringify({ error: { message, type: kind, code: kind } })}\n\n`)
+      // The terminator follows the error frame, not instead of it: the parser
+      // rejects the stream at the frame above and never reaches this line, so
+      // it costs nothing and keeps the stream well-formed for any reader that
+      // does not honour in-band errors.
       res.write('data: [DONE]\n\n')
       res.end()
       return

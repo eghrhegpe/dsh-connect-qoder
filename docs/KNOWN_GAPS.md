@@ -13,6 +13,11 @@
 `test/docs-facts.test.js` 建立门禁；第 8 条登记国际版 campaigns 端点的 umid 机器身份门控
 （2026-09-27 实测 + 修复已落地，见下）。
 
+**0.5.0 砍 ABI（2026-10-03）**：宿主 0.2.0-rc.2 实测已无 `installSection` / `settingsScope`，
+双线探测与 `asVolatile` 退化随之删除（ADR 见
+`docs/history/0.5.0-abi-cutover.md`）。本文件登记的缺口均不引用被删的旧 ABI 面，
+条目不受影响；第 7 条的覆盖率基线已按砍后的源码重测。
+
 **本轮新增的两处镜像**（跟着 issue 04/05/10 一起进来，是刻意接受而非遗漏）：
 `test/model-route.test.js` 直接 import `buildModelRowsPayload`，断言的是**真实的**实现，
 不是副本；`test/protocol-shape-card.test.js` 则从**产物文本里提取** `refreshNoticeKey` 并执行，
@@ -278,9 +283,11 @@ effect；六道宿主路由 fetch（名册 / 账号读 / 账号重读 / 账号�
   `lib/`、`src/client/` 的清单一致、引用的覆盖率数字与 `package.json` 一致。它同样只是
   地板：防的是"悄悄说谎"，防不了"写一句没用的真话"。
 - **覆盖率门槛已建立**（本条的前两版登记「没有阈值」，现已不成立）：
-  `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=85
-  --test-coverage-functions=66`，CI 直接失败于跌破门槛（当前实测 81.32 / 86.74 /
-  79.18）。门槛是**地板不是分数**：它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
+  `npm run test:coverage` 带 `--test-coverage-lines=68 --test-coverage-branches=82
+  --test-coverage-functions=66`（分支门槛 0.5.0 前后由 85 下调到 82；`package.json`
+  与 `AGENTS.md` 是判据，本条此前引用的 85 是旧值），CI 直接失败于跌破门槛
+  （当前实测 85.48 / 83.67 / 83.54，0.5.0 砍 ABI 之后复测）。门槛是**地板不是分数**：
+  它防的是悄悄丢覆盖，守不住的仍是「哪些具体回归
   被挡住」——那还得看本文件。
 - **`verify:bundle` 的时钟脆弱性已根治**（原登记为"待根治"）：`offPeakState` / `rateAt` /
   `withDate` / `localSecondsOf` 读墙上时钟，脚本先 `load(OLD)` 再 `load(NEW)` 逐条对拍，

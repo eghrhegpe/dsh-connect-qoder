@@ -21,3 +21,11 @@ and replaced it with `configForms`. The patch:
 The source at `lib/client.js` and `lib/index.js` already contains this
 change; the patch file is kept only as a reference for the 0.1.6 → 0.1.7
 migration. Do not re-apply it.
+
+## 0.5.0-abi-cutover.md
+
+Decision record (not a patch) for the 0.5.0 cut of the 0.1.x host ABI:
+evidence from the 0.2.0-rc.2 host (which no longer carries
+`installSection` / `settingsScope`), what was removed and what stayed, and
+the `>=0.2.0-rc.0` floor rationale. Read it before touching the settings
+activation path again.

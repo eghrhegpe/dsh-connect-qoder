@@ -13,7 +13,7 @@ import type { SettingsScope } from "./settings-write.ts"
  * `inject` list above or probed with `ctx.get`, so nothing here is speculative.
  *
  * `get` answers `unknown` on purpose: it is the soft service locator this file
- * uses to span the 0.1.6/0.1.7 settings split, and each result is narrowed at
+ * uses to the settings surface, which the 0.2 harness may or may not serve, and each is narrowed at
  * the point of use rather than trusted by name.
  */
 interface ClientContext {
@@ -32,15 +32,21 @@ interface ClientContext {
 /** Stable browser-plugin name. */
 const name = "dsh-connect-qoder-client";
 /**
+ * The Loader entry id the host serves this plugin's settings under — the same
+ * value the host half resolves in `settingsNamespaceOf` (`llm-qoder`). Named
+ * once here so the namespace lookup and the row-slot key below cannot drift
+ * into two spellings of the same id.
+ */
+const PROVIDER_NS = "llm-qoder";
+/**
  * Client services this card reads.
  *
- * FIX 0.1.7: the harness removed the `settingsScope` wrapper service in the
- * 0.1.7 settings rewrite and replaced it with `configForms`. Cordis' hard
- * inject gate never calls `apply` while a listed service is absent, so
- * listing `settingsScope` here bricked web boot on 0.1.7
- * ("1 entry did not activate: dsh-connect-qoder: pending (waiting for
- * service: settingsScope)"). Only guaranteed services go in `inject`; the
- * settings service is probed softly inside `apply` below.
+ * The 0.2 harness serves settings through `configForms` only — the older
+ * `settingsScope` wrapper service no longer exists, and Cordis' hard inject
+ * gate would brick web boot on a listed-but-absent service ("1 entry did
+ * not activate: … pending (waiting for service: …)"). Only guaranteed
+ * services go in `inject`; the settings surface is probed softly inside
+ * `apply` below.
  */
 const inject = ["slots", "locale"];
 /**
@@ -60,20 +66,20 @@ function apply(ctx: ClientContext) {
 	try {
 		installStyles();
 	/**
-	 * FIX 0.1.7: probe the settings surface without a hard dependency.
-	 * 0.1.7 serves the section through `configForms`; 0.1.6 and earlier
-	 * through `settingsScope`. `ctx.get` returns undefined (never throws)
-	 * for an absent service, so one build spans both lines. `forms.get(ns)`
-	 * mirrors the legacy `settingsScope.bind` shape (`.set` / `.getSnapshot`),
-	 * so the card body below is unchanged.
+	 * Probe the settings surface without a hard dependency. The 0.2 harness
+	 * serves it through `configForms`; `ctx.get` returns undefined (never
+	 * throws) for an absent service, so a host without it degrades to a
+	 * read-only card instead of bricking boot. The older `settingsScope`
+	 * wrapper no longer exists, so it is no longer probed for. `forms.get(ns)`
+	 * answers the `.set` / `.getSnapshot` shape the card writes through.
 	 */
 	/**
 	 * Probe a service by name without a hard dependency.
 	 *
 	 * Answers `unknown`, matching the fact that `ctx.get` is a string-keyed
 	 * lookup: there is no mapping the compiler could check, so each caller
-	 * states the shape it expects at the point it reads a member. The two
-	 * shapes below (`configForms`, `settingsScope`) belong to the harness, not
+	 * states the shape it expects at the point it reads a member. The shape
+	 * below (`configForms`) belongs to the harness, not
 	 * to this plugin, which is why they are declared inline where they are used
 	 * rather than invented as interfaces here — a hand-written guess at a peer
 	 * package's surface is worse than an honest `unknown`.
@@ -83,11 +89,12 @@ function apply(ctx: ClientContext) {
 	 * The namespace the HOST actually serves this plugin's settings under.
 	 *
 	 * Read from the live `describe()` view rather than trusted from a constant,
-	 * because a plugin no longer picks its own namespace: on 0.1.7 the service
-	 * derives it from the Loader entry (`ns: entry.options.id`, which is the
-	 * provider name `llm-qoder`), and on 0.1.6 and earlier it is the plugin
-	 * namespace. The host half already resolves this the same way in
-	 * `settingsNamespaceOf` — and reads it live for the same reason.
+	 * because a plugin no longer picks its own namespace: on the 0.2 line the
+	 * service derives it from the Loader entry (`ns: entry.options.id`, which
+	 * is the provider name `llm-qoder`), and a host that mounts the plugin
+	 * without a Loader entry serves it under the plugin namespace. The host
+	 * half already resolves this the same way in `settingsNamespaceOf` — and
+	 * reads it live for the same reason.
 	 *
 	 * This value drives BOTH the locale table and the settings scope, and that
 	 * is the point: they must name one namespace, or the copy and the section
@@ -112,8 +119,15 @@ function apply(ctx: ClientContext) {
 			| undefined;
 		if (forms === void 0) return fallback;
 		try {
+			// Exact candidates only, never a substring: a loose match would find
+			// a row belonging to another plugin, and the locale table and the
+			// settings scope would then name a namespace that is not ours — the
+			// card silently configured someone else's section. The two names are
+			// the one the Loader serves (the entry id, `llm-qoder`) and the
+			// fallback declared above; the host's own `settingsNamespaceOf`
+			// resolves the same pair.
 			const served = (forms.describe().getSnapshot().view?.namespaces ?? [])
-				.find((entry) => entry.ns === fallback || /qoder/i.test(entry.ns));
+				.find((entry) => entry.ns === fallback || entry.ns === PROVIDER_NS);
 			return served !== void 0 ? served.ns : fallback;
 		} catch {
 			return fallback;
@@ -126,18 +140,17 @@ function apply(ctx: ClientContext) {
 	}), "dsh-connect-qoder: settings copy");
 	const t = ctx.locale.bind(namespace);
 	let settingsScope: SettingsScope | undefined;
-	// Both spellings of the settings surface, narrowed to the one call each is
-	// probed with. `SettingsScope` is this card's own type (declared with the
-	// card), so the cast on the two lines below is where the harness's answer
-	// meets it — the same division of labour as the `unknown` above, kept to
-	// one line per spelling.
+	// The settings surface, narrowed to the one call it is probed with.
+	// `SettingsScope` is this card's own type (declared with the card), so
+	// the cast below is where the harness's answer meets it — the same
+	// division of labour as the `unknown` above, kept to one line.
 	const forms = softGet("configForms") as { get(ns: string): unknown } | undefined;
-	const legacy = softGet("settingsScope") as { bind(options: { namespace: string }): unknown } | undefined;
 	if (forms !== void 0) {
 		settingsScope = forms.get(namespace) as SettingsScope;
-	} else if (legacy !== void 0) {
-		settingsScope = legacy.bind({ namespace }) as SettingsScope;
 	}
+	// A host without the surface gets a read-only card: `settingsScope` stays
+	// undefined and the slot registration degrades to `{ t }` — the existing
+	// degraded path, not an error.
 	/**
 	 * FIX 0.1.7: the plugin-manager detail page renders a bundle's config
 	 * card from the `plugins.bundle.config` slot (and a row's from
@@ -172,7 +185,7 @@ function apply(ctx: ClientContext) {
 	};
 	for (const bundle of ["@eghrhegpe/dsh-connect-qoder", "dsh-connect-qoder"]) {
 		registerCard("plugins.bundle.config", bundle);
-		registerCard("plugins.row.config", `${bundle}#llm-qoder`);
+		registerCard("plugins.row.config", `${bundle}#${PROVIDER_NS}`);
 	}
 	registerCard("settings.plugin.item", "qoder");
 	} catch (error) {

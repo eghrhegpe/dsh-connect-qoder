@@ -3,7 +3,8 @@
  * `writeField` contract (src/client/account-selection) to this card's
  * three top-level fields.
  *
- * `settingsScope.set()` resolving is NOT proof that anything was stored.
+ * The settings scope's `set()` resolving is NOT proof that anything was
+ * stored.
  * The Host's settings document is replaced by writing a temp file and
  * renaming it over the target; on Windows an antivirus scanner or a sync
  * client can hold the file briefly, and once the atomic-write retries
@@ -32,12 +33,12 @@
 /**
  * The settings surface the card writes through, as this module reads it.
  *
- * One shape covers BOTH Host lines, which is why it is declared here rather
- * than imported: `configForms.get(ns)` (0.1.7) and `settingsScope.bind({ns})`
- * (0.1.6) are deliberately mirrored onto each other by `client/index.ts`, so
- * the card body — and this writer — never branches on which one is present.
- * `client/index.ts` keeps its own two probes; what that file hands the card is
- * a value satisfying this interface.
+ * Declared here rather than imported: `client/index.ts` probes the 0.2
+ * harness's `configForms` surface and hands the card a value satisfying this
+ * interface, so the card body — and this writer — never branches on the
+ * harness shape. (The older `settingsScope` wrapper had its own `bind`
+ * shape; it no longer exists, and with it the mirror this interface used to
+ * cover both.)
  *
  * Every member is read defensively by the callers: `set` may reject, and
  * `getSnapshot().value` is `undefined` for a namespace the Host has not
@@ -107,10 +108,10 @@ function fieldSnapshot(scope: SettingsScope, field: string): unknown {
  * Write one settings field, then confirm the value actually landed.
  *
  * The Host endpoint goes FIRST — it is the only writer that persists in
- * the 0.1.7 silent-failure mode and, for the per-region field, the only
+ * the host's silent-failure mode and, for the per-region field, the only
  * one that preserves the sibling region. `scope.set` then runs purely as
- * a mirror refresh (and as the legacy-host path, where the endpoint is
- * absent or the settings service is unreachable): on a host whose scope
+ * a mirror refresh (and as the degraded path, where the endpoint is
+ * unreachable or the settings service is absent): on a host whose scope
  * write is authoritative, delivering and reading back suffices; on a
  * host where it settled without persisting, the read-back mismatch
  * falls through to the endpoint error, which is thrown — never
@@ -149,8 +150,9 @@ export async function writeSettingsField(scope: SettingsScope, field: string, va
 	} catch {
 		scopeDelivered = false;
 	}
-	// On 0.1.7 the settings service owns the document: a `scope.set`
-	// that resolves here has not necessarily landed in the file — the
+	// On the 0.2 line the settings service owns the document: a
+	// `scope.set` that resolves here has not necessarily landed in the
+	// file — the
 	// authoritative merge may keep a sibling region the card did not
 	// post, and the scope's snapshot can trail the document. The Host
 	// endpoint's read-back is the source of truth, so when it answered

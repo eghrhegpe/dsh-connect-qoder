@@ -20,6 +20,10 @@ DSH 插件：把本机已登录的 **Qoder**（国内版 `qoder-cn` / 国际版 
 3. **client 源码是逆向恢复的**：`src/client/` 由已发布的 `lib/client.js` 机械还原
    （`docs/issues/17`），历史形态是手写 `(0, react_jsx_runtime.jsx)(…)` 调用而非 JSX 语法，
    2026-10 起在向 `.tsx` 迁移。看到这种写法不要当成新代码风格继续扩散。
+4. **宿主 ABI 只认 0.2 代**（0.5.0 起）：`installSection`/`settingsScope` 双探测与
+   `asVolatile` 退化已删——宿主 0.2.0-rc.x 实测已无这两个面。peer 下限 `>=0.2.0-rc.0`
+   是刻意的（宿主用 `includePrerelease` 判兼容，`>=0.2.0` 会把 rc 挡在门外）。
+   取证与决定记录在 `docs/history/0.5.0-abi-cutover.md`；别把旧 ABI 分支"顺手"加回来。
 
 ## 工作目录与装载方式（先搞清你改的东西怎么生效）
 
@@ -107,5 +111,6 @@ npm run verify             # typecheck + 两道 audit + build + test + host/bund
 | 了解已知差距与未做项 | `docs/KNOWN_GAPS.md` |
 | 对 Qoder 平台事实（计费系数、Credits、签到、免费模型） | `docs/docs-qoder-cn/`（上游官方文档转换件） |
 | 探测宿主版本/协议漂移 | `docs/howto/host-version-probe.md`、`test/protocol-drift.test.js` |
+| 动设置激活路径 / 宿主代际问题前 | `docs/history/0.5.0-abi-cutover.md`（0.5.0 砍 0.1.x ABI 的取证、决定与"为什么下限是 `>=0.2.0-rc.0`"） |
 | client 恢复源码的来龙去脉与旧补丁 | `docs/history/`（含 `restore-client-src.mjs`） |
 | 上架提交材料 | `docs/submission/`、根目录 `README.md` / `CHANGELOG.md` |

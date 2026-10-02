@@ -7,10 +7,10 @@
  * pi-ai's OpenAI expectations and Qoder's protocol — and it had no coverage at
  * all. That matters more here than elsewhere because most of its invariants are
  * things a request can simply fail to satisfy without any error surfacing: a
- * model left out of `GET /v1/models` never appears in the picker, a `[DONE]`
- * sent after a broken stream makes a half-written answer look complete, and a
- * usage frame dropped because it has no choices makes every turn report zero
- * tokens.
+ * model left out of `GET /v1/models` never appears in the picker, a broken
+ * stream that ends with `[DONE]` but carries no in-band error frame makes a
+ * half-written answer look complete, and a usage frame dropped because it has
+ * no choices makes every turn report zero tokens.
  *
  * These tests start the real server on a real ephemeral port and speak HTTP to
  * it. Nothing here is mocked except the upstream call itself, which is
@@ -415,6 +415,45 @@ test('a hard upstream failure is a 502 and advertises no retry delay', async () 
     assert.strictEqual(headers['retry-after'], undefined)
   } finally {
     await broken.shim.close()
+  }
+})
+
+test('a stream that breaks after 200 is committed reports the failure in-band, then terminates', async () => {
+  // The non-streaming failure above cannot happen: no 200 was committed. The
+  // streaming path DOES commit — headers go out before the first pull settles
+  // — so a later break must travel in-band. What this pins: the OpenAI `data:`
+  // error frame (the one pi-ai's parser throws on) PRECEDES the conventional
+  // `[DONE]` terminator, which the parser never reaches. A `[DONE]` without
+  // that frame would read as a complete turn.
+  const brokenStream = async function* () {
+    yield {
+      id: 'x',
+      object: 'chat.completion.chunk',
+      created: 0,
+      model: 'ModelA',
+      choices: [{ index: 0, delta: { content: 'half' }, finish_reason: null }],
+    }
+    throw new Error('mid-stream blowup')
+  }
+  const instance = await startShim({ runChat: brokenStream })
+  try {
+    const { status, text } = await call(instance.base, '/v1/chat/completions', {
+      method: 'POST',
+      token: instance.token,
+      body: JSON.stringify({ model: 'ModelA', messages: [{ role: 'user', content: 'hi' }], stream: true }),
+    })
+    assert.strictEqual(status, 200, 'a stream is 200-committed before the first pull')
+    const frames = text.split('\n\n').filter((frame) => frame.length > 0)
+    const errorFrame = frames.find((frame) => frame.startsWith('data:') && JSON.parse(frame.slice(5)).error !== undefined)
+    assert.ok(errorFrame !== undefined, 'the failure must travel in-band as a data: error frame')
+    assert.match(errorFrame, /"code":\s*"upstream_error"/, 'a plain break is an upstream error, not a queue')
+    assert.strictEqual(frames[frames.length - 1], 'data: [DONE]', 'the stream still ends with the conventional terminator')
+    assert.ok(
+      frames.indexOf(errorFrame) < frames.length - 1,
+      'the error frame must precede [DONE], or the parser treats the turn as complete',
+    )
+  } finally {
+    await instance.shim.close()
   }
 })
 

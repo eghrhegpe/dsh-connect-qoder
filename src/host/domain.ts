@@ -556,25 +556,14 @@ export interface HostContext {
   }
   settings?: {
     register?: (namespace: string, section: unknown) => unknown
-    configure?: (options: { auto: boolean }, fiber: unknown) => unknown
     /**
-     * The 0.1.6 spelling, kept alongside `configure` so ONE build spans both
-     * Host lines. `configure({auto:true})` is 0.1.7's auto-form presentation;
-     * `installSection` is 0.1.6's, and it is also the line that hands the
-     * plugin a live settings document through `setSource`. Neither is
-     * guaranteed, and the entry probes for each with `typeof … === 'function'`
-     * rather than assuming an order.
+     * The 0.2 line's auto-form presentation: it registers the settings
+     * surface derived from the Loader entry's config schema, and nothing
+     * else — no live source is handed back, because the live seam is the
+     * Config object the Loader swaps in place. Not guaranteed by the
+     * contract, so the entry probes with `typeof … === 'function'`.
      */
-    installSection?: (
-      ctx: HostContext,
-      namespace: string,
-      section: unknown,
-      config: unknown,
-      hooks: {
-        setSource: (source: unknown) => void
-        onChange: () => void
-      },
-    ) => unknown
+    configure?: (options: { auto: boolean }, fiber: unknown) => unknown
   }
   webServer?: HostService
 }

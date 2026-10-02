@@ -46,7 +46,7 @@ import {
   regionEnabledFor as resolveRegionEnabled,
   resolvePreferences,
 } from './preferences.ts'
-import type { Preferences, PreferencesSource } from './preferences.ts'
+import type { Preferences } from './preferences.ts'
 import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.ts'
 import { normalizeEntry, projectModelRow, buildModelRowsPayload } from './catalog-entry.ts'
 import type { FetchedEntry } from './catalog-entry.ts'
@@ -97,21 +97,17 @@ export const QODER_SETTINGS_NS = 'dsh-connect-qoder'
 const QODER_SAVE_PATH = '/plugins/dsh-connect-qoder/__save'
 
 /**
- * Mark a schema's field as volatile on the DSH lines that support it.
+ * Why every settings field in this module ends in `.volatile()`.
  *
- * `volatile()` exists from schemastery 3.18.3 (the 0.1.7 line); on older
- * pinning (3.18.2, the 0.1.5 line) it is absent and this degrades to an
- * identity no-op, exactly as the WorkBuddy bundle does. Volatile fields
- * hand the Host a live reference (`{get()}`) that re-resolves on every
- * `loader/volatile-update` — that is how settings edits reach a running
- * host without a restart. The Host's `__save` route unwraps the reference
- * before merging and mutating, and the live `current()` below resolves it
- * the same way.
+ * A volatile field hands the Host a live reference (`{get()}`) that
+ * re-resolves on every `loader/volatile-update` — that is how settings
+ * edits reach a running host without a restart. The Host's `__save` route
+ * unwraps the reference before merging and mutating, and the live
+ * `current()` below resolves it the same way. This plugin targets the 0.2
+ * host line, whose bundled schemastery (≥ 3.18.3) always carries
+ * `Schema.volatile()`, so the fields call it directly; there is no no-op
+ * fallback for an older schemastery to degrade to.
  */
-function asVolatile<T extends { volatile?: unknown }>(schema: T): unknown {
-  if (typeof schema.volatile === 'function') return (schema.volatile as () => unknown)()
-  return schema
-}
 
 /**
  * The `id` of a catalog entry, or `undefined` when it has none.
@@ -134,12 +130,11 @@ function idOf(entry: unknown): string | undefined {
  * default. This switch decides whether this plugin advertises the largest
  * offered window or the one Qoder itself starts on.
  */
-const USE_MAXIMUM_CONTEXT_WINDOW_FIELD = asVolatile(
-  z
-    .boolean()
-    .default(false)
-    .description('Advertise each model\'s largest declared context window instead of Qoder\'s own default window'),
-)
+const USE_MAXIMUM_CONTEXT_WINDOW_FIELD = z
+  .boolean()
+  .default(false)
+  .description('Advertise each model\'s largest declared context window instead of Qoder\'s own default window')
+  .volatile()
 
 /**
  * Per-model image-input opt-in, keyed by user-facing model id.
@@ -154,12 +149,11 @@ const USE_MAXIMUM_CONTEXT_WINDOW_FIELD = asVolatile(
 const IMAGE_MODES = ['auto', 'on', 'off']
 
 /** One model's image preference. */
-const IMAGE_OVERRIDES_FIELD = asVolatile(
-  z
-    .dict(z.union(IMAGE_MODES))
-    .default({})
-    .description('Per-model image input: "auto" follows the catalog, "on"/"off" force it'),
-)
+const IMAGE_OVERRIDES_FIELD = z
+  .dict(z.union(IMAGE_MODES))
+  .default({})
+  .description('Per-model image input: "auto" follows the catalog, "on"/"off" force it')
+  .volatile()
 
 /**
  * Which models the picker offers, per region.
@@ -172,12 +166,11 @@ const IMAGE_OVERRIDES_FIELD = asVolatile(
  * Keyed by region id (`qoder-cn`, `qoder`) so the two editions can be curated
  * independently; the CN and global rosters share no model ids.
  */
-const ENABLED_MODEL_IDS_FIELD = asVolatile(
-  z
-    .dict(z.array(z.string()))
-    .default({})
-    .description('Per-region allow-list of model ids; an empty list shows every model'),
-)
+const ENABLED_MODEL_IDS_FIELD = z
+  .dict(z.array(z.string()))
+  .default({})
+  .description('Per-region allow-list of model ids; an empty list shows every model')
+  .volatile()
 
 /**
  * Which editions offer their models to DSH at all, per region.
@@ -191,23 +184,14 @@ const ENABLED_MODEL_IDS_FIELD = asVolatile(
  * lib/preferences.js: a missing key (or a missing map) means offered, and only
  * an explicit `false` turns a region's models off.
  */
-const ENABLED_REGIONS_FIELD = asVolatile(
-  z
-    .dict(z.boolean())
-    .default({})
-    .description('Per-region provider switch; a missing key is offered, only an explicit false disables'),
-)
+const ENABLED_REGIONS_FIELD = z
+  .dict(z.boolean())
+  .default({})
+  .description('Per-region provider switch; a missing key is offered, only an explicit false disables')
+  .volatile()
 
 /** The plugin's whole configuration schema. */
 export const Config = z.object({
-  useMaximumContextWindow: USE_MAXIMUM_CONTEXT_WINDOW_FIELD,
-  imageOverrides: IMAGE_OVERRIDES_FIELD,
-  enabledModelIds: ENABLED_MODEL_IDS_FIELD,
-  enabledRegions: ENABLED_REGIONS_FIELD,
-})
-
-/** The section this plugin publishes for its settings namespace. */
-const QODER_SECTION = z.object({
   useMaximumContextWindow: USE_MAXIMUM_CONTEXT_WINDOW_FIELD,
   imageOverrides: IMAGE_OVERRIDES_FIELD,
   enabledModelIds: ENABLED_MODEL_IDS_FIELD,
@@ -314,7 +298,7 @@ class RegionRuntime {
   /** Epoch ms of the last usage reading. */
   usageAt: number
   /** One live catalog run, shared across triggers. */
-  catalogFlight: (force?: boolean) => Promise<void>
+  catalogFlight: () => Promise<void>
   /** One live usage run, shared across triggers. */
   usageFlight: (force?: boolean) => Promise<UsageSnapshot | undefined>
   /** Whether this runtime has been disposed. */
@@ -378,8 +362,8 @@ class RegionRuntime {
     // panel's re-read) do not know about each other; without coalescing, two
     // overlapping fetches each ended in `catalog.replace` and whichever landed
     // LAST won — not whichever was asked for. See lib/single-flight.js.
-    /** @type {(force?: boolean) => Promise<void>} one live catalog run, shared. */
-    this.catalogFlight = createSingleFlight((force) => this.doRefreshCatalog(force))
+    /** @type {() => Promise<void>} one live catalog run, shared. */
+    this.catalogFlight = createSingleFlight(() => this.doRefreshCatalog())
     /** @type {(force?: boolean) => Promise<unknown>} one live usage run, shared. */
     this.usageFlight = createSingleFlight((force) => this.doReadUsage(force))
     // Set by the fiber's effect cleanup (dispose) so any in-flight `.then`
@@ -436,17 +420,22 @@ class RegionRuntime {
    * Refresh the model catalog from upstream, keeping the last good one on failure.
    *
    * Concurrent calls coalesce: while one run is live, later callers join its
-   * promise instead of starting a second fetch. The force flag is read by the
-   * run that started the flight; joining is safe because a fetch that began
-   * milliseconds ago is fresher than anything a duplicate would return.
+   * promise instead of starting a second fetch. Joining is safe because a fetch
+   * that began milliseconds ago is fresher than anything a duplicate would
+   * return.
+   *
+   * There is no "refresh only when stale" mode on purpose: the refresh timer's
+   * period IS the TTL cadence, and every trigger (timer, the card's
+   * `?refresh=1`, the account reload) asks for a real fetch. A `catalog.fresh()`
+   * early return used to guard a `force = false` that nothing ever passed —
+   * a dead branch, gone.
    */
-  refreshCatalog(force = false): Promise<void> {
-    return this.catalogFlight(force)
+  refreshCatalog(): Promise<void> {
+    return this.catalogFlight()
   }
 
   /** The actual refresh work behind {@link RegionRuntime.refreshCatalog}. */
-  async doRefreshCatalog(force?: boolean): Promise<void> {
-    if (!force && this.catalog.fresh()) return
+  async doRefreshCatalog(): Promise<void> {
     let credential
     try {
       credential = await this.resolveCredential()
@@ -675,18 +664,17 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   // adapter; the adapter re-reads them every time it builds a model list, and the
   // shim re-reads them on every listing. The resolved config is the initial value.
   //
-  // The section can hand the plugin a LIVE source (a `() => T` closure or a
-  // `{ get(): T }` reference to the settings document) instead of a frozen
-  // value. Reading `preferences` directly after such a hand-off would keep the
-  // startup copy forever; `current()` resolves the live source at read time.
+  // The source is the live one only, and it is the Config object the Loader hands
+  // `apply`: on the 0.2 line its volatile fields hold `{ get() }` references that
+  // the Loader swaps in place after every `settings.mutate` and announces with
+  // `loader/volatile-update` (the listener below refreshes the picker when the
+  // event lands; same shape as the host's own `plainOptions(config)` in
+  // dsh-llm-deepseek). Reading `preferences` directly would keep the startup copy
+  // forever, so `current()` re-reads that live object at read time. The 0.1.6
+  // `installSection` host handed over its own document reference through a
+  // `setSource` callback — that line no longer exists, and with it the second
+  // source this used to juggle.
   //
-  // The DEFAULT source re-reads the Config object the Loader hands `apply` on
-  // every access. On the 0.1.7 line that object is live: its `asVolatile`
-  // fields hold `{ get() }` references that the Loader's `_commitVolatile`
-  // swaps in place after every `settings.mutate` (same shape as the host's own
-  // `plainOptions(config)` in dsh-llm-deepseek). The installSection hosts
-  // (0.1.6) replace the source with their document reference through the
-  // `setSource` callback instead.
   // `Preferences`, not a bare record: the Loader hands `apply` an object whose
   // fields ARE the four settings this plugin declares, and the volatile shells
   // (`{ get() }`) are a documented part of that hand-off. Typing it as an open
@@ -702,13 +690,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     }
     return next as Preferences
   }
-  let preferencesSource: PreferencesSource = livePreferences
   let invalidateAdapter = () => {}
 
   /**
    * The namespace the HOST actually serves this plugin's settings under.
    *
-   * On the 0.1.7 line the host derives it from the Loader entry — `describe()`
+   * On the 0.2 line the host derives it from the Loader entry — `describe()`
    * reports `ns: entry.options.id`, which for this bundle is `llm-qoder`, not
    * the `dsh-connect-qoder` the plugin used to name. The models settings page
    * resolves a provider's configuration row by **exact** match on this value
@@ -719,8 +706,8 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
    */
   const settingsNs = settingsNamespaceOf(ctx, QODER_SETTINGS_NS)
 
-  /** Resolve the live preferences, unwrapping a 0.1.7 live-reference source. */
-  const current = () => resolvePreferences(preferences, preferencesSource)
+  /** Resolve the live preferences, unwrapping the Loader's live-reference source. */
+  const current = () => resolvePreferences(preferences, livePreferences)
 
   /**
    * The three settings taking effect needs the picker to rebuild: `invalidate`
@@ -980,59 +967,44 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     await Promise.allSettled(started.map(({ shim }) => shim.close()))
   })
 
-  // Publish the settings section. Without this the namespace a provider
-  // directory entry points at would hold no schema, and no configuration
-  // surface could render a control for this route — context-window choice
-  // included. The section is optional: a host without a settings service still
-  // gets working models, just no configuration surface.
+  // Publish the settings surface. Without this the namespace a provider
+  // directory entry points at holds no schema, and no configuration surface
+  // can render a control for this route — context-window choice included.
+  // The 0.2 line serves it as an auto-form derived from the Loader entry's
+  // config schema: `configure({auto:true})` registers that presentation and
+  // nothing else — it does NOT hand the plugin a live source. The live seam
+  // is the Config object the Loader hands `apply`, whose volatile fields are
+  // updated in place after every `settings.mutate` and announced with
+  // `loader/volatile-update` (the listener below). The 0.1.6 host used to
+  // publish a hand-built section through `installSection` and hand back its
+  // own document reference through `setSource`; that line no longer exists,
+  // and with it the second registration shape this used to probe for. A
+  // host without a settings service still gets working models, just no
+  // configuration surface.
   ctx.inject(['settings'], (settingsCtx: HostContext) => {
     const settings = injected(settingsCtx.settings, 'settings')
     try {
-      // FIX 0.1.7: the settings service replaced `installSection` with a
-      // configure() auto-form on the 0.1.7 rewrite. Probe both (neither throws
-      // on absence) so one build spans 0.1.6 and 0.1.7. Without a served
-      // section the client card is registered but never rendered.
-      //
-      // 0.1.7 live-config: `configure({auto:true})` only registers the
-      // auto-form presentation — it does NOT hand the plugin a live source
-      // (there is no `setSource` on that line). The live seam on 0.1.7 is the
-      // Config object the Loader hands `apply`, whose volatile fields are
-      // updated in place by the Loader after every `settings.mutate` and
-      // announced with `loader/volatile-update`. The default
-      // `preferencesSource` therefore re-reads that live object on every
-      // access (above), and the listener below refreshes the picker when the
-      // event lands. The installSection hosts (0.1.6) replace the source with
-      // their document reference through `setSource` instead.
       if (typeof settings.configure === 'function') {
         settings.configure({ auto: true }, ctx.fiber)
-      } else if (typeof settings.installSection === 'function') {
-        settings.installSection(ctx, settingsNs, QODER_SECTION, config, {
-          setSource(source: unknown) {
-            preferencesSource = source as PreferencesSource            // Install the live source and fold in its current value at once.
-            // A source that has not been resolved yet degrades to the startup
-            // preferences, so a half-handoff never blanks a field.
-            const next = current()
-            if (next !== preferences) preferences = next
-            refreshPicker()
-          },
-          onChange() {
-            refreshPicker()
-          },
-        })
+      } else {
+        // The surface is present but carries no presentation API this plugin
+        // knows: the configuration surface will not render, and saying so
+        // beats a silent one.
+        ctx.logger.warn?.('dsh-connect-qoder: settings service has no configure(); the configuration surface is unavailable')
       }
     } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: settings section unavailable', error)
     }
   })
 
-  // 0.1.7 dispatches `loader/volatile-update` on the plugin fiber after a
-  // settings write updates the live config references in place — that is the
-  // live seam the configure() auto-form relies on. `current()` now re-reads
+  // The 0.2 line dispatches `loader/volatile-update` on the plugin fiber after
+  // a settings write updates the live config references in place — that is
+  // the live seam the configure() auto-form relies on. `current()` re-reads
   // those references, so re-snapshotting `preferences` here and refreshing the
   // picker is what makes a card save reach the running adapter without a DSH
-  // restart. Optional chaining: hosts before 0.1.7 have no such event (or no
-  // `ctx.on` at all), and there the installSection callbacks above already do
-  // this.
+  // restart. `ctx.on` is optional on the context: a host without the event
+  // simply re-reads on its next adapter build, which keeps settings correct,
+  // just one save later.
   ctx.on?.('loader/volatile-update', () => {
     const next = current()
     if (next !== preferences) preferences = next
@@ -1065,7 +1037,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           if (force) {
             for (const { runtime } of started) {
               try {
-                await runtime.refreshCatalog(true)
+                await runtime.refreshCatalog()
               } catch (error) {
                 // A refresh failure must not blank the card: the last good
                 // catalog is still served below.
@@ -1098,8 +1070,8 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
 
   // The card's save button writes through this authoritative Host endpoint
   // (same pattern as the WorkBuddy bundle's `__save`): the settings document
-  // lives in the Host process, and on DSH 0.1.7 the client-side
-  // `settingsScope.set()` can settle WITHOUT persisting — the Host's
+  // lives in the Host process, and on the DSH 0.2 line the client-side
+  // settings scope `set()` can settle WITHOUT persisting — the Host's
   // atomic-write retries exhaust on a locked file, the scope reloads Host
   // state, and returns success anyway. A read-back check catches that, but
   // the only writer that actually lands the value there is a mutate executed
@@ -1137,11 +1109,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
               settings,
               field: posted.field,
               value: posted.value,
-              // The live host namespace first: on 0.1.7 it is the Loader entry
-              // id (`llm-qoder`), and the constant only covers hosts that mount
-              // this plugin without a Loader entry. The provider name stays in
-              // the list because it is what 0.1.6 keyed the document by.
-              candidates: [...new Set([settingsNs, QODER_SETTINGS_NS, name])],
+              // The live namespace first: on the 0.2 line `settingsNs` is the
+              // Loader entry id (`llm-qoder`), and the constant is the
+              // fallback for a host that mounts this plugin without a Loader
+              // entry. The two are the same value in the entry case, so the
+              // list is what it is — no third candidate.
+              candidates: [settingsNs, QODER_SETTINGS_NS],
               equals: isDeepStrictEqual,
             })
             if (outcome.body.ok !== true) return sendJson(res, outcome.status, outcome.body)
@@ -1153,7 +1126,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
             // HAS the field shadows whatever was folded in, and one that LACKS
             // it means the write never landed, which `applySettingsSave`'s
             // read-back has already rejected. The assignment was therefore
-            // dead in both directions, and on the 0.1.7 line it could only ever
+            // dead in both directions, and on the 0.2 line it could only ever
             // make the snapshot disagree with the document.
             refreshPicker()
             return sendJson(res, outcome.status, outcome.body)
@@ -1447,7 +1420,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           for (const { runtime } of started) {
             if (wanted !== undefined && runtime.region.id !== wanted) continue
             runtime.invalidateCredential()
-            void runtime.refreshCatalog(true)
+            void runtime.refreshCatalog()
           }
           // A region with no runtime at all — no sign-in, or an expired one,
           // at activation — needs more: start it now, and publish the
@@ -1575,10 +1548,10 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
  * that outlives the plugin.
  */
 function beginCatalogUpdates(runtime: RegionRuntime) {
-  void runtime.refreshCatalog(true).then(() => {
+  void runtime.refreshCatalog().then(() => {
     if (runtime.disposed) return
     runtime.refreshTimer = setInterval(() => {
-      void runtime.refreshCatalog(true)
+      void runtime.refreshCatalog()
     }, CATALOG_TTL_MS)
     runtime.refreshTimer.unref?.()
   })

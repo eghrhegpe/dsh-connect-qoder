@@ -411,3 +411,26 @@ P1-1（异步凭据） ──────► 独立，可并行
 | `test/offpeak-parity.test.js`（新） | P1-3 | 卡片与宿主逐状态对拍 |
 | `test/protocol-drift.test.js`（新） | P1-4 | 未知信封形状 → `protocol-shape-changed` |
 | `test/host-route-mocks.test.js`（新） | P2-1 / P2-3 | 路由 method/鉴权/错误码；dispose 后不再 emit |
+
+## 10. 0.5.0 ABI 切割记录（2026-10-03）
+
+宿主升到 0.2 代（现场 0.2.0-rc.2）后，0.1.x 双线兼容不再有人用：宿主已移除
+`installSection` 与 `settingsScope`（asar 取证零命中，见
+`docs/history/0.5.0-abi-cutover.md`）。0.5.0 一次砍掉：
+
+- **P2-4 的四套说法收敛为两**：客户端 `resolveNamespace` 的子串推导
+  （`/qoder/i`）改为与宿主 `settingsNamespaceOf` 共享的精确候选对
+  （`dsh-connect-qoder` / `llm-qoder`）；宿主 `__save` 候选去重。
+  完全体（跨 bundle 共享推导函数）仍受双 bundle 边界限制，登记在 ADR。
+- **P2-2 表随之关闭三条**：`asVolatile` 退化分支（随 schemastery 下限
+  `^3.18.3` 失去对象）；`installSection`/`setSource` 双探测（不可达死分支）；
+  `settingsScope` 客户端探针（宿主已无此服务）。
+- 附带同批小修：shim 流中失败的 `[DONE]` 注释与代码矛盾（P2-2 #1 的
+  "二选一"——代码是对的，注释改对了并补钉住契约的测试）；目录刷新的
+  TTL 死分支（P2-2 #9，删）。
+- peer 范围收紧：`dsh-* >=0.2.0-rc.0 <0.3`（下限含预发布的理由在 ADR）、
+  `schemastery ^3.18.3`、`pi-ai ^0.87.1`、`cordis >=4.0.4 <5.0.0`。
+
+**未做/移交**：P3-1 桌面 profile 的 registry 副本漂移（需要 app 关闭时
+`dsh plugin add <本仓库> --profile desktop`，属人机 handoff）；P3-3 默认策展；
+P2-1 覆盖率分母扩到 index/adapter（L，需 module-mocks 的替代方案）。

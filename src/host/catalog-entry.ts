@@ -184,7 +184,7 @@ export function filterByEnabled(
  * settings and the clock, and that is where the decisions are.
  *
  * The three settings are unwrapped individually. Resolving the settings source
- * unwraps the source, not the fields inside it, so on the 0.1.7 line a volatile
+ * unwraps the source, not the fields inside it, so on the 0.2 line a volatile
  * field is still a `{ get() }` shell here — and `typeof shell === 'object'` is
  * true, so a plain `?? {}` guard passes the shell straight through to the card
  * as an object containing no settings at all.

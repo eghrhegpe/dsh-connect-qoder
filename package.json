@@ -2,7 +2,7 @@
   "name": "@eghrhegpe/dsh-connect-qoder",
   "displayName": "DSH Connect Qoder",
   "description": "Bring the Qoder models already signed in on this machine into DeepSeek Harness with zero configuration.",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "author": "eghrhegpe",
   "homepage": "https://github.com/eghrhegpe/dsh-connect-qoder",
   "repository": {
@@ -86,17 +86,17 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.2 <5.0.0",
-    "@deepseek-ai/dsh-client-locale": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-home-paths": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-llm": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-llm-pi-ai": ">=0.1.5 <0.3",
-    "@deepseek-ai/dsh-settings": ">=0.1.5 <0.3",
-    "@deepseek-ai/schemastery": "^3.18.2",
-    "@earendil-works/pi-ai": "^0.85.1"
+    "@deepseek-ai/cordis": ">=4.0.4 <5.0.0",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/dsh-settings": ">=0.2.0-rc.0 <0.3",
+    "@deepseek-ai/schemastery": "^3.18.3",
+    "@earendil-works/pi-ai": "^0.87.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

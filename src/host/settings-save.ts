@@ -2,12 +2,13 @@
  * The settings save pipeline.
  *
  * Extracted from the `__save` route in lib/index.js so it can be tested. The
- * route's whole reason for existing is a defect on the DSH 0.1.7 line: the
- * client-side `settingsScope.set()` can resolve successfully without persisting
- * anything — the host's atomic write exhausts its retries on a locked file, the
- * scope reloads the previous document, and success is reported anyway. The card
- * would then show "已保存" while the model roster, image overrides and context
- * window had all silently failed to change, with nothing to indicate it.
+ * route's whole reason for existing is a defect on the DSH 0.2 line: the
+ * client-side settings scope `set()` can resolve successfully without
+ * persisting anything — the host's atomic write exhausts its retries on a
+ * locked file, the scope reloads the previous document, and success is
+ * reported anyway. The card would then show "已保存" while the model roster,
+ * image overrides and context window had all silently failed to change, with
+ * nothing to indicate it.
  *
  * So a write here is only a success once the value has been read back out of the
  * document and compared. That check, the per-region merge, and the namespace
@@ -26,7 +27,7 @@ export type SettingsRow = { ns?: unknown; value?: Record<string, unknown> } & Re
 /**
  * The host settings service, as much of it as this module touches.
  *
- * `mutate` and `describe` are the only two members read. On the 0.1.7 line a
+ * `mutate` and `describe` are the only two members read. On the 0.2 line a
  * `mutate` can resolve without persisting — that is the whole reason the read-back
  * check below exists — so the shape being declared here must not be read as a
  * promise that calling it wrote anything.
@@ -62,9 +63,10 @@ export const SAVE_FIELDS = {
 /**
  * Find the settings row this plugin owns.
  *
- * On 0.1.7 the service keys a provider's document by the provider name
- * (`llm-qoder`), while 0.1.6 and earlier use the plugin namespace
- * (`dsh-connect-qoder`). Both are matched exactly, in that order.
+ * On the 0.2 line the service keys a provider's document by the Loader
+ * entry id (`llm-qoder`), while a host that mounts the plugin without a
+ * Loader entry serves it under the plugin namespace (`dsh-connect-qoder`).
+ * Both are matched exactly, in that order.
  *
  * The substring fallbacks this replaced were a real hazard rather than a
  * theoretical one: `String(entry.ns).includes(name)` matches `llm-qoder-extra`,
@@ -86,7 +88,7 @@ export function findSettingsRow(rows: SettingsRow[], candidates: string[]): Sett
 /**
  * The settings namespace the HOST actually serves this plugin under.
  *
- * On the 0.1.7 line a plugin can no longer pick its namespace: the service
+ * On the 0.2 line a plugin can no longer pick its namespace: the service
  * derives it from the Loader entry and `describe()` reports it as
  * `ns: entry.options.id`. The host then looks a provider up by **exact** match
  * — the models settings page does `namespaces.get(entry.settingsNs)` — so a
@@ -150,7 +152,7 @@ export function readField(row: SettingsRow | undefined, field: string): unknown 
  *
  * The return value is the route's whole contract: `{ ok: true }` only when the
  * value is readable out of the document afterwards. A `mutate` that resolves is
- * not evidence of anything on the 0.1.7 line, so the document is re-read and
+ * not evidence of anything on the 0.2 line, so the document is re-read and
  * deep-compared against what was written.
  *
  * @param options.settings - the host settings service.

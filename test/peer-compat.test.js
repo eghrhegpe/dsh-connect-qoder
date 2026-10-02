@@ -38,17 +38,27 @@ import assert from 'node:assert/strict'
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
 
-/** Versions the plugin must keep working on, and why each one is here. */
+/**
+ * Versions the plugin must keep working on, and why each one is here.
+ *
+ * As of 0.5.0 the plugin targets the 0.2 host line only: the 0.1.x compat
+ * seams (the `installSection`/`setSource` branch, the `asVolatile` no-op,
+ * the `settingsScope` client probe) are cut, so the range floor moves up
+ * with them. The floor is `0.2.0-rc.0` rather than `0.2.0` because the
+ * host judges ranges with `includePrerelease: true` and a stable-`0.2.0`
+ * floor would reject the rc builds the field runs on — a prerelease sorts
+ * BELOW its stable version.
+ */
 const ADMIT = [
-  { version: '0.1.5', why: 'lower bound already declared' },
-  { version: '0.1.7', why: 'the 0.1.x line this plugin was written against' },
-  { version: '0.2.0-rc.1', why: 'the desktop build that turned the row red' },
+  { version: '0.2.0-rc.0', why: 'the declared floor' },
+  { version: '0.2.0-rc.2', why: 'the desktop build this checkout runs against' },
   { version: '0.2.0', why: '0.2.0 stable, once the rc lands' },
   { version: '0.2.7', why: 'later patches inside the same minor' },
 ]
 
-/** Versions the range must still refuse — the price of widening the lid. */
+/** Versions the range must still refuse. */
 const REFUSE = [
+  { version: '0.1.7', why: 'the 0.1.x line the 0.5.0 cut dropped: its ABI is no longer probed' },
   { version: '0.3.0', why: 'next minor: API changes are untested there' },
   { version: '1.0.0', why: 'next major' },
 ]
@@ -148,14 +158,21 @@ test('widening the lid did not open the next generation', () => {
 })
 
 test('the peers outside the hosts check keep their own ranges', () => {
+  // Judged against the copy the host bundles, not its own gate: the floor
+  // is the 0.2 generation's bundle (cordis 4.0.4, schemastery ≥ 3.18.3,
+  // pi-ai 0.87.1). The host does not block installation on these — the
+  // ranges are this plugin's own contract about what it imports.
   const { peerDependencies: peers } = JSON.parse(readFileSync(`${REPO_ROOT}package.json`, 'utf8'))
-  assert.equal(peers['@deepseek-ai/cordis'], '>=4.0.2 <5.0.0')
-  assert.equal(peers['@deepseek-ai/schemastery'], '^3.18.2')
-  assert.equal(peers['@earendil-works/pi-ai'], '^0.85.1')
+  assert.equal(peers['@deepseek-ai/cordis'], '>=4.0.4 <5.0.0')
+  assert.equal(peers['@deepseek-ai/schemastery'], '^3.18.3')
+  assert.equal(peers['@earendil-works/pi-ai'], '^0.87.1')
 })
 
-test('the helper and the host agree on the case that started this', () => {
+test('the helper and the host agree on the range the 0.5.0 cut chose', () => {
   // Golden values from semver 7.8.5 with the hosts own includePrerelease:true.
-  assert.equal(satisfies('0.2.0-rc.1', '>=0.1.5 <0.2'), false, 'the old range must still be recognised as the failure it was')
-  assert.equal(satisfies('0.2.0-rc.1', '>=0.1.5 <0.3'), true, 'and the new one must fix it')
+  // The 0.1.x floor is now refused on purpose: those hosts carry the
+  // installSection/settingsScope ABI the 0.5.0 cut dropped.
+  assert.equal(satisfies('0.1.7', '>=0.2.0-rc.0 <0.3'), false, 'the 0.1.x line must stay out after the cut')
+  assert.equal(satisfies('0.2.0-rc.2', '>=0.2.0-rc.0 <0.3'), true, 'the rc builds the field runs on must come in')
+  assert.equal(satisfies('0.2.0', '>=0.2.0-rc.0 <0.3'), true, 'and the stable release when it lands')
 })

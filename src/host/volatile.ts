@@ -1,8 +1,8 @@
 /**
- * Unwrap a 0.1.7 volatile live reference.
+ * Unwrap a volatile live reference.
  *
- * On the DSH 0.1.7 line a volatile settings field holds a `{ get() }` shell
- * rather than a value. Reading it directly yields the shell; `unwrapReference`
+ * On the DSH 0.2 line a volatile settings field holds a `{ get() }` shell
+ * rather than a value. Reading it directly yields the shell; `unwrapVolatile`
  * resolves it. This module is the single source for that logic — three copies
  * existed (in `preferences.js`, `catalog-entry.js`, and `settings-save.js`),
  * each with a comment saying "keeps this module importable on its own".
@@ -11,7 +11,7 @@
  */
 
 /**
- * A 0.1.7 volatile settings field, as it is handed to this plugin.
+ * A volatile settings field, as it is handed to this plugin.
  *
  * The live-reference shell. A plain value is a legal input too — callers pass
  * whatever the settings object carried — so the union has to admit both.
@@ -19,7 +19,7 @@
 export type VolatileRef<T> = T | { get(): T }
 
 /**
- * Resolve a value that may be a 0.1.7 volatile live reference.
+ * Resolve a value that may be a volatile live reference.
  *
  * The `get()` call is made behind the runtime check below, which is what the
  * narrowing hinges on — an `as` would suppress exactly the property access this
