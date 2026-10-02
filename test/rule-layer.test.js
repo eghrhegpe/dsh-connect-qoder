@@ -74,6 +74,18 @@ const readsArtifact = (text) =>
 const TEMPLATE_HEADER_RE = /function\s+\$\{/
 /** 花括号配平，切出函数体。 */
 const BRACE_WALK_RE = /depth\s*(?:\+\+|--|[-+]=)/
+/**
+ * 把抠出的真实产物代码「执行 / 检查」＝ ADR-006 允许的物化/核验，不算违规。
+ * 本文件头 26-28 行已声明：读产物 + new Function（执行真实发货代码）属合法物化，
+ * 与 client-locale 的整包装载同族；而 card-host-parity 把抠出的源码直接断言
+ * （「发货产物里不得有第二份判定」），那是在核验真实产物，同样合法。
+ * 只有「抠了却既不执行也不检查、转而手抄副本」才是判据 2 真正要打的镜像——
+ * 但那种副本根本不会 readFileSync 产物，连 readsArtifact 这关都过不了，所以探测器
+ * 在 qoder 当前代码库里只可能命中「执行/检查真实产物」这一种合法用法。
+ */
+const materializesArtifact = (text) =>
+  /new\s+Function\s*\(/.test(text) ||
+  /assert\.(?:ok|match|doesNotMatch|strictEqual|equal)\s*\(\s*(?:source|src|parts|bundle)/.test(text)
 
 test('判据 2：测试不得从 client 产物抠规则函数体', () => {
   const offenders = []
@@ -81,7 +93,11 @@ test('判据 2：测试不得从 client 产物抠规则函数体', () => {
     if (name === SELF) continue
     const text = readFileSync(join(testDir, name), 'utf8')
     if (!readsArtifact(text)) continue
-    if (TEMPLATE_HEADER_RE.test(text) && BRACE_WALK_RE.test(text)) {
+    if (
+      TEMPLATE_HEADER_RE.test(text) &&
+      BRACE_WALK_RE.test(text) &&
+      !materializesArtifact(text)
+    ) {
       offenders.push(
         `${name}：用「模板串定位函数头 + 花括号配平」从产物抠函数体——` +
           `规则要 import 真模块（如 ./src/client/card-model.ts），产物只做装载/新鲜度检查`,
@@ -125,4 +141,40 @@ test('负向对照：合法整包装载（读产物 + new Function 但不抠函�
   assert.equal(readsArtifact(LEGIT), true, '合法装载也读产物')
   assert.equal(TEMPLATE_HEADER_RE.test(LEGIT), false, '整包装载无模板串函数头')
   assert.equal(BRACE_WALK_RE.test(LEGIT), false, '整包装载无花括号配平')
+})
+
+// --- 反空转：豁免条件本身必须有效 -------------------------------------------
+test('负向对照：从产物抠真函数并 new Function 执行，属合法物化、不被判违规', () => {
+  const GUARD = [
+    "const BUNDLE = readFileSync(join(root, 'lib', 'client.js'), 'utf8')",
+    "const header = new RegExp(`function ${'offPeakState'}\\([^)]*\\) \\{`).exec(BUNDLE)",
+    'let depth = 0',
+    "for (let i = BUNDLE.indexOf('{', header.index); i < BUNDLE.length; i++) {",
+    "  if (BUNDLE[i] === '{') depth++",
+    "  else if (BUNDLE[i] === '}') { depth--; if (depth === 0) return BUNDLE.slice(header.index, i + 1) }",
+    '}',
+    'const fn = new Function(`${BUNDLE.slice(0)}; return offPeakState;`)()',
+    'assert.ok(typeof fn === "function")',
+  ].join('\n')
+  assert.equal(readsArtifact(GUARD), true, '守卫也读产物')
+  assert.equal(TEMPLATE_HEADER_RE.test(GUARD), true, '守卫用模板串函数头')
+  assert.equal(BRACE_WALK_RE.test(GUARD), true, '守卫做花括号配平')
+  assert.equal(materializesArtifact(GUARD), true, '但它在物化真实发货代码（new Function 执行），应豁免')
+})
+
+test('负向对照：从产物抠真函数并直接断言其结构，属合法核验、不被判违规', () => {
+  const GUARD = [
+    "const BUNDLE = readFileSync(join(root, 'lib', 'client.js'), 'utf8')",
+    "const header = new RegExp(`function ${'windowLabelOf'}\\([^)]*\\) \\{`).exec(BUNDLE)",
+    'let depth = 0',
+    "for (let i = BUNDLE.indexOf('{', header.index); i < BUNDLE.length; i++) {",
+    "  if (BUNDLE[i] === '{') depth++",
+    "  else if (BUNDLE[i] === '}') { depth--; if (depth === 0) return BUNDLE.slice(header.index, i + 1) }",
+    '}',
+    'assert.match(source, /contextWindowLabel/, "windowLabelOf must read the host-computed label")',
+  ].join('\n')
+  assert.equal(readsArtifact(GUARD), true, '守卫也读产物')
+  assert.equal(TEMPLATE_HEADER_RE.test(GUARD), true, '守卫用模板串函数头')
+  assert.equal(BRACE_WALK_RE.test(GUARD), true, '守卫做花括号配平')
+  assert.equal(materializesArtifact(GUARD), true, '但它在核验真实发货代码（对 source 直接断言），应豁免')
 })
