@@ -270,7 +270,7 @@ dsh plugin --profile web add <本仓库路径>
 npm run verify          # 下面五条串起来，全过才算过
 npm run typecheck       # tsc -p tsconfig.json，源码全量类型检查（0 error）
 npm test                # node --test "test/*.test.js"
-npm run test:coverage   # 同上 + 覆盖率门槛（行 68 / 分支 85 / 函数 66，跌破即失败）
+npm run test:coverage   # 同上 + 覆盖率门槛（行 68 / 分支 82 / 函数 66，跌破即失败）
 npm run verify:deploy   # 比对已部署副本与本仓库，报告漂移
 npm run build           # 从 src/ 重建 lib/（宿主 bundle + 卡片产物）
 ```

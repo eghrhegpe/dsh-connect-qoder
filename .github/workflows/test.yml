@@ -1,9 +1,16 @@
 name: test
 
-# The suite needs no dependencies — not even the peer ones. Everything it can
-# reach was deliberately moved into modules that import nothing but node
-# builtins, so a plain checkout can run it. If a future change makes `npm ci`
-# necessary here, that is a signal something moved back behind a peer dependency.
+# This repo keeps src/host + src/client as the sources and lib/ as a PURE BUILD
+# ARTIFACT (untracked, git-ignored, rebuilt by `npm run build`). That is the
+# opposite of the upstream layout, where lib/*.js were themselves the sources
+# and therefore committed.
+#
+# The upstream workflow could run `npm test` on a bare checkout with no install,
+# because there was nothing to build. Here, seven test files read lib/client.js
+# — an artifact that does not exist in a fresh checkout — so the job must build
+# first. The build needs tsdown, so `npm install` is now required. The note that
+# used to sit here ("no npm ci: there is nothing to install") described a repo
+# that no longer exists; keeping it would have kept the job permanently red.
 on: [push, pull_request]
 
 jobs:
@@ -27,8 +34,19 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      # No `npm ci`: there is nothing to install. Running the script directly
-      # also proves it does not secretly depend on a lockfile.
+      # `.npmrc` sets legacy-peer-deps: the `@deepseek-ai/*` peers are supplied
+      # by the host at runtime and are not on the public registry, so npm's
+      # automatic peer install would fail before reaching tsdown.
+      - run: npm install --no-audit --no-fund
+
+      # Required before `npm test`: lib/client.js is an artifact, and the tests
+      # that read it are asserting against the SHIPPED bundle on purpose (see
+      # test/client-bundle.test.js). Building here rather than in a separate job
+      # keeps the matrix honest — every OS/Node combination verifies the bundle
+      # it actually tested.
+      - name: Build lib/ from src/
+        run: npm run build
+
       - name: Run tests
         run: npm test
 
@@ -41,11 +59,8 @@ jobs:
       - name: Coverage
         run: npm run test:coverage
 
-  # A separate job, and that is the point: `npm test` must keep working on a
-  # bare checkout with nothing installed (see the note at the top), while
-  # rebuilding the card needs a bundler. Splitting them keeps both guarantees
-  # instead of trading one for the other — one job proves the suite is
-  # dependency-free, this one proves the artifact is reproducible.
+  # Separate job: proves the artifact is reproducible from a clean install, and
+  # that the host bundle and the client bundle both rebuild without drift.
   build:
     runs-on: ubuntu-latest
     steps:
@@ -55,24 +70,28 @@ jobs:
         with:
           node-version: '22.19'
 
-      # `.npmrc` sets legacy-peer-deps: the `@deepseek-ai/*` peers are supplied
-      # by the host at runtime and are not on the public registry, so npm's
-      # automatic peer install would fail before reaching tsdown.
       - run: npm install --no-audit --no-fund
 
-      - name: Rebuild the card from src/client
+      - name: Rebuild from src/
         run: npm run build
 
-      # The committed bundle must be exactly what the sources produce. A change
-      # that edits src/ without rebuilding fails here rather than shipping an
-      # artifact nobody can reproduce.
-      - name: The committed bundle is up to date
-        run: git diff --exit-code -- lib/client.js
+      # `lib/` is untracked, so the upstream check (`git diff --exit-code --
+      # lib/client.js`) would compare against a file that is not in the index
+      # and pass vacuously. What is actually worth asserting here is that the
+      # build is deterministic: build twice and require byte equality.
+      - name: The build is reproducible
+        run: |
+          cp -r lib lib.first
+          npm run build
+          diff -r lib.first lib
 
-      # Byte equality is not reachable (docs/issues/17), so the artefact is
-      # judged on behaviour: every pure function in the card is called with the
-      # whole argument pool and the results are compared against the committed
+      # The bundle is judged on behaviour, not byte equality with a committed
+      # file (docs/issues/17): every pure function in the card is called with
+      # the whole argument pool and the results are compared against the built
       # bundle. The script prints the probe and call counts, so a count here
       # would only be a number to let rot.
-      - name: The rebuild behaves like the committed bundle
+      - name: The rebuild behaves like the bundle the tests ran against
         run: npm run verify:bundle
+
+      - name: The host bundle matches its sources
+        run: npm run verify:host

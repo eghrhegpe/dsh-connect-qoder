@@ -588,7 +588,7 @@ async function startRegion(
   try {
     await shim.ready
   } catch (error: any) {
-    ctx.logger.error(`dsh-connect-qoder: ${region.displayName} loopback endpoint failed to start`, error)
+    ctx.logger.error?.(`dsh-connect-qoder: ${region.displayName} loopback endpoint failed to start`, error)
     return undefined
   }
   // The entry carries its region as well as the runtime and shim: the reload
@@ -617,7 +617,7 @@ export async function apply(ctx: HostContext, config: Record<string, unknown> = 
   try {
     await activate(ctx, config)
   } catch (error: any) {
-    ctx.logger.error('dsh-connect-qoder: activation failed; Qoder models will be unavailable', error)
+    ctx.logger.error?.('dsh-connect-qoder: activation failed; Qoder models will be unavailable', error)
   }
 }
 
@@ -690,7 +690,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
 
   // Give the credential layer a logger. Without one, a failed OSCrypt unwrap
   // was completely silent — the region simply never appeared in the picker.
-  setCredentialDiagnosticSink((message: string) => ctx.logger.warn(message))
+  setCredentialDiagnosticSink((message: string) => ctx.logger.warn?.(message))
 
   // Reclaim the key hand-off directories a crashed or killed run left behind,
   // BEFORE this run creates its own. A `finally` in `oscryptKeyFor` covers
@@ -701,12 +701,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   try {
     const reclaimed = sweepStaleOscryptDirs()
     if (reclaimed > 0) {
-      ctx.logger.info(`dsh-connect-qoder: reclaimed ${reclaimed} stale credential temp dir(s)`)
+      ctx.logger.info?.(`dsh-connect-qoder: reclaimed ${reclaimed} stale credential temp dir(s)`)
     }
   } catch (error: any) {
     // Housekeeping only: failing to sweep must never stop the plugin from
     // starting, and the directories are inert without a reader.
-    ctx.logger.warn('dsh-connect-qoder: stale credential temp sweep failed', error)
+    ctx.logger.warn?.('dsh-connect-qoder: stale credential temp sweep failed', error)
   }
 
   const started: Array<{ region: Region; runtime: RegionRuntime; shim: ShimHandle }> = []
@@ -727,7 +727,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // only through these routes — so returning here also made the documented
     // "re-sign in and it appears without restarting DSH" path unreachable from a
     // fresh install, which is the case that path exists for.
-    ctx.logger.warn('dsh-connect-qoder: no Qoder region could start; card routes stay up so the account panel can explain it')
+    ctx.logger.warn?.('dsh-connect-qoder: no Qoder region could start; card routes stay up so the account panel can explain it')
   }
 
   /**
@@ -879,7 +879,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   const initial = publishRegions()
   if (initial.ok !== true) {
     await Promise.allSettled(started.map(({ shim }) => shim.close()))
-    ctx.logger.error('dsh-connect-qoder: provider registration failed', initial.error)
+    ctx.logger.error?.('dsh-connect-qoder: provider registration failed', initial.error)
     return
   }
 
@@ -954,7 +954,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         })
       }
     } catch (error: any) {
-      ctx.logger.warn('dsh-connect-qoder: settings section unavailable', error)
+      ctx.logger.warn?.('dsh-connect-qoder: settings section unavailable', error)
     }
   })
 
@@ -997,7 +997,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
               } catch (error: any) {
                 // A refresh failure must not blank the card: the last good
                 // catalog is still served below.
-                ctx.logger.warn(
+                ctx.logger.warn?.(
                   `dsh-connect-qoder: ${runtime.region.displayName} catalog refresh failed`,
                   error,
                 )
@@ -1020,7 +1020,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         },
       }))
     } catch (error: any) {
-      ctx.logger.warn('dsh-connect-qoder: model route unavailable', error)
+      ctx.logger.warn?.('dsh-connect-qoder: model route unavailable', error)
     }
   })
 
@@ -1088,7 +1088,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         },
       }))
     } catch (error: any) {
-      ctx.logger.warn('dsh-connect-qoder: save route unavailable', error)
+      ctx.logger.warn?.('dsh-connect-qoder: save route unavailable', error)
     }
   })
 
@@ -1118,7 +1118,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
                 const usage = await runtime.readUsage(force)
                 return usage === undefined ? { ...base, available: false } : { ...base, available: true, ...usage }
               } catch (error: any) {
-                ctx.logger.warn(
+                ctx.logger.warn?.(
                   `dsh-connect-qoder: ${runtime.region.displayName} usage read failed`,
                   error,
                 )
@@ -1130,7 +1130,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         },
       }))
     } catch (error: any) {
-      ctx.logger.warn('dsh-connect-qoder: usage route unavailable', error)
+      ctx.logger.warn?.('dsh-connect-qoder: usage route unavailable', error)
     }
   })
 
@@ -1157,13 +1157,13 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
             // The one route where failure must name itself: an unusable sign-in,
             // a round that ended minutes ago, and a rejected claim are three
             // different problems wearing the same "nothing happened".
-            ctx.logger.warn(`dsh-connect-qoder: ${entry.region.displayName} check-in failed`, error)
+            ctx.logger.warn?.(`dsh-connect-qoder: ${entry.region.displayName} check-in failed`, error)
             sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) })
           }
         },
       }))
     } catch (error: any) {
-      ctx.logger.warn('dsh-connect-qoder: check-in route unavailable', error)
+      ctx.logger.warn?.('dsh-connect-qoder: check-in route unavailable', error)
     }
   })
 
@@ -1251,7 +1251,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // new must not touch a working registration.
     const outcome = publishRegions()
     if (outcome.ok !== true) {
-      ctx.logger.error(
+      ctx.logger.error?.(
         'dsh-connect-qoder: re-publishing the region set after reload failed; the previous registration is kept',
         outcome.error,
       )
@@ -1319,7 +1319,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           try {
             sendJson(res, 200, await accountPayload())
           } catch (error: any) {
-            ctx.logger.error('dsh-connect-qoder: account state read failed', error)
+            ctx.logger.error?.('dsh-connect-qoder: account state read failed', error)
             sendJson(res, 500, {
               error: 'account state read failed',
               errorName: error?.name ?? 'Error',
@@ -1368,7 +1368,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           try {
             await startStoppedRegions(wanted)
           } catch (error: any) {
-            ctx.logger.error('dsh-connect-qoder: account re-read failed to start a stopped region', error)
+            ctx.logger.error?.('dsh-connect-qoder: account re-read failed to start a stopped region', error)
           }
           // `force: true` is deliberate and unlike the GET above: this is the
           // user pressing "重读登录", i.e. asking for the store to be read again
@@ -1441,7 +1441,7 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         },
       }))
     } catch (error: any) {
-      ctx.logger.warn('dsh-connect-qoder: account routes unavailable', error)
+      ctx.logger.warn?.('dsh-connect-qoder: account routes unavailable', error)
     }
   })
 
