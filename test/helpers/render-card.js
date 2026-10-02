@@ -14,7 +14,7 @@
  * uncovered.
  *
  * This harness closes that gap against the SAME artifact CI already builds and
- * ships. It is deliberately not an import of `src/client/card.ts`: the point is
+ * ships. It is deliberately not an import of `src/client/card.tsx`: the point is
  * to execute the code the user sees, not a transcription. A card that loses its
  * roster in a rebuild turns this red even though `npm test` stays green.
  *

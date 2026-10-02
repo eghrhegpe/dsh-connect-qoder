@@ -153,7 +153,7 @@ test('settings fields: client and host agree on the field names', () => {
 test('namespace: host defines the expected settings namespace', () => {
   // The host's QODER_SETTINGS_NS is the authoritative namespace. The client
   // hardcodes "dsh-connect-qoder" in its fetch URLs (settings-write.ts) and
-  // card registration (card.ts). A future refactor could extract a shared
+  // card registration (card.tsx). A future refactor could extract a shared
   // constant, but for now this test pins the host's value so a rename fails.
   const hostNs = requireExtracted(extractString(hostIndex, 'QODER_SETTINGS_NS'), 'QODER_SETTINGS_NS in src/host/index.ts')
   assert.strictEqual(hostNs, 'dsh-connect-qoder', 'host namespace must be dsh-connect-qoder')

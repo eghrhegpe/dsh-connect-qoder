@@ -32,7 +32,7 @@ type ClockPart = 'hour' | 'minute' | 'second'
  * would place the window eight hours off and invert the day. That went
  * unnoticed for as long as it did because a laptop in China is already on
  * `Asia/Shanghai`, which made the omission look correct; the `TZ=UTC` row of
- * CI is what caught it. `src/client/card.ts` carries the same fallback for the
+ * CI is what caught it. `src/client/card.tsx` carries the same fallback for the
  * card's copy of this arithmetic.
  *
  * `Intl` is used rather than a manual UTC offset because the promotion window is

@@ -113,8 +113,9 @@ const QODER_CARD_CSS = [
 	// "有未保存的更改" banner at the bottom.
 	".dsm-qoder-row-pulse{animation:dsm-qoder-flash 1.2s ease}",
 	"@keyframes dsm-qoder-flash{0%{border-color:var(--dsw-alias-state-success-primary,#12b76a)}100%{border-color:var(--dsw-alias-border-l2,#36373b)}}",
-	// Account panel: a version strip (one pill per region — status dot,
-	// name, provider switch) over the SELECTED region's sign-in detail.
+	// Account panel: the framed card with the SELECTED region's sign-in
+	// detail. The region strip is NOT inside it — since 2026-10 it renders
+	// directly above the frame as the whole body's header (see card.tsx).
 	// The frame mirrors the usage panel's so the two read as one family.
 	".dsm-qoder-account{border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}",
 	".dsm-qoder-account-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}",
@@ -141,10 +142,11 @@ const QODER_CARD_CSS = [
 	// pill — status dot + name + provider switch — and selecting the
 	// pill shows that region's account detail, usage and model list
 	// below it. The region name appears once, on this strip, so the
-	// badges disappear from the model rows. The strip doubles as the
-	// panel's header, so both pills must share one row: no wrapping,
-	// the switch carries only its tooltip (no text label), and a long
-	// region name ellipsizes instead of pushing the row past its box.
+	// badges disappear from the model rows. The strip renders ABOVE the
+	// account frame as the whole body's header, so both pills must share
+	// one row: no wrapping, the switch carries only its tooltip (no text
+	// label), and a long region name ellipsizes instead of pushing the
+	// row past its box.
 	".dsm-qoder-region-tabs{display:flex;gap:8px;flex-wrap:nowrap}",
 	".dsm-qoder-region-tab-cell{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:999px;padding:3px 8px 3px 6px;min-width:0}",
 	".dsm-qoder-region-tab-cell-active{border-color:var(--dsw-alias-brand-primary,#5686fe)}",

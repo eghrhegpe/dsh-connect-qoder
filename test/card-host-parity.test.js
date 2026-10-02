@@ -47,7 +47,7 @@ const AT = new Date('2026-09-26T12:00:00+08:00')
 const BUNDLE = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
 
 /**
- * The card's rule, transcribed from `src/client/card.ts` AFTER the fix.
+ * The card's rule, transcribed from `src/client/card.tsx` AFTER the fix.
  *
  * The old transcription is kept below as `OLD_cardWindowLabelOf` because the
  * divergence it found is a measured fact, not a story: the card used to show a

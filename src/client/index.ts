@@ -1,6 +1,6 @@
 import { installStyles } from "./styles.ts"
 import { zh, en } from "./copy.ts"
-import { QoderPluginCard } from "./card.ts"
+import { QoderPluginCard } from "./card.tsx"
 import type { SettingsScope } from "./settings-write.ts"
 
 /**

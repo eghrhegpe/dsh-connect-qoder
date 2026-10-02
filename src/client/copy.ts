@@ -7,7 +7,7 @@
  * - `copy-account.ts` — account panel and region tabs
  *
  * This file merges them into the single `{ zh, en }` shape the card expects,
- * so `index.ts` and `card.ts` import from one place.
+ * so `index.ts` and `card.tsx` import from one place.
  */
 import { zhRow, enRow } from "./copy-row.ts"
 import { zhUsage, enUsage } from "./copy-usage.ts"

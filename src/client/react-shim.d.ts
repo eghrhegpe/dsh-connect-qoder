@@ -7,18 +7,19 @@
  * @types/react 没有（也不该）装进共享 profile 的 node_modules。所以不引依赖，
  * 只声明本卡片用到的极小子集。
  *
- * 与 sensenova 那份的两处差异，都是 `card.ts` 的形状决定的：
+ * 与 sensenova 那份的两处差异，都是 `card.tsx` 的形状决定的：
  *
- * 1. **没有 JSX 内建元素索引**。sensenova 的客户端是手写 `.tsx`（`jsx:
- *    "react-jsx"`），需要 `JSX.IntrinsicElements` 才能写 `<div>`。我们的
- *    `card.ts` 是 2026-09-27 从 `lib/client.js` 反推的转写本，一个 JSX 标签
- *    都没有，全是 `(0, react_jsx_runtime.jsx)("div", {...})` 调用，所以
- *    只需要 `jsx` / `jsxs` 两个函数。
+ * 1. **带 JSX 内建元素索引**。客户端自 2026-10 起是手写 `.tsx`（`jsx:
+ *    "react-jsx"`，见文件尾的全局 `JSX` namespace），写 `<div>` 需要
+ *    `JSX.IntrinsicElements`。早期从 `lib/client.js` 反推的转写本只用
+ *    `(0, react_jsx_runtime.jsx)(...)` 调用、没有标签，那一段历史随
+ *    `.tsx` 迁移结束；`jsx` / `jsxs` 仍保留声明，因为产物由 tsdown 转译，
+ *    运行时仍走宿主模块表的 `react/jsx-runtime`。
  * 2. **多四个 hook**。卡片用到 useState / useEffect / useRef / useMemo /
- *    useCallback / Fragment 六个，比 sensenova 那份多四个。
+ *    useCallback / useSyncExternalStore / Fragment，比 sensenova 那份多。
  *
  * 所有泛型参数都**不设 `any` 默认值**，否则等于把这里的隐式 any 挪个地方
- * 藏起来 —— 这份文件存在的意义正是让 card.ts 能被 noImplicitAny 检查过。
+ * 藏起来 —— 这份文件存在的意义正是让 card.tsx 能被 noImplicitAny 检查过。
  */
 declare module 'react' {
   /**
@@ -91,8 +92,13 @@ declare module 'react' {
     getServerSnapshot?: () => T,
   ): T
 
-  /** 只有一个成员，但 `react.Fragment` 是按值读的（不是类型位）。 */
-  export const Fragment: unknown
+  /**
+   * `react.Fragment` 要在 .tsx 里直接当 JSX 标签用（`<react.Fragment
+   * key=...>`），所以不能只声明成 `unknown`——TS 会报「没有调用/构造签
+   * 名」。给它一个最小函数组件签名即可：运行时仍是宿主模块表里的真实
+   * Fragment，这里只描述它「吃 children、返回节点」的形状。
+   */
+  export const Fragment: (props: { children?: unknown; key?: string | number | null }) => unknown
 }
 
 /**
@@ -108,4 +114,21 @@ declare module 'react/jsx-runtime' {
   export function jsx(type: unknown, props?: unknown, key?: string): unknown
   export function jsxs(type: unknown, props?: unknown, key?: string): unknown
   export const Fragment: unknown
+}
+
+/**
+ * JSX 内建元素索引，供 `card.tsx` 在 `jsx: "react-jsx"` 下直接写标签。
+ *
+ * 与 alaxrpg/dsh-sensenova-provider 的垫片同一条做法：没有 @types/react
+ * 可提供全局 JSX 命名空间，就声明一个最宽松的索引签名——元素属性全是
+ * `unknown`，严格类型检查落在各调用点自己的事件类型标注上。
+ */
+declare namespace JSX {
+  type Element = unknown
+  interface IntrinsicAttributes {
+    key?: string | number | null | undefined
+  }
+  interface IntrinsicElements {
+    [elemName: string]: Record<string, unknown>
+  }
 }

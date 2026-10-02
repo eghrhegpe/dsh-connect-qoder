@@ -10,6 +10,7 @@
     "checkJs": false,
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
     "strict": true,
     "noImplicitAny": true,
     "noImplicitThis": true,

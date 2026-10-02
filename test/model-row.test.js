@@ -32,7 +32,7 @@ const RATES = { rateNow: effectiveRate, offPeakActive: isOffPeakActive, offPeakR
  * The card's own gate, reproduced so this test fails if the card's rule changes.
  *
  * SYNC CONSTRAINT: this is a copy of an expression that lives in the client
- * card (src/client/card.ts, `models.some((m) => m.promotion?.active === true)`).
+ * card (src/client/card.tsx, `models.some((m) => m.promotion?.active === true)`).
  * The card is a browser bundle built from TypeScript sources, so it cannot be
  * imported directly from a Node test. This file is deliberately NOT import-clean,
  * and it should not be read as being so.

@@ -187,12 +187,12 @@ test('every key the card can ask for is present, in both languages', () => {
   /**
    * The keys the CARD actually asks for.
    *
-   * Taken from card.ts rather than from the copy tables, and that is the whole
+   * Taken from card.tsx rather than from the copy tables, and that is the whole
    * point: comparing the tables to themselves would pass even if every key in
    * them were spelled differently from the lookups. This is the direction that
    * catches a typo on either side.
    */
-  const card = readFileSync(join(root, 'src', 'client', 'card.ts'), 'utf8')
+  const card = readFileSync(join(root, 'src', 'client', 'card.tsx'), 'utf8')
   const asked = new Set()
   for (const m of card.matchAll(/\bt\(\s*"([\w.]+)"/g)) asked.add(m[1])
   for (const m of card.matchAll(/\bt\(\s*`([\w.]+)\.\$\{/g)) {

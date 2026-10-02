@@ -138,6 +138,21 @@ test('the region strip lists every known region', async () => {
   assert.deepEqual(tabs, ['Qoder CN', 'Qoder'])
 })
 
+test('the region strip sits ABOVE the account card, not inside it', async () => {
+  const { container } = await mount()
+  const body = container.querySelector('.dsm-qoder-body')
+  assert.ok(body !== null, 'the card body is missing')
+  const strip = body.querySelector(':scope > .dsm-qoder-region-tabs')
+  const account = body.querySelector(':scope > .dsm-qoder-account')
+  assert.ok(strip !== null, 'the strip is not a direct child of the body')
+  assert.ok(account !== null, 'the account card is not a direct child of the body')
+  // The strip switches the WHOLE body (account + usage + models), so it must
+  // not be nested in the account frame — it renders directly above that card,
+  // matching the WorkBuddy layout it was modelled on.
+  assert.equal(account.contains(strip), false, 'the strip is still inside the account card')
+  assert.equal(strip.nextElementSibling, account, 'the account card is not the strip\u2019s next sibling')
+})
+
 test('a live off-peak promotion renders a ticking countdown badge', async () => {
   const { container } = await mount({
     models: [

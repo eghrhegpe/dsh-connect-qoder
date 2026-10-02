@@ -1,6 +1,5 @@
 
 import * as react from "react"
-import * as react_jsx_runtime from "react/jsx-runtime"
 import { QODER_MODELS_PATH, QODER_USAGE_PATH, QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH, QODER_CHECKIN_PATH } from "./paths.ts"
 import { writeSettingsField } from "./settings-write.ts"
 import type { SettingsScope } from "./settings-write.ts"
@@ -421,55 +420,37 @@ function QuotaBlock({ t, label, quota, when, badge }: QuotaBlockProps) {
 	const exhausted = known && remaining <= 0;
 	const tone = exhausted ? " dsm-qoder-bar-full" : percentage >= 0.8 ? " dsm-qoder-bar-warn" : "";
 	const unit = quota.unit === "credits" ? t("usage.credits") : quota.unit ?? "";
-	return (0, react_jsx_runtime.jsxs)("div", {
-		className: "dsm-qoder-usage-block",
-		children: [
-			(0, react_jsx_runtime.jsxs)("div", {
-				className: "dsm-qoder-usage-label",
-				children: [
-					(0, react_jsx_runtime.jsx)("span", { children: label }),
-					badge !== undefined ? (0, react_jsx_runtime.jsx)("span", {
-						className: "dsm-qoder-usage-badge dsm-qoder-usage-badge-offer",
-						children: badge
-					}) : null,
-					exhausted ? (0, react_jsx_runtime.jsx)("span", {
-						className: "dsm-qoder-usage-badge",
-						children: t("usage.exceeded")
-					}) : null,
-					when ? (0, react_jsx_runtime.jsx)("span", {
-						className: "dsm-qoder-usage-when",
-						children: when
-					}) : null
-				]
-			}),
-			(0, react_jsx_runtime.jsx)("div", {
-				className: "dsm-qoder-bar",
-				role: "progressbar",
-				"aria-valuemin": 0,
-				"aria-valuemax": 100,
-				"aria-valuenow": Math.round(percentage * 100),
-				"aria-label": label,
-				children: (0, react_jsx_runtime.jsx)("div", {
-					className: `dsm-qoder-bar-fill${tone}`,
-					style: { width: `${percent}%` }
-				})
-			}),
-			(0, react_jsx_runtime.jsxs)("div", {
-				className: "dsm-qoder-usage-figures",
-				children: [
-					(0, react_jsx_runtime.jsxs)("span", {
-						children: [
-							(0, react_jsx_runtime.jsx)("strong", { children: `${quota.used} / ${quota.total}` }),
-							` (${Math.round(percent)}%)`
-						]
-					}),
-					(0, react_jsx_runtime.jsx)("span", {
-						children: `${t("usage.remaining")} ${known ? remaining : "—"}${unit ? ` ${unit}` : ""}`
-					})
-				]
-			})
-		]
-	});
+	return (
+		<div className="dsm-qoder-usage-block">
+			<div className="dsm-qoder-usage-label">
+				<span>{label}</span>
+				{badge !== undefined ? (
+					<span className="dsm-qoder-usage-badge dsm-qoder-usage-badge-offer">{badge}</span>
+				) : null}
+				{exhausted ? (
+					<span className="dsm-qoder-usage-badge">{t("usage.exceeded")}</span>
+				) : null}
+				{when ? <span className="dsm-qoder-usage-when">{when}</span> : null}
+			</div>
+			<div
+				className="dsm-qoder-bar"
+				role="progressbar"
+				aria-valuemin={0}
+				aria-valuemax={100}
+				aria-valuenow={Math.round(percentage * 100)}
+				aria-label={label}
+			>
+				<div className={`dsm-qoder-bar-fill${tone}`} style={{ width: `${percent}%` }} />
+			</div>
+			<div className="dsm-qoder-usage-figures">
+				<span>
+					<strong>{`${quota.used} / ${quota.total}`}</strong>
+					{` (${Math.round(percent)}%)`}
+				</span>
+				<span>{`${t("usage.remaining")} ${known ? remaining : "—"}${unit ? ` ${unit}` : ""}`}</span>
+			</div>
+		</div>
+	);
 }
 
 /** Props for {@link CheckinCard}. */
@@ -494,37 +475,34 @@ interface CheckinCardProps {
 function CheckinCard({ t, checkin, busy, notice, onClaim }: CheckinCardProps) {
 	const claimed = checkin.todayCheckedIn === true;
 	const amount = typeof checkin.amount === "number" ? checkin.amount : undefined;
-	return (0, react_jsx_runtime.jsxs)("aside", {
-		className: "dsm-qoder-checkin",
-		children: [
-			(0, react_jsx_runtime.jsx)("span", {
-				className: "dsm-qoder-checkin-title",
-				children: t("usage.checkin")
-			}),
-			amount !== undefined ? (0, react_jsx_runtime.jsx)("strong", {
-				className: "dsm-qoder-checkin-gain",
-				children: t("usage.checkinGain", { amount })
-			}) : null,
-			(0, react_jsx_runtime.jsx)("button", {
-				type: "button",
-				className: "dsm-qoder-button dsm-qoder-checkin-button",
-				disabled: busy || claimed,
-				onClick: onClaim,
-				children: busy ? t("usage.checkinClaiming") : claimed ? t("usage.checkinClaimed") : t("usage.checkinClaim")
-			}),
-			// `!= null` covers BOTH absent and explicit null, which is what the
-			// prop type allows (`… | null`). Testing only for `undefined` let a
-			// `null` through to the `.kind` reads below.
-			notice != null ? (0, react_jsx_runtime.jsx)("p", {
-				className: notice.kind === "error" ? "dsm-qoder-error" : "dsm-qoder-state",
-				children: notice.kind === "error" ? t("usage.checkinError", {
-					message: notice.message ?? ""
-				}) : notice.kind === "granted" && typeof notice.amount === "number" ? t("usage.checkinGranted", {
-					amount: notice.amount
-				}) : t("usage.checkinAlready")
-			}) : null
-		]
-	});
+	return (
+		<aside className="dsm-qoder-checkin">
+			<span className="dsm-qoder-checkin-title">{t("usage.checkin")}</span>
+			{amount !== undefined ? (
+				<strong className="dsm-qoder-checkin-gain">{t("usage.checkinGain", { amount })}</strong>
+			) : null}
+			<button
+				type="button"
+				className="dsm-qoder-button dsm-qoder-checkin-button"
+				disabled={busy || claimed}
+				onClick={onClaim}
+			>
+				{busy ? t("usage.checkinClaiming") : claimed ? t("usage.checkinClaimed") : t("usage.checkinClaim")}
+			</button>
+			{/* `!= null` covers BOTH absent and explicit null, which is what the
+			    prop type allows (`… | null`). Testing only for `undefined` let a
+			    `null` through to the `.kind` reads below. */}
+			{notice != null ? (
+				<p className={notice.kind === "error" ? "dsm-qoder-error" : "dsm-qoder-state"}>
+					{notice.kind === "error"
+						? t("usage.checkinError", { message: notice.message ?? "" })
+						: notice.kind === "granted" && typeof notice.amount === "number"
+							? t("usage.checkinGranted", { amount: notice.amount })
+							: t("usage.checkinAlready")}
+				</p>
+			) : null}
+		</aside>
+	);
 }
 
 /** Props for {@link RegionUsage}. */
@@ -543,77 +521,66 @@ interface RegionUsageProps {
  */
 function RegionUsage({ t, entry }: RegionUsageProps) {
 	if (entry.available !== true) {
-		return (0, react_jsx_runtime.jsxs)("div", {
-			className: "dsm-qoder-usage-block",
-			children: [
-				(0, react_jsx_runtime.jsx)("p", {
-					className: "dsm-qoder-state",
-					children: t("usage.unavailable")
-				})
-			]
-		});
+		return (
+			<div className="dsm-qoder-usage-block">
+				<p className="dsm-qoder-state">{t("usage.unavailable")}</p>
+			</div>
+		);
 	}
 	const packages = Array.isArray(entry.dedicatedPackages) ? entry.dedicatedPackages : [];
 	const campaigns = Array.isArray(entry.campaigns) ? entry.campaigns : [];
 	const hasAny = entry.userQuota !== undefined || entry.addOnQuota !== undefined || packages.length > 0;
-	return (0, react_jsx_runtime.jsxs)("div", {
-		className: "dsm-qoder-usage-block",
-		children: [
-			!hasAny ? (0, react_jsx_runtime.jsx)("p", {
-				className: "dsm-qoder-state",
-				children: t("usage.empty")
-			}) : null,
-			entry.userQuota !== undefined ? (0, react_jsx_runtime.jsx)(QuotaBlock, {
-				t,
-				label: t("usage.planCredits"),
-				quota: entry.userQuota,
-				when: withDate(t("usage.renewsOn"), typeof entry.expiresAt === "number" ? entry.expiresAt : undefined)
-			}) : null,
-			entry.addOnQuota !== undefined ? (0, react_jsx_runtime.jsx)(QuotaBlock, {
-				t,
-				label: t("usage.resourcePackage"),
-				quota: entry.addOnQuota
-			}) : null,
-			// Dedicated packages are per-model allowances. They appear only
-			// when the account actually holds one, so the panel stays honest
-			// for accounts that have none.
-			packages.map((pack, index) => (0, react_jsx_runtime.jsxs)(react.Fragment, {
-				children: [
-					(0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-usage-sep" }),
-					(0, react_jsx_runtime.jsx)(QuotaBlock, {
-						t,
-						label: pack.name || t("usage.dedicatedPackage"),
-						quota: pack,
-						when: withDate(t("usage.expiresOn"), typeof pack.expiresAt === "number" ? pack.expiresAt : undefined)
-					})
-				]
-			}, `pack:${pack.id}:${index}`)),
-			campaigns.length > 0 ? (0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-usage-sep" }) : null,
-			campaigns.map((camp) => (0, react_jsx_runtime.jsxs)("p", {
-				className: "dsm-qoder-usage-promo",
-				children: [
-					(0, react_jsx_runtime.jsx)("span", {
-						className: "dsm-qoder-usage-badge dsm-qoder-usage-badge-offer",
-						children: t("usage.promotion")
-					}),
-					" ",
-					camp.title,
-					camp.endsAt !== undefined ? ` · ${withDate(t("usage.expiresOn"), typeof camp.endsAt === "number" ? camp.endsAt : undefined)}` : "",
-					camp.detailUrl ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
-						children: [
-							" ",
-							(0, react_jsx_runtime.jsx)("a", {
-								href: camp.detailUrl,
-								target: "_blank",
-								rel: "noreferrer",
-								children: t("usage.viewDetails")
-							})
-						]
-					}) : null
-				]
-			}, `camp:${camp.key}`))
-		]
-	});
+	return (
+		<div className="dsm-qoder-usage-block">
+			{!hasAny ? <p className="dsm-qoder-state">{t("usage.empty")}</p> : null}
+			{entry.userQuota !== undefined ? (
+				<QuotaBlock
+					t={t}
+					label={t("usage.planCredits")}
+					quota={entry.userQuota}
+					when={withDate(t("usage.renewsOn"), typeof entry.expiresAt === "number" ? entry.expiresAt : undefined)}
+				/>
+			) : null}
+			{entry.addOnQuota !== undefined ? (
+				<QuotaBlock t={t} label={t("usage.resourcePackage")} quota={entry.addOnQuota} />
+			) : null}
+			{/* Dedicated packages are per-model allowances. They appear only
+			    when the account actually holds one, so the panel stays honest
+			    for accounts that have none. */}
+			{packages.map((pack, index) => (
+				<react.Fragment key={`pack:${pack.id}:${index}`}>
+					<div className="dsm-qoder-usage-sep" />
+					<QuotaBlock
+						t={t}
+						label={typeof pack.name === "string" && pack.name !== "" ? pack.name : t("usage.dedicatedPackage")}
+						quota={pack}
+						when={withDate(t("usage.expiresOn"), typeof pack.expiresAt === "number" ? pack.expiresAt : undefined)}
+					/>
+				</react.Fragment>
+			))}
+			{campaigns.length > 0 ? <div className="dsm-qoder-usage-sep" /> : null}
+			{campaigns.map((camp) => (
+				<p className="dsm-qoder-usage-promo" key={`camp:${camp.key}`}>
+					<span className="dsm-qoder-usage-badge dsm-qoder-usage-badge-offer">
+						{t("usage.promotion")}
+					</span>
+					{" "}
+					{camp.title}
+					{camp.endsAt !== undefined
+						? ` · ${withDate(t("usage.expiresOn"), typeof camp.endsAt === "number" ? camp.endsAt : undefined)}`
+						: ""}
+					{camp.detailUrl ? (
+						<react.Fragment>
+							{" "}
+							<a href={camp.detailUrl} target="_blank" rel="noreferrer">
+								{t("usage.viewDetails")}
+							</a>
+						</react.Fragment>
+					) : null}
+				</p>
+			))}
+		</div>
+	);
 }
 
 /**
@@ -711,93 +678,76 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 		if (refreshToken === 0) return;
 		void load(true);
 	}, [refreshToken, load]);
-	return (0, react_jsx_runtime.jsxs)("div", {
-		className: "dsm-qoder-usage-row",
-		children: [
-			(0, react_jsx_runtime.jsxs)("div", {
-				className: "dsm-qoder-usage",
-				children: [
-					(0, react_jsx_runtime.jsxs)("div", {
-						className: "dsm-qoder-usage-head",
-						children: [
-							// The head is a stable title row: the panel title stays
-							// on the left and the refresh control stays on the
-							// right. Loading and error states render below it,
-							// next to the selected region's block.
-							(0, react_jsx_runtime.jsx)("h4", {
-								className: "dsm-qoder-usage-title",
-								children: t("usage.title")
-							}),
-							(0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: "dsm-qoder-button",
-								disabled: busy,
-								onClick: () => {
-									void load(true);
-								},
-								children: t("usage.refresh")
-							})
-						]
-					}),
-					status === "loading" ? (0, react_jsx_runtime.jsx)("p", {
-						className: "dsm-qoder-hint",
-						children: t("usage.loading")
-					}) : null,
-					status === "error" ? (0, react_jsx_runtime.jsx)("p", {
-						className: "dsm-qoder-error",
-						children: `${t("usage.error")}: ${notice ?? ""}`
-					}) : null,
-					// Scoped to the selected region (the convergence point on the
-					// version strip), so only one usage block renders instead of
-					// one per region. The fetch still pulls every region; this
-					// just picks the one the strip has selected.
-					(() => {
-						const active = regions.find((entry) => entry.region === activeRegion);
-						if (active !== undefined) return (0, react_jsx_runtime.jsx)(RegionUsage, {
-							t,
-							entry: active
-						});
-						// The selected edition has no quota entry yet — it is not
-						// signed in or not started — so say so instead of leaving
-						// the panel body empty under its header.
-						return status === "ready" ? (0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-state",
-							children: t("usage.none")
-						}) : null;
-					})()
-				]
-			}),
-			// The daily check-in sits BESIDE the usage panel rather than as one
-			// more stacked row inside it: as a row it spent a full-width line on
-			// "每日签到" and one short button. It is only rendered when upstream
-			// has a round running, so no permanently grey card is left behind —
-			// and the panel then keeps the full width to itself.
-			(() => {
-				const active = regions.find((entry) => entry.region === activeRegion);
-				if (active?.checkin === undefined || active.checkin.active !== true) return null;
-				return (0, react_jsx_runtime.jsx)(CheckinCard, {
-					t,
-					checkin: active.checkin,
-					busy: claimBusy,
-					notice: claimNotice,
-					onClaim: () => {
+	// Scoped to the selected region (the convergence point on the version
+	// strip), so only one usage block renders instead of one per region. The
+	// fetch still pulls every region; this just picks the one the strip has
+	// selected. The same selection drives the check-in card beside it.
+	const active = regions.find((entry) => entry.region === activeRegion);
+	return (
+		<div className="dsm-qoder-usage-row">
+			<div className="dsm-qoder-usage">
+				<div className="dsm-qoder-usage-head">
+					{/* The head is a stable title row: the panel title stays on
+					    the left and the refresh control stays on the right.
+					    Loading and error states render below it, next to the
+					    selected region's block. */}
+					<h4 className="dsm-qoder-usage-title">{t("usage.title")}</h4>
+					<button
+						type="button"
+						className="dsm-qoder-button"
+						disabled={busy}
+						onClick={() => {
+							void load(true);
+						}}
+					>
+						{t("usage.refresh")}
+					</button>
+				</div>
+				{status === "loading" ? <p className="dsm-qoder-hint">{t("usage.loading")}</p> : null}
+				{status === "error" ? (
+					<p className="dsm-qoder-error">{`${t("usage.error")}: ${notice ?? ""}`}</p>
+				) : null}
+				{active !== undefined ? (
+					<RegionUsage t={t} entry={active} />
+				) : (
+					// The selected edition has no quota entry yet — it is not
+					// signed in or not started — so say so instead of leaving
+					// the panel body empty under its header.
+					status === "ready" ? <p className="dsm-qoder-state">{t("usage.none")}</p> : null
+				)}
+			</div>
+			{/* The daily check-in sits BESIDE the usage panel rather than as one
+			    more stacked row inside it: as a row it spent a full-width line on
+			    "每日签到" and one short button. It is only rendered when upstream
+			    has a round running, so no permanently grey card is left behind —
+			    and the panel then keeps the full width to itself. */}
+			{active?.checkin !== undefined && active.checkin.active === true ? (
+				<CheckinCard
+					t={t}
+					checkin={active.checkin}
+					busy={claimBusy}
+					notice={claimNotice}
+					onClaim={() => {
 						void claimCheckin();
-					}
-				});
-			})()
-		]
-	});
+					}}
+				/>
+			) : null}
+		</div>
+	);
 }
 
 /**
- * The account section: a version strip over the SELECTED region's
- * sign-in — who drives it, in which state it is, and what to do when
- * it is not `ok`. The strip is the card's convergence point: each
- * region is one pill (status dot + name + provider switch), and
- * selecting a pill scopes this detail, the usage panel and the model
- * list to that region, so the region name appears exactly once on the
- * card. `activeRegion` / `onRegionChange` are the card-level pair that
- * drives all three surfaces.
+ * The account section. It renders TWO siblings: the body's region strip
+ * and, directly below it, the framed card with the SELECTED region's
+ * sign-in — who drives it, in which state it is, and what to do when it
+ * is not `ok`. The strip is the card's convergence point: each region is
+ * one pill (status dot + name + provider switch), and selecting a pill
+ * scopes the sign-in detail, the usage panel and the model list to that
+ * region, so the region name appears exactly once on the card. It lives
+ * ABOVE the account frame because it switches the WHOLE body, not just
+ * the sign-in card (the WorkBuddy layout this card is modelled on).
+ * `activeRegion` / `onRegionChange` are the card-level pair that drives
+ * all three surfaces.
  *
  * The states come from the host's account route and are computed from
  * LOCAL evidence only, so reading the panel costs no network. The
@@ -897,9 +847,10 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 			if (mounted.current) setReloading(false);
 		}
 	}, [load, onReconciled]);
-	// WorkBuddy parity: the tab strip is the panel's whole header — no
-	// title row, no re-read button to save. The re-read therefore has
-	// to find its own moment, and the dots say when that is. The
+	// WorkBuddy parity: the tab strip (rendered above the account frame)
+	// is the body's whole header — no title row, no re-read button to
+	// save. The re-read therefore has to find its own moment, and the
+	// dots say when that is. The
 	// opening GET already re-reads every store from disk, so the POST
 	// only adds: drop the cached credential, refresh the catalog, and
 	// start any region that looks signed-out. Once per open is enough;
@@ -1024,225 +975,209 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 	// website: they point at the client (re-sign-in / install) and carry
 	// the region's download link, labelled with where it goes. The manage
 	// link is therefore gone, and with it the `manageUrl` render.
-	return (0, react_jsx_runtime.jsxs)("div", {
-		className: "dsm-qoder-account",
-		children: [
-			// No header row: the tab strip below IS the panel's title
-			// (WorkBuddy's design), and a failure says so with its own
-			// retry rather than a button that is otherwise redundant.
-			status === "error" ? (0, react_jsx_runtime.jsxs)("div", {
-				className: "dsm-qoder-account-error",
-				children: [
-					(0, react_jsx_runtime.jsx)("p", {
-						className: "dsm-qoder-error",
-						children: t("account.error")
-					}),
-					(0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "dsm-qoder-button",
-						disabled: reloading,
-						onClick: () => {
-							void reload();
-						},
-						children: t("account.reload")
-					})
-				]
-			}) : (0, react_jsx_runtime.jsxs)(react.Fragment, {
-				children: [
-					// The convergence point: one pill per region —
-					// status dot, name, provider switch. Selecting a
-					// pill scopes the detail below, the usage panel
-					// and the model list to that region, so the
-					// region name appears exactly once on the card.
-					(0, react_jsx_runtime.jsx)("div", {
-						className: "dsm-qoder-region-tabs",
-						role: "tablist",
-						"aria-label": t("account.regionTabs"),
-						children: accounts.map((entry) => {
-							// A region-less entry is not addressable: it has no
-							// key in `enabledRegions`, nothing to select, and
-							// nothing to pass to `onRegionChange`. The host
-							// always names one, so this narrows the type at the
-							// render boundary instead of asserting it, and an
-							// unnamed entry is skipped rather than rendered as a
-							// tab that cannot work.
-							const regionId = entry.region;
-							if (regionId === undefined) return null;
-							// Provider switch state. The local map is
-							// the source of truth for the switch (it
-							// settles on the host value after each
-							// save); a region with no key yet reads
-							// as offered, the same default the host
-							// predicate uses.
-							const offered = enabledRegions[regionId] !== false;
-							const isActive = regionId === activeRegion;
-							return (0, react_jsx_runtime.jsxs)("div", {
-								className: `dsm-qoder-region-tab-cell${isActive ? " dsm-qoder-region-tab-cell-active" : ""}`,
-								children: [(0, react_jsx_runtime.jsxs)("button", {
-									type: "button",
-									role: "tab",
-									"aria-selected": isActive,
-									className: `dsm-qoder-region-tab${offered ? "" : " dsm-qoder-region-tab-off"}`,
-									title: `${entry.regionName ?? regionId} · ${stateLabelOf(entry)}`,
-									onClick: () => {
+	// The expired / not-installed states no longer drag the user onto the
+	// website: they point at the client (re-sign-in / install) and carry
+	// the region's download link, labelled with where it goes. The manage
+	// link is therefore gone, and with it the `manageUrl` render.
+	return (
+		<react.Fragment>
+			{/*
+				The convergence point, now ABOVE the account card rather than
+				inside its frame: one pill per region — status dot, name,
+				provider switch — and selecting a pill scopes the sign-in
+				detail, the usage panel and the model list to that region, so
+				the region name appears exactly once on the card. The strip
+				switches the WHOLE body, so it is the body's header, matching
+				the WorkBuddy layout it was modelled on; it is hidden on a
+				read failure, whose own retry stays in the card below.
+			*/}
+			{status !== "error" ? (
+				<div className="dsm-qoder-region-tabs" role="tablist" aria-label={t("account.regionTabs")}>
+					{accounts.map((entry) => {
+						// A region-less entry is not addressable: it has no
+						// key in `enabledRegions`, nothing to select, and
+						// nothing to pass to `onRegionChange`. The host
+						// always names one, so this narrows the type at the
+						// render boundary instead of asserting it, and an
+						// unnamed entry is skipped rather than rendered as a
+						// tab that cannot work.
+						const regionId = entry.region;
+						if (regionId === undefined) return null;
+						// Provider switch state. The local map is the source
+						// of truth for the switch (it settles on the host
+						// value after each save); a region with no key yet
+						// reads as offered, the same default the host
+						// predicate uses.
+						const offered = enabledRegions[regionId] !== false;
+						const isActive = regionId === activeRegion;
+						return (
+							<div
+								key={`tab:${regionId}`}
+								className={`dsm-qoder-region-tab-cell${isActive ? " dsm-qoder-region-tab-cell-active" : ""}`}
+							>
+								<button
+									type="button"
+									role="tab"
+									aria-selected={isActive}
+									className={`dsm-qoder-region-tab${offered ? "" : " dsm-qoder-region-tab-off"}`}
+									title={`${entry.regionName ?? regionId} · ${stateLabelOf(entry)}`}
+									onClick={() => {
 										if (typeof onRegionChange === "function") onRegionChange(regionId);
-										// Choosing a not-ok region is also
-										// the moment the user has just
-										// signed in over there: run the
-										// pick-up for it, dots included.
+										// Choosing a not-ok region is also the
+										// moment the user has just signed in
+										// over there: run the pick-up for it,
+										// dots included.
 										if (entry.state !== "ok") void reload();
-									},
-									children: [(0, react_jsx_runtime.jsx)("span", {
-										"aria-hidden": "true",
-										className: `dsm-qoder-region-dot${dotClassOf(entry.state)}`
-									}), (0, react_jsx_runtime.jsx)("span", {
-										className: "dsm-qoder-region-name",
-										children: entry.regionName ?? entry.region
-									})]
-								}), (0, react_jsx_runtime.jsxs)("label", {
-									className: "dsm-qoder-region-toggle-cell",
-									title: t("account.offerTitle"),
-									children: [(0, react_jsx_runtime.jsx)("input", {
-										type: "checkbox",
-										className: "dsm-qoder-region-toggle",
-										checked: offered,
-										disabled: toggling,
-										onChange: (event: CheckboxEvent) => {
-											void toggleRegion(entry.region, event.target.checked);
-										},
-										"aria-label": `${t("account.offer")}: ${entry.regionName ?? entry.region}`
-									})]
-								})]
-							}, `tab:${entry.region}`);
-						})
-					}),
-					// The selected region's sign-in: who it is, where
-					// the credential comes from, and what to do when
-					// it is not `ok`.
-					activeEntry !== undefined ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
-						children: [
-							(0, react_jsx_runtime.jsxs)("div", {
-								className: `dsm-qoder-account-row${activeOffered ? "" : " dsm-qoder-account-row-off"}`,
-								children: [
-									(0, react_jsx_runtime.jsxs)("span", {
-										className: "dsm-qoder-account-id",
-										children: [
-											(0, react_jsx_runtime.jsx)("span", {
-												className: "dsm-qoder-account-name",
-												children: activeName !== "" ? activeName : "—"
-											}),
-											activeMeta.length > 0 ? (0, react_jsx_runtime.jsx)("span", {
-												className: "dsm-qoder-account-meta",
-												children: activeMeta.join(" · ")
-											}) : null
-										]
-									}),
-									(0, react_jsx_runtime.jsx)("span", { className: "dsm-qoder-usage-spacer" }),
-									activeEntry.source !== undefined && activeRegionId !== undefined ? (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: "dsm-qoder-button",
-										disabled: confirmBusy[activeRegionId] === true,
-										onClick: () => {
-											void confirm(activeRegionId);
-										},
-										children: confirmBusy[activeRegionId] === true ? t("account.confirming") : t("account.confirm")
-									}) : null
-								]
-							}),
-						!activeOffered ? (0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-account-note",
-							children: t("account.offerOff")
-						}) : null,
-						activeEntry.state === "needs-app" ? (0, react_jsx_runtime.jsxs)("p", {
-							className: "dsm-qoder-account-note dsm-qoder-account-note-error",
-							children: [
-								t("account.readFail", { detail: activeEntry.detail ?? "" })
-							]
-						}) : null,
-						activeEntry.state === "expired" ? (0, react_jsx_runtime.jsxs)("p", {
-							className: "dsm-qoder-account-note",
-							children: [
-								(0, react_jsx_runtime.jsx)("span", {
-									children: t("account.expiredHint", {
-										app: activeEntry.appName ?? activeEntry.regionName ?? "Qoder"
-									})
-								}),
-								(0, react_jsx_runtime.jsx)("br"),
-								(0, react_jsx_runtime.jsxs)("span", {
-									children: [
-										t("account.download", {
-											edition: activeEdition
-										}),
-										typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
-											children: [
-												" · ",
-												(0, react_jsx_runtime.jsx)("a", {
-													href: activeEntry.downloadUrl,
-													target: "_blank",
-													rel: "noreferrer",
-													title: activeEntry.downloadUrl,
-													children: t("account.downloadLink", {
-														edition: activeEdition
-													})
-												})
-											]
-										}) : null
-									]
-								})
-							]
-						}) : null,
-						activeEntry.state === "signed-out" ? (0, react_jsx_runtime.jsxs)("p", {
-							className: "dsm-qoder-account-note",
-							children: [
-								(0, react_jsx_runtime.jsx)("span", {
-									children: t("account.unsigned")
-								}),
-								(0, react_jsx_runtime.jsx)("br"),
-								(0, react_jsx_runtime.jsxs)("span", {
-									children: [
-										t("account.download", {
-											edition: activeEdition
-										}),
-										typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
-											children: [
-												" · ",
-												(0, react_jsx_runtime.jsx)("a", {
-													href: activeEntry.downloadUrl,
-													target: "_blank",
-													rel: "noreferrer",
-													title: activeEntry.downloadUrl,
-													children: t("account.downloadLink", {
-														edition: activeEdition
-													})
-												})
-											]
-										}) : null
-									]
-								})
-							]
-						}) : null,
-						activeResult?.kind === "confirmed" ? (0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-account-note",
-							children: t("account.confirmed")
-						}) : null,
-						activeResult?.kind === "sign-in-expired" ? (0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-account-note dsm-qoder-account-note-error",
-							children: t("account.confirmExpired")
-						}) : null,
-						activeResult?.kind === "unavailable" ? (0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-account-note dsm-qoder-account-note-error",
-							children: t("account.confirmFailed", { detail: activeResult.detail ?? "" })
-						}) : null
-					]
-				}) : null
-			]
-		}),
-			offerError !== undefined ? (0, react_jsx_runtime.jsx)("p", {
-				className: "dsm-qoder-account-note dsm-qoder-account-note-error",
-				children: t("account.offerError", { detail: offerError })
-			}) : null
-		]
-	});
+									}}
+								>
+									<span aria-hidden="true" className={`dsm-qoder-region-dot${dotClassOf(entry.state)}`} />
+									<span className="dsm-qoder-region-name">{entry.regionName ?? regionId}</span>
+								</button>
+								<label className="dsm-qoder-region-toggle-cell" title={t("account.offerTitle")}>
+									<input
+										type="checkbox"
+										className="dsm-qoder-region-toggle"
+										checked={offered}
+										disabled={toggling}
+										onChange={(event: CheckboxEvent) => {
+											void toggleRegion(regionId, event.target.checked);
+										}}
+										aria-label={`${t("account.offer")}: ${entry.regionName ?? regionId}`}
+									/>
+								</label>
+							</div>
+						);
+					})}
+				</div>
+			) : null}
+			<div className="dsm-qoder-account">
+				{status === "error" ? (
+					// A failure says so with its own retry inside the card,
+					// rather than a button that is otherwise redundant.
+					<div className="dsm-qoder-account-error">
+						<p className="dsm-qoder-error">{t("account.error")}</p>
+						<button
+							type="button"
+							className="dsm-qoder-button"
+							disabled={reloading}
+							onClick={() => {
+								void reload();
+							}}
+						>
+							{t("account.reload")}
+						</button>
+					</div>
+				) : (
+					<react.Fragment>
+						{/* The selected region's sign-in: who it is, where the
+						    credential comes from, and what to do when it is not
+						    `ok`. */}
+						{activeEntry !== undefined ? (
+							<react.Fragment>
+								<div className={`dsm-qoder-account-row${activeOffered ? "" : " dsm-qoder-account-row-off"}`}>
+									<span className="dsm-qoder-account-id">
+										<span className="dsm-qoder-account-name">
+											{activeName !== "" ? activeName : "—"}
+										</span>
+										{activeMeta.length > 0 ? (
+											<span className="dsm-qoder-account-meta">{activeMeta.join(" · ")}</span>
+										) : null}
+									</span>
+									<span className="dsm-qoder-usage-spacer" />
+									{activeEntry.source !== undefined && activeRegionId !== undefined ? (
+										<button
+											type="button"
+											className="dsm-qoder-button"
+											disabled={confirmBusy[activeRegionId] === true}
+											onClick={() => {
+												void confirm(activeRegionId);
+											}}
+										>
+											{confirmBusy[activeRegionId] === true ? t("account.confirming") : t("account.confirm")}
+										</button>
+									) : null}
+								</div>
+								{!activeOffered ? (
+									<p className="dsm-qoder-account-note">{t("account.offerOff")}</p>
+								) : null}
+								{activeEntry.state === "needs-app" ? (
+									<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
+										{t("account.readFail", { detail: activeEntry.detail ?? "" })}
+									</p>
+								) : null}
+								{activeEntry.state === "expired" ? (
+									<p className="dsm-qoder-account-note">
+										<span>
+											{t("account.expiredHint", {
+												app: activeEntry.appName ?? activeEntry.regionName ?? "Qoder",
+											})}
+										</span>
+										<br />
+										<span>
+											{t("account.download", { edition: activeEdition })}
+											{typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (
+												<react.Fragment>
+													{" · "}
+													<a
+														href={activeEntry.downloadUrl}
+														target="_blank"
+														rel="noreferrer"
+														title={activeEntry.downloadUrl}
+													>
+														{t("account.downloadLink", { edition: activeEdition })}
+													</a>
+												</react.Fragment>
+											) : null}
+										</span>
+									</p>
+								) : null}
+								{activeEntry.state === "signed-out" ? (
+									<p className="dsm-qoder-account-note">
+										<span>{t("account.unsigned")}</span>
+										<br />
+										<span>
+											{t("account.download", { edition: activeEdition })}
+											{typeof activeEntry.downloadUrl === "string" && activeEntry.downloadUrl !== "" ? (
+												<react.Fragment>
+													{" · "}
+													<a
+														href={activeEntry.downloadUrl}
+														target="_blank"
+														rel="noreferrer"
+														title={activeEntry.downloadUrl}
+													>
+														{t("account.downloadLink", { edition: activeEdition })}
+													</a>
+												</react.Fragment>
+											) : null}
+										</span>
+									</p>
+								) : null}
+								{activeResult?.kind === "confirmed" ? (
+									<p className="dsm-qoder-account-note">{t("account.confirmed")}</p>
+								) : null}
+								{activeResult?.kind === "sign-in-expired" ? (
+									<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
+										{t("account.confirmExpired")}
+									</p>
+								) : null}
+								{activeResult?.kind === "unavailable" ? (
+									<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
+										{t("account.confirmFailed", { detail: activeResult.detail ?? "" })}
+									</p>
+								) : null}
+							</react.Fragment>
+						) : null}
+					</react.Fragment>
+				)}
+				{offerError !== undefined ? (
+					<p className="dsm-qoder-account-note dsm-qoder-account-note-error">
+						{t("account.offerError", { detail: offerError })}
+					</p>
+				) : null}
+			</div>
+		</react.Fragment>
+	);
 }
 
 /**
@@ -1497,329 +1432,385 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	const maxWindow = snap.maxWindow;
 	const enabledIds = snap.enabledIds;
 	const activeRegion = snap.activeRegion;
-	return (0, react_jsx_runtime.jsxs)("li", {
-		className: `dsm-plugin-card${open ? " dsm-plugin-card-open" : ""}`,
-		// Escape leaves the card in two steps: inside the search box it first
-		// clears the filter (the natural "get me out of this search" gesture);
-		// with the filter already clear it collapses the card from anywhere
-		// inside it, so a user lost in a long roster has one keystroke out.
-		onKeyDown: (event: { key?: string }) => {
-			if (event.key !== "Escape" || !open) return;
-			if (query !== "") {
-				setQuery("");
-				return;
-			}
-			setOpen(false);
-		},
-		children: [(0, react_jsx_runtime.jsxs)("button", {
-			type: "button",
-			className: "dsm-plugin-card-header",
-			"aria-expanded": open,
-			"aria-label": `${t(open ? "row.collapse" : "row.expand")}: ${t("row.title")}`,
-			onClick: () => {
-				setOpen(!open);
-			},
-			children: [(0, react_jsx_runtime.jsxs)("span", {
-				className: "dsm-plugin-card-head",
-				children: [(0, react_jsx_runtime.jsx)("span", {
-					className: "dsm-plugin-card-title",
-					children: t("row.title")
-				}), (0, react_jsx_runtime.jsx)("span", {
-					className: "dsm-plugin-card-description",
-					children: t("row.desc")
-				})]
-			}), (0, react_jsx_runtime.jsx)("span", {
-				// Empty span: the caret is drawn by the ::before rule copied
-				// from WorkBuddy. A text glyph here too would render a second
-				// arrow beside the CSS one.
-				"aria-hidden": "true",
-				className: `dsm-plugin-card-chevron${open ? " dsm-plugin-card-chevron-open" : ""}`
-			})]
-		}), (0, react_jsx_runtime.jsx)("div", {
-			className: "dsm-plugin-card-body",
-			hidden: !open,
-			children: open ? (0, react_jsx_runtime.jsxs)("div", {
-				className: "dsm-qoder-body",
-				children: [
-					(0, react_jsx_runtime.jsx)(QoderAccountPanel, {
-						t,
-						onReconciled: reconcile,
-						settingsScope,
-						activeRegion,
-						onRegionChange: setActiveRegion
-					}),
-					(0, react_jsx_runtime.jsx)(QoderUsagePanel, {
-						t,
-						refreshToken: usageBump,
-						activeRegion
-					}),
-					status === "loading" ? (0, react_jsx_runtime.jsxs)("div", {
-						className: "dsm-qoder-skeleton",
-						"aria-busy": "true",
-						children: [(0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-state",
-							children: t("row.loading")
-						}), (0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-skeleton-row" }), (0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-skeleton-row" }), (0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-skeleton-row" })]
-					}) : null,
-					status === "error" ? (0, react_jsx_runtime.jsxs)("div", {
-						className: "dsm-qoder-tools",
-						children: [(0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-error",
-							children: `${t("row.requestFailed")}: ${notice ?? ""}`
-						}), (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "dsm-qoder-button",
-							disabled: refreshing,
-							// The retry sits ON the error, not behind the toolbar
-							// button elsewhere on the page: recovery should be one
-							// click from where the failure is being read. `load(true)`
-							// also re-pulls the catalog, which is the failure mode
-							// users actually hit (an upstream blip left a stale list).
-							onClick: () => {
-								void load(true);
-							},
-							children: refreshing ? t("row.refreshing") : t("row.retry")
-						})]
-					}) : null,
-					status === "ready" && models.length === 0 ? (0, react_jsx_runtime.jsx)("p", {
-						className: "dsm-qoder-state",
-						children: t("row.signedOut")
-					}) : null,
-					// The active region has no models of its own while the
-					// other one does: it is either not signed in or its
-					// "models" switch is off. The strip above shows which.
-					status === "ready" && models.length > 0 && regionModels.length === 0 ? (0, react_jsx_runtime.jsx)("p", {
-						className: "dsm-qoder-state",
-						children: t("row.regionEmpty")
-					}) : null,
-					// The high-frequency filter stays above the roster:
-					// a name search plus the count that matches the rows
-					// on screen. Maintenance actions and the rate rules
-					// read as footnotes below the list instead of
-					// competing with filtering for the top of the card.
-					models.length > 0 ? (0, react_jsx_runtime.jsxs)("div", {
-						className: "dsm-qoder-tools",
-						children: [(0, react_jsx_runtime.jsx)("input", {
-							type: "search",
-							className: "dsm-qoder-search",
-							value: query,
-							placeholder: t("row.searchPlaceholder"),
-							"aria-label": t("row.search"),
-							onChange: (event: ValueEvent) => setQuery(event.target.value)
-						}), (0, react_jsx_runtime.jsx)("span", {
-							className: "dsm-qoder-count",
-							"aria-live": "polite",
-							children: t("row.filterCount", { visible: visibleModels.length, total: regionModels.length, ticked: visibleTicked })
-						})]
-					}) : null,
-					// An empty result after filtering is distinct from a
-					// roster-less region: this one has models, the name
-					// filter just matched nothing, so it gets its own
-					// message plus a one-click way back.
-					regionModels.length > 0 && visibleModels.length === 0 ? (0, react_jsx_runtime.jsxs)("div", {
-						className: "dsm-qoder-tools",
-						children: [(0, react_jsx_runtime.jsx)("p", {
-							className: "dsm-qoder-state",
-							children: t("row.searchEmpty")
-						}), (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "dsm-qoder-button",
-							onClick: () => setQuery(""),
-							children: t("row.clearFilter")
-						})]
-					}) : null,
-					visibleModels.length > 0 ? (0, react_jsx_runtime.jsx)("ul", {
-						className: "dsm-qoder-models",
-						children: visibleModels.map((model) => {
-							// Same reasoning as `visibleTicked` above: an
-							// unaddressable row must not read as ticked.
-							const active = model.region !== undefined && enabledIdsFor(models, enabledIds[model.region]).has(model.id);
-							// The rate is resolved against the ticking clock, not the
-							// server's snapshot, so it flips at the window boundary.
-							const offPeak = offPeakState(model, clock);
-							const rate = rateLabelOf(t, rateAt(model, clock));
-							const offPeakTitle = model.promotion === undefined ? t("row.rateLabel") : offPeak?.active === true ? `${t("row.offPeakOn")} · ${formatCountdown(offPeak.remainingSeconds)}` : t("row.offPeakOff");
-							return (0, react_jsx_runtime.jsxs)("li", {
-								className: `dsm-qoder-row${active ? "" : " dsm-qoder-row-off"}${pulse === model.id ? " dsm-qoder-row-pulse" : ""}`,
-								children: [(0, react_jsx_runtime.jsxs)("span", {
-									className: "dsm-qoder-row-main",
-									children: [(0, react_jsx_runtime.jsx)("label", {
-										className: "dsm-qoder-pick",
-										title: t("row.showInPicker"),
-										children: (0, react_jsx_runtime.jsx)("input", {
-											type: "checkbox",
-											checked: active,
-											// A row with no region cannot be
-											// toggled: `toggleModel` records the
-											// tick against that region's roster,
-											// and there is no roster to record it
-											// against. Disabled rather than
-											// silently doing nothing, so the
-											// control matches its behaviour.
-											disabled: saving || model.region === undefined,
-											"aria-label": `${t("row.showInPicker")}: ${model.name ?? model.id}`,
-											onChange: () => {
-												if (model.region === undefined) return;
-												toggleModel(model.region, model.id);
-											}
-										})
-									}), (0, react_jsx_runtime.jsx)("span", {
-										className: "dsm-qoder-name",
-										title: model.id,
-										children: model.name ?? model.id
-									}), rate !== undefined ? (0, react_jsx_runtime.jsx)("span", {
-										className: `dsm-qoder-rate${Number(rateAt(model, clock)) <= 0 ? " dsm-qoder-rate-free" : ""}`,
-										title: offPeakTitle,
-										children: rate
-									}) : null, windowLabelOf(model, maxWindow) ? (0, react_jsx_runtime.jsx)("span", {
-										className: "dsm-qoder-badge",
-										title: model.contextOptions?.length ? `${t("row.maxWindow")}: ${model.contextOptions.map(formatContextWindowForUi).join(" / ")}` : t("row.maxWindowNote"),
-										children: windowLabelOf(model, maxWindow)
-									}) : null, offPeak !== undefined ? (0, react_jsx_runtime.jsx)("span", {
-										className: `dsm-qoder-badge${offPeak.active ? " dsm-qoder-badge-offer" : ""}`,
-										title: model.promotion?.description ?? "",
-										children: `${offPeak.active ? t("row.offPeakOn") : t("row.offPeakOff")} ${formatCountdown(offPeak.remainingSeconds)}`
-									}) : null, (0, react_jsx_runtime.jsx)("span", {
-										className: "dsm-qoder-badge",
-										children: model.isVL === true ? t("row.vision") : t("row.textOnly")
-									})]
-								}), (0, react_jsx_runtime.jsxs)("label", {
-									className: "dsm-qoder-switch",
-									children: [(0, react_jsx_runtime.jsx)("span", {
-										children: t("row.imageTitle")
-									}), (0, react_jsx_runtime.jsx)("select", {
-										className: "dsm-qoder-select",
-										value: imageModeOf(imageOverrides, model.id),
-										disabled: saving,
-										"aria-label": `${t("row.imageTitle")}: ${model.name ?? model.id}`,
-										onChange: (event: unknown) => {
-											setMode(model.id, (event as ValueEvent).target.value);
-										},
-										children: IMAGE_MODES.map((mode) => (0, react_jsx_runtime.jsx)("option", {
-											value: mode,
-											children: t(mode === "auto" ? "row.imageAuto" : mode === "on" ? "row.imageOn" : "row.imageOff")
-										}, mode))
-									})]
-								})]
-							}, `${model.region}:${model.id}`);
-						})
-					}) : null,
-					// Rate-rule and image-mode footnotes sit below the
-					// roster: the off-peak window belongs to the rates
-					// shown on the rows above, and the image hint
-					// explains the per-model selects on those same rows.
-					regionModels.some((model) => model.promotion !== undefined) ? (0, react_jsx_runtime.jsx)("p", {
-						className: "dsm-qoder-hint",
-						children: t("row.offPeakHint", {
-							window: `${regionModels.find((model) => model.promotion !== undefined)?.promotion?.windowStart}–${regionModels.find((model) => model.promotion !== undefined)?.promotion?.windowEnd}`,
-							zone: typeof regionModels.find((model) => model.promotion !== undefined)?.promotion?.timezone === "string" ? regionModels.find((model) => model.promotion !== undefined)?.promotion?.timezone as string : "Asia/Shanghai"
-						})
-					}) : null,
-					(0, react_jsx_runtime.jsxs)("label", {
-						className: "dsm-qoder-switch",
-						title: t("row.maxWindowTitle"),
-						children: [(0, react_jsx_runtime.jsx)("input", {
-							type: "checkbox",
-							checked: maxWindow,
-							disabled: saving,
-							"aria-label": t("row.maxWindow"),
-							onChange: (event: unknown) => {
-								setMaxWindow((event as CheckboxEvent).target.checked);
-								setNotice(undefined);
-							}
-						}), (0, react_jsx_runtime.jsx)("span", {
-							children: t("row.maxWindow")
-						})]
-					}),
-					(0, react_jsx_runtime.jsx)("p", {
-						className: "dsm-qoder-hint",
-						children: t("row.imageHint")
-					}),
-					// Maintenance actions drop below the settings block:
-					// re-pulling the catalog and bulk-ticking the
-					// roster are low-frequency upkeep, not part of the
-					// filter-first reading order above.
-					(0, react_jsx_runtime.jsxs)("div", {
-						className: "dsm-qoder-actions",
-						children: [(0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "dsm-qoder-button",
-							disabled: refreshing,
-							onClick: () => {
-								void load(true);
-							},
-							children: refreshing ? t("row.refreshing") : t("row.refreshModels")
-						}), (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "dsm-qoder-button",
-							disabled: saving,
-							title: t("row.showHint"),
-							onClick: () => {
-								// One bulk button for the ACTIVE region's roster,
-								// like the official picker's select-all/deselect-all
-								// toggle: when every model is ticked it flips to "hide
-								// all" (HIDE_ALL_MODELS, a list matching no model);
-								// otherwise it flips to "show all" ([] = no filter).
-								// A fresh card (no saved allow-list) is all ticked,
-								// so the label reads "hide all" on first open.
-								setRegionAll(activeRegion, regionAllTicked);
-							},
-							children: t(regionAllTicked ? "row.disableAll" : "row.enableAll")
-						}), refreshedAt !== undefined && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
-							className: "dsm-qoder-state",
-							// Four shapes, one slot. A protocol change replaces the
-							// timestamp entirely rather than decorating it: the time
-							// of a last successful fetch is not useful next to "your
-							// plugin is out of date", and offering a time there
-							// invites the user to believe the rows are current. A
-							// persist failure does the same — the rows are real,
-							// but a "已更新（time）" stamp would hide that they will
-							// not survive a restart.
-							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : refreshFailure === "persist" ? t("row.refreshNotPersisted") : t(refreshFailure === "transient" ? "row.refreshStale" : "row.refreshed", { time: new Date(refreshedAt).toLocaleTimeString() })
-						}) : refreshFailure !== null && !refreshing ? (0, react_jsx_runtime.jsx)("span", {
-							// No fetch has ever succeeded for this profile, so there is
-							// no time to show — but the failure is still true and still
-							// needs to be visible. This is the state a fresh install
-							// with a broken protocol lands in, so swallowing it here
-							// would restore the original "everything looks fine"
-							// reading for exactly the case that matters.
-							className: "dsm-qoder-state",
-							title: refreshFailure === "protocol-shape-changed" || refreshFailure === "persist" ? undefined : t("row.refreshFailed", { reason: refreshFailure }),
-							children: refreshFailure === "protocol-shape-changed" ? t("row.protocolChanged") : t("row.refreshFailed", { reason: refreshFailure })
-						}) : null]
-					}),
-					(0, react_jsx_runtime.jsxs)("div", {
-						className: "dsm-qoder-actions",
-						children: [(0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "dsm-qoder-button",
-							disabled: saving || !dirty || settingsScope === undefined,
-							onClick: save,
-							children: saving ? t("row.saving") : t("row.save")
-						}), (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "dsm-qoder-button",
-							disabled: saving || !dirty,
-							onClick: discard,
-							children: t("row.discard")
-						}), snap.lastSave !== undefined ? (0, react_jsx_runtime.jsx)("span", {
-							className: "dsm-qoder-state",
-							// A save just completed (success banner or failure
-							// reason), as decided by the controller. The failure
-							// banner is the one that has to be visible: it is the
-							// card's only proof that the value did not persist, so
-							// it outranks the generic "unsaved" marker while it is
-							// up. A load failure is a different banner (it lives
-							// in `notice`, on the error panel) — a failed fetch
-							// must not overwrite "已保存" here.
-							children: snap.lastSave.ok === true ? t("row.saved") : `${t("row.failed")}: ${snap.lastSave.reason}`
-						}) : dirty ? (0, react_jsx_runtime.jsx)("span", {
-							className: "dsm-qoder-state",
-							children: t("row.unsaved")
-						}) : null]
-					})
-				]
-			}) : null
-		})]
-	});
+	return (
+		<li
+			className={`dsm-plugin-card${open ? " dsm-plugin-card-open" : ""}`}
+			// Escape leaves the card in two steps: inside the search box it first
+			// clears the filter (the natural "get me out of this search" gesture);
+			// with the filter already clear it collapses the card from anywhere
+			// inside it, so a user lost in a long roster has one keystroke out.
+			onKeyDown={(event: { key?: string }) => {
+				if (event.key !== "Escape" || !open) return;
+				if (query !== "") {
+					setQuery("");
+					return;
+				}
+				setOpen(false);
+			}}
+		>
+			<button
+				type="button"
+				className="dsm-plugin-card-header"
+				aria-expanded={open}
+				aria-label={`${t(open ? "row.collapse" : "row.expand")}: ${t("row.title")}`}
+				onClick={() => {
+					setOpen(!open);
+				}}
+			>
+				<span className="dsm-plugin-card-head">
+					<span className="dsm-plugin-card-title">{t("row.title")}</span>
+					<span className="dsm-plugin-card-description">{t("row.desc")}</span>
+				</span>
+				{/* Empty span: the caret is drawn by the ::before rule copied
+				    from WorkBuddy. A text glyph here too would render a second
+				    arrow beside the CSS one. */}
+				<span
+					aria-hidden="true"
+					className={`dsm-plugin-card-chevron${open ? " dsm-plugin-card-chevron-open" : ""}`}
+				/>
+			</button>
+			<div className="dsm-plugin-card-body" hidden={!open}>
+				{open ? (
+					<div className="dsm-qoder-body">
+						<QoderAccountPanel
+							t={t}
+							onReconciled={reconcile}
+							settingsScope={settingsScope}
+							activeRegion={activeRegion}
+							onRegionChange={setActiveRegion}
+						/>
+						<QoderUsagePanel t={t} refreshToken={usageBump} activeRegion={activeRegion} />
+						{status === "loading" ? (
+							<div className="dsm-qoder-skeleton" aria-busy="true">
+								<p className="dsm-qoder-state">{t("row.loading")}</p>
+								<div className="dsm-qoder-skeleton-row" />
+								<div className="dsm-qoder-skeleton-row" />
+								<div className="dsm-qoder-skeleton-row" />
+							</div>
+						) : null}
+						{status === "error" ? (
+							<div className="dsm-qoder-tools">
+								<p className="dsm-qoder-error">{`${t("row.requestFailed")}: ${notice ?? ""}`}</p>
+								<button
+									type="button"
+									className="dsm-qoder-button"
+									disabled={refreshing}
+									// The retry sits ON the error, not behind the toolbar
+									// button elsewhere on the page: recovery should be one
+									// click from where the failure is being read. `load(true)`
+									// also re-pulls the catalog, which is the failure mode
+									// users actually hit (an upstream blip left a stale list).
+									onClick={() => {
+										void load(true);
+									}}
+								>
+									{refreshing ? t("row.refreshing") : t("row.retry")}
+								</button>
+							</div>
+						) : null}
+						{status === "ready" && models.length === 0 ? (
+							<p className="dsm-qoder-state">{t("row.signedOut")}</p>
+						) : null}
+						{/* The active region has no models of its own while the other
+						    one does: it is either not signed in or its "models" switch
+						    is off. The strip above shows which. */}
+						{status === "ready" && models.length > 0 && regionModels.length === 0 ? (
+							<p className="dsm-qoder-state">{t("row.regionEmpty")}</p>
+						) : null}
+						{/* The high-frequency filter stays above the roster: a name
+						    search plus the count that matches the rows on screen.
+						    Maintenance actions and the rate rules read as footnotes
+						    below the list instead of competing with filtering for the
+						    top of the card. */}
+						{models.length > 0 ? (
+							<div className="dsm-qoder-tools">
+								<input
+									type="search"
+									className="dsm-qoder-search"
+									value={query}
+									placeholder={t("row.searchPlaceholder")}
+									aria-label={t("row.search")}
+									onChange={(event: ValueEvent) => setQuery(event.target.value)}
+								/>
+								<span className="dsm-qoder-count" aria-live="polite">
+									{t("row.filterCount", {
+										visible: visibleModels.length,
+										total: regionModels.length,
+										ticked: visibleTicked,
+									})}
+								</span>
+							</div>
+						) : null}
+						{/* An empty result after filtering is distinct from a
+						    roster-less region: this one has models, the name filter
+						    just matched nothing, so it gets its own message plus a
+						    one-click way back. */}
+						{regionModels.length > 0 && visibleModels.length === 0 ? (
+							<div className="dsm-qoder-tools">
+								<p className="dsm-qoder-state">{t("row.searchEmpty")}</p>
+								<button
+									type="button"
+									className="dsm-qoder-button"
+									onClick={() => setQuery("")}
+								>
+									{t("row.clearFilter")}
+								</button>
+							</div>
+						) : null}
+						{visibleModels.length > 0 ? (
+							<ul className="dsm-qoder-models">
+								{visibleModels.map((model) => {
+									// Same reasoning as `visibleTicked` above: an
+									// unaddressable row must not read as ticked.
+									const active =
+										model.region !== undefined &&
+										enabledIdsFor(models, enabledIds[model.region]).has(model.id);
+									// The rate is resolved against the ticking clock, not
+									// the server's snapshot, so it flips at the window
+									// boundary.
+									const offPeak = offPeakState(model, clock);
+									const rate = rateLabelOf(t, rateAt(model, clock));
+									const offPeakTitle =
+										model.promotion === undefined
+											? t("row.rateLabel")
+											: offPeak?.active === true
+												? `${t("row.offPeakOn")} · ${formatCountdown(offPeak.remainingSeconds)}`
+												: t("row.offPeakOff");
+									return (
+										<li
+											key={`${model.region}:${model.id}`}
+											className={`dsm-qoder-row${active ? "" : " dsm-qoder-row-off"}${
+												pulse === model.id ? " dsm-qoder-row-pulse" : ""
+											}`}
+										>
+											<span className="dsm-qoder-row-main">
+												<label className="dsm-qoder-pick" title={t("row.showInPicker")}>
+													<input
+														type="checkbox"
+														checked={active}
+														// A row with no region cannot be toggled:
+														// `toggleModel` records the tick against that
+														// region's roster, and there is no roster to
+														// record it against. Disabled rather than
+														// silently doing nothing, so the control
+														// matches its behaviour.
+														disabled={saving || model.region === undefined}
+														aria-label={`${t("row.showInPicker")}: ${model.name ?? model.id}`}
+														onChange={() => {
+															if (model.region === undefined) return;
+															toggleModel(model.region, model.id);
+														}}
+													/>
+												</label>
+												<span className="dsm-qoder-name" title={model.id}>
+													{model.name ?? model.id}
+												</span>
+												{rate !== undefined ? (
+													<span
+														className={`dsm-qoder-rate${
+															Number(rateAt(model, clock)) <= 0 ? " dsm-qoder-rate-free" : ""
+														}`}
+														title={offPeakTitle}
+													>
+														{rate}
+													</span>
+												) : null}
+												{windowLabelOf(model, maxWindow) ? (
+													<span
+														className="dsm-qoder-badge"
+														title={
+															model.contextOptions?.length
+																? `${t("row.maxWindow")}: ${model.contextOptions
+																		.map(formatContextWindowForUi)
+																		.join(" / ")}`
+																: t("row.maxWindowNote")
+														}
+													>
+														{windowLabelOf(model, maxWindow)}
+													</span>
+												) : null}
+												{offPeak !== undefined ? (
+													<span
+														className={`dsm-qoder-badge${
+															offPeak.active ? " dsm-qoder-badge-offer" : ""
+														}`}
+														title={model.promotion?.description ?? ""}
+													>
+														{`${offPeak.active ? t("row.offPeakOn") : t("row.offPeakOff")} ${formatCountdown(
+															offPeak.remainingSeconds,
+														)}`}
+													</span>
+												) : null}
+												<span className="dsm-qoder-badge">
+													{model.isVL === true ? t("row.vision") : t("row.textOnly")}
+												</span>
+											</span>
+											<label className="dsm-qoder-switch">
+												<span>{t("row.imageTitle")}</span>
+												<select
+													className="dsm-qoder-select"
+													value={imageModeOf(imageOverrides, model.id)}
+													disabled={saving}
+													aria-label={`${t("row.imageTitle")}: ${model.name ?? model.id}`}
+													onChange={(event: unknown) => {
+														setMode(model.id, (event as ValueEvent).target.value);
+													}}
+												>
+													{IMAGE_MODES.map((mode) => (
+														<option key={mode} value={mode}>
+															{t(mode === "auto" ? "row.imageAuto" : mode === "on" ? "row.imageOn" : "row.imageOff")}
+														</option>
+													))}
+												</select>
+											</label>
+										</li>
+									);
+								})}
+							</ul>
+						) : null}
+						{/* Rate-rule and image-mode footnotes sit below the roster:
+						    the off-peak window belongs to the rates shown on the rows
+						    above, and the image hint explains the per-model selects on
+						    those same rows. */}
+						{regionModels.some((model) => model.promotion !== undefined) ? (
+							<p className="dsm-qoder-hint">
+								{t("row.offPeakHint", {
+									window: `${regionModels.find((model) => model.promotion !== undefined)?.promotion?.windowStart}–${
+										regionModels.find((model) => model.promotion !== undefined)?.promotion?.windowEnd
+									}`,
+									zone:
+										typeof regionModels.find((model) => model.promotion !== undefined)?.promotion?.timezone ===
+										"string"
+											? (regionModels.find((model) => model.promotion !== undefined)?.promotion?.timezone as string)
+											: "Asia/Shanghai",
+								})}
+							</p>
+						) : null}
+						<label className="dsm-qoder-switch" title={t("row.maxWindowTitle")}>
+							<input
+								type="checkbox"
+								checked={maxWindow}
+								disabled={saving}
+								aria-label={t("row.maxWindow")}
+								onChange={(event: unknown) => {
+									setMaxWindow((event as CheckboxEvent).target.checked);
+									setNotice(undefined);
+								}}
+							/>
+							<span>{t("row.maxWindow")}</span>
+						</label>
+						<p className="dsm-qoder-hint">{t("row.imageHint")}</p>
+						{/* Maintenance actions drop below the settings block:
+						    re-pulling the catalog and bulk-ticking the roster are
+						    low-frequency upkeep, not part of the filter-first reading
+						    order above. */}
+						<div className="dsm-qoder-actions">
+							<button
+								type="button"
+								className="dsm-qoder-button"
+								disabled={refreshing}
+								onClick={() => {
+									void load(true);
+								}}
+							>
+								{refreshing ? t("row.refreshing") : t("row.refreshModels")}
+							</button>
+							<button
+								type="button"
+								className="dsm-qoder-button"
+								disabled={saving}
+								title={t("row.showHint")}
+								onClick={() => {
+									// One bulk button for the ACTIVE region's roster,
+									// like the official picker's select-all/deselect-all
+									// toggle: when every model is ticked it flips to "hide
+									// all" (HIDE_ALL_MODELS, a list matching no model);
+									// otherwise it flips to "show all" ([] = no filter).
+									// A fresh card (no saved allow-list) is all ticked, so
+									// the label reads "hide all" on first open.
+									setRegionAll(activeRegion, regionAllTicked);
+								}}
+							>
+								{regionAllTicked ? t("row.disableAll") : t("row.enableAll")}
+							</button>
+							{refreshedAt !== undefined && !refreshing ? (
+								<span className="dsm-qoder-state">
+									{/* Four shapes, one slot. A protocol change replaces
+									    the timestamp entirely rather than decorating it:
+									    the time of a last successful fetch is not useful
+									    next to "your plugin is out of date", and offering a
+									    time there invites the user to believe the rows are
+									    current. A persist failure does the same — the rows
+									    are real, but a "已更新（time）" stamp would hide that
+									    they will not survive a restart. */}
+									{refreshFailure === "protocol-shape-changed"
+										? t("row.protocolChanged")
+										: refreshFailure === "persist"
+											? t("row.refreshNotPersisted")
+											: t(
+													refreshFailure === "transient" ? "row.refreshStale" : "row.refreshed",
+													{ time: new Date(refreshedAt).toLocaleTimeString() },
+												)}
+								</span>
+							) : refreshFailure !== null && !refreshing ? (
+								<span
+									className="dsm-qoder-state"
+									// No fetch has ever succeeded for this profile, so there
+									// is no time to show — but the failure is still true and
+									// still needs to be visible. This is the state a fresh
+									// install with a broken protocol lands in, so swallowing
+									// it here would restore the original "everything looks
+									// fine" reading for exactly the case that matters.
+									title={
+										refreshFailure === "protocol-shape-changed" || refreshFailure === "persist"
+											? undefined
+											: t("row.refreshFailed", { reason: refreshFailure })
+									}
+								>
+									{refreshFailure === "protocol-shape-changed"
+										? t("row.protocolChanged")
+										: t("row.refreshFailed", { reason: refreshFailure })}
+								</span>
+							) : null}
+						</div>
+						<div className="dsm-qoder-actions">
+							<button
+								type="button"
+								className="dsm-qoder-button"
+								disabled={saving || !dirty || settingsScope === undefined}
+								onClick={save}
+							>
+								{saving ? t("row.saving") : t("row.save")}
+							</button>
+							<button
+								type="button"
+								className="dsm-qoder-button"
+								disabled={saving || !dirty}
+								onClick={discard}
+							>
+								{t("row.discard")}
+							</button>
+							{snap.lastSave !== undefined ? (
+								<span className="dsm-qoder-state">
+									{/* A save just completed (success banner or failure
+									    reason), as decided by the controller. The failure
+									    banner is the one that has to be visible: it is the
+									    card's only proof that the value did not persist, so
+									    it outranks the generic "unsaved" marker while it is
+									    up. A load failure is a different banner (it lives in
+									    `notice`, on the error panel) — a failed fetch must
+									    not overwrite "已保存" here. */}
+									{snap.lastSave.ok === true
+										? t("row.saved")
+										: `${t("row.failed")}: ${snap.lastSave.reason}`}
+								</span>
+							) : dirty ? (
+								<span className="dsm-qoder-state">{t("row.unsaved")}</span>
+							) : null}
+						</div>
+					</div>
+				) : null}
+			</div>
+		</li>
+	);
 }
