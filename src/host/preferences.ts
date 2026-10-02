@@ -13,12 +13,37 @@
  * @module dsh-connect-qoder/preferences
  */
 import { unwrapVolatile } from './volatile.ts'
+import type { VolatileRef } from './volatile.ts'
+
+/**
+ * The settings document this plugin owns, as it is read.
+ *
+ * `enabledModelIds` and `imageOverrides` are keyed BY REGION / BY MODEL, so
+ * their value type is a map; `enabledRegions` maps a region id to its switch;
+ * `useMaximumContextWindow` is the one plain boolean. Every field is optional
+ * because absence is meaningful throughout this module — an absent allow-list
+ * means "no filter" and an absent region switch means "offered", which is the
+ * opposite of a default-filled document.
+ *
+ * The `VolatileRef<>` wrappers are not decoration: on the 0.1.7 line each of
+ * these arrives as a `{ get() }` shell, and every reader here unwraps before
+ * use. Declaring the shell in the type means a new reader cannot forget.
+ */
+export interface Preferences {
+  enabledModelIds?: VolatileRef<Record<string, unknown>>
+  imageOverrides?: VolatileRef<Record<string, unknown>>
+  enabledRegions?: VolatileRef<Record<string, unknown>>
+  useMaximumContextWindow?: VolatileRef<unknown>
+}
 
 /** The per-model image modes a saved override may hold. */
 const IMAGE_MODES = ['on', 'off', 'auto']
 
 /** The image mode used when nothing says otherwise. */
-const DEFAULT_IMAGE_MODE = 'auto'
+const DEFAULT_IMAGE_MODE: ImageMode = 'auto'
+
+/** The three image modes `imageModeFor` may answer. */
+export type ImageMode = 'auto' | 'on' | 'off'
 
 /**
  * Resolve the current settings, preferring a live source over a frozen snapshot.
@@ -33,15 +58,23 @@ const DEFAULT_IMAGE_MODE = 'auto'
  * @param source - the live source, or `undefined`.
  * @returns the merged settings.
  */
-export function resolvePreferences(snapshot, source) {
-  let resolved = typeof source === 'function' ? source() : source
-  resolved = unwrapVolatile(resolved)
+export function resolvePreferences(
+  snapshot: Preferences,
+  source: Preferences | VolatileRef<Preferences> | (() => unknown) | undefined,
+): Preferences {
+  let resolved: unknown = typeof source === 'function' ? source() : source
+  resolved = unwrapVolatile(resolved as VolatileRef<unknown>)
   if (resolved === undefined || resolved === null) return snapshot
   // A plain-object test rather than `typeof === 'object'`: an array or a
   // Date is an object, and spreading one into the settings would produce keys
   // nobody asked for.
   if (Object.prototype.toString.call(resolved) !== '[object Object]') return snapshot
-  return { ...snapshot, ...resolved }
+  // The guard above is a RUNTIME proof of plainness, which TypeScript cannot
+  // follow — `toString.call` is not a type predicate. Re-widening after it is
+  // the one cast here, and it is safe precisely because the line above already
+  // excluded arrays, Dates and class instances: the spread produces only the
+  // keys the check vouched for.
+  return { ...snapshot, ...(resolved as Partial<Preferences>) }
 }
 
 /**
@@ -75,8 +108,8 @@ export const HIDE_ALL_MODELS = '__hide-all__'
  * @param regionId - the region to look up.
  * @returns the allow-list, or `[]` for no filter.
  */
-export function enabledIdsFor(preferences, regionId) {
-  const byRegion = unwrapVolatile(preferences?.enabledModelIds)
+export function enabledIdsFor(preferences: Preferences | undefined, regionId: string): string[] {
+  const byRegion = unwrapVolatile(preferences?.enabledModelIds) as Record<string, unknown> | undefined
   if (byRegion === null || typeof byRegion !== 'object') return []
   // An own-property check, not a bare lookup: `byRegion['constructor']` yields
   // a function, and the `Array.isArray` filter below would pass it through as
@@ -100,12 +133,12 @@ export function enabledIdsFor(preferences, regionId) {
  * @param modelId - the model to look up.
  * @returns `'auto'`, `'on'`, or `'off'`.
  */
-export function imageModeFor(preferences, modelId) {
-  const overrides = unwrapVolatile(preferences?.imageOverrides)
+export function imageModeFor(preferences: Preferences | undefined, modelId: string): ImageMode {
+  const overrides = unwrapVolatile(preferences?.imageOverrides) as Record<string, unknown> | undefined
   if (overrides === null || typeof overrides !== 'object') return DEFAULT_IMAGE_MODE
   if (!Object.hasOwn(overrides, modelId)) return DEFAULT_IMAGE_MODE
   const saved = overrides[modelId]
-  return IMAGE_MODES.includes(saved) ? saved : DEFAULT_IMAGE_MODE
+  return IMAGE_MODES.includes(saved as ImageMode) ? (saved as ImageMode) : DEFAULT_IMAGE_MODE
 }
 
 /**
@@ -114,7 +147,7 @@ export function imageModeFor(preferences, modelId) {
  * @param preferences - the resolved settings.
  * @returns true when the maximum-context switch is on.
  */
-export function preferMaximumContext(preferences) {
+export function preferMaximumContext(preferences: Preferences | undefined): boolean {
   return unwrapVolatile(preferences?.useMaximumContextWindow) === true
 }
 
@@ -135,8 +168,8 @@ export function preferMaximumContext(preferences) {
  * @param regionId - the region to look up.
  * @returns true when the region is offered.
  */
-export function regionEnabledFor(preferences, regionId) {
-  const map = unwrapVolatile(preferences?.enabledRegions)
+export function regionEnabledFor(preferences: Preferences | undefined, regionId: string): boolean {
+  const map = unwrapVolatile(preferences?.enabledRegions) as Record<string, unknown> | undefined
   if (map === null || typeof map !== 'object') return true
   // Own-property check: `map['constructor']` would read the prototype chain,
   // and `Boolean(Function)` is truthy — so an inherited member could never be

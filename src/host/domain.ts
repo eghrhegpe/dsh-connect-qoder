@@ -43,25 +43,34 @@ export interface Region {
 }
 
 /**
- * The time-of-day discount block Qoder publishes for a model.
+ * The time-of-day discount block, as this plugin NORMALIZES it.
  *
- * Produced by `fetchModels` and carried through `normalizeEntry` verbatim,
- * `active` and `timezone` included — the card gates its ticking clock on
- * `active` and resolves the window against `timezone`, so dropping either
- * silently freezes the displayed rate.
+ * Note the spelling: these are NOT upstream's field names. `normalizePromotion`
+ * (`upstream.ts`) renames the snake_case wire form on the way in —
+ * `window_start` → `windowStart`, `before_promotion_price_factor` →
+ * `beforePromotionPriceFactor`, `discount_factor` → `discountFactor` — and
+ * every consumer downstream (offpeak, pi-model, the card) reads the normalized
+ * names. The optional index signature below carries the bilingual `badge` /
+ * `description` copy through untouched, which is why the block has to stay open.
+ *
+ * The four rate/window fields are all optional by construction: `normalizePromotion`
+ * spreads them in only when they parsed, so a promotion with no usable factor
+ * genuinely lacks the key rather than carrying a placeholder.
  */
 export interface Promotion {
-  /** Whether Qoder has switched this promotion on. */
+  /** Whether Qoder has switched this promotion on, re-read against the clock. */
   active?: boolean
-  /** IANA zone the window is published in. */
+  /** `HH:MM`, or `''` when upstream published no parseable window. */
+  windowStart?: string
+  /** `HH:MM`, or `''` — see {@link Promotion.windowStart}. */
+  windowEnd?: string
+  /** IANA zone the window is published in; defaults to `Asia/Shanghai`. */
   timezone?: string
-  /** The window itself, as Qoder spells it — see `offpeak.ts`. */
-  window?: unknown
-  /** Multiplier inside the window. */
+  /** Multiplier inside the window, present only when it parsed as a number. */
   discountFactor?: number
-  /** Multiplier before the window. */
-  beforeFactor?: number
-  /** Copy describing the window, forwarded to the card untouched. */
+  /** Multiplier before the window — the rate that applies during working hours. */
+  beforePromotionPriceFactor?: number
+  /** The bilingual copy, forwarded verbatim; see {@link Promotion}. */
   [field: string]: unknown
 }
 

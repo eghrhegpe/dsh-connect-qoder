@@ -29,6 +29,8 @@
  * @module dsh-connect-qoder/pi-model
  */
 import { offPeakActive, rateNow } from './offpeak.ts'
+import type { CatalogEntry } from './domain.ts'
+import type { ImageMode } from './preferences.ts'
 
 /** No per-token price is knowable for a subscription quota; report zero. */
 export const NO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
@@ -48,7 +50,7 @@ export const FALLBACK_CONTEXT_WINDOW = 200000
  * @param imageMode - `'auto'`, `'on'`, or `'off'`.
  * @returns true when the model should declare image input.
  */
-export function imageEnabled(entry, imageMode) {
+export function imageEnabled(entry: CatalogEntry, imageMode: ImageMode): boolean {
   if (imageMode === 'on') return true
   if (imageMode === 'off') return false
   return entry.isVL === true
@@ -71,7 +73,7 @@ export function imageEnabled(entry, imageMode) {
  * exists at all for anyone who never opens the plugin card.
  */
 /** `22:00` reads as `22点`; `22:30` keeps its minutes; anything else is nothing to promise. */
-function switchClockLabel(text) {
+function switchClockLabel(text: unknown): string | undefined {
   const match = /^(\d{1,2}):(\d{2})$/.exec(String(text ?? '').trim())
   if (match === null) return undefined
   const hour = Number(match[1])
@@ -80,7 +82,7 @@ function switchClockLabel(text) {
   return minute === 0 ? `${hour}点` : `${hour}:${match[2]}`
 }
 
-export function displayNameFor(entry, now) {
+export function displayNameFor(entry: CatalogEntry, now: Date): string {
   const factor = rateNow(entry, now)
   if (!Number.isFinite(factor)) return entry.name
   if (factor <= 0) return `${entry.name} · 免费`
@@ -121,8 +123,18 @@ export function displayNameFor(entry, now) {
  *
  * @returns the advertised context window.
  */
-export function resolveContextWindow(entry, preferMaximumContext) {
-  const options = Array.isArray(entry.contextOptions) ? entry.contextOptions.filter((n) => Number(n) > 0) : []
+export function resolveContextWindow(entry: CatalogEntry, preferMaximumContext: boolean): number {
+  // `Math.max` coerces its arguments, so spreading the raw elements compares
+  // them NUMERICALLY even when `contextOptions` holds strings — the filter's
+  // `Number(n) > 0` and the spread agreed by construction, and a mutation
+  // attempt that separated them failed to move any assertion (confirmed by
+  // running it, not by reasoning about it). Mapping first is therefore a
+  // readability choice, not a behaviour fix: it says out loud that the values
+  // are measured as numbers, and it drops the non-finite entries here rather
+  // than relying on `Math.max` turning `NaN` into one.
+  const options = Array.isArray(entry.contextOptions)
+    ? entry.contextOptions.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+    : []
   const widest = options.length > 0 ? Math.max(...options) : 0
   const preferred = preferMaximumContext && widest > 0 ? widest : 0
   if (preferred > 0) return preferred
@@ -138,7 +150,7 @@ export function resolveContextWindow(entry, preferMaximumContext) {
  * `FALLBACK_CONTEXT_WINDOW` when the catalog published no `context_config`, and
  * a UI label must not present that fallback as if Qoder had offered it.
  */
-export function contextWindowIsReal(entry) {
+export function contextWindowIsReal(entry: CatalogEntry): boolean {
   const hasOptions = Array.isArray(entry.contextOptions) && entry.contextOptions.some((n) => Number(n) > 0)
   return hasOptions && Number(entry.defaultContextWindow) > 0
 }
@@ -147,7 +159,7 @@ export function contextWindowIsReal(entry) {
  * A short human label for a token count, matching the catalog's own naming
  * (`1M` / `200K` / `128K`). Returns `''` for a value that should not be shown.
  */
-export function formatContextWindow(tokens) {
+export function formatContextWindow(tokens: unknown): string {
   const n = Number(tokens)
   if (!Number.isFinite(n) || n <= 0) return ''
   if (n >= 1000000) return `${Math.round(n / 1000000)}M`
@@ -160,7 +172,7 @@ export function formatContextWindow(tokens) {
  * catalog published no selectable windows (showing a fallback number there
  * would claim a window size upstream does not actually offer).
  */
-export function contextWindowLabelFor(entry, preferMaximumContext) {
+export function contextWindowLabelFor(entry: CatalogEntry, preferMaximumContext: boolean): string {
   if (!contextWindowIsReal(entry)) return ''
   return formatContextWindow(resolveContextWindow(entry, preferMaximumContext))
 }
@@ -193,10 +205,10 @@ export function contextWindowLabelFor(entry, preferMaximumContext) {
  *
  * A non-reasoning model gets no map at all, rather than a map of nulls.
  */
-export function thinkingLevelMapFor(entry) {
+export function thinkingLevelMapFor(entry: CatalogEntry): Record<string, string | null> | undefined {
   if (entry.isReasoning !== true) return undefined
   const levels = Array.isArray(entry.effortLevels) ? entry.effortLevels : []
-  const offered = (level) => (levels.includes(level) ? level : null)
+  const offered = (level: string) => (levels.includes(level) ? level : null)
   const canDisable = entry.alwaysThinking !== true
   return {
     // A model that can disable thinking offers off as "supported, send
@@ -228,13 +240,13 @@ export function thinkingLevelMapFor(entry) {
  * @returns the pi-ai model descriptor.
  */
 export function toPiModel(
-  entry,
-  baseUrl,
-  providerId,
+  entry: CatalogEntry,
+  baseUrl: string,
+  providerId: string,
   preferMaximumContext = false,
-  imageMode = 'auto',
-  now = new Date(),
-) {
+  imageMode: ImageMode = 'auto',
+  now: Date = new Date(),
+): Record<string, unknown> {
   const thinkingLevelMap = thinkingLevelMapFor(entry)
   return {
     id: entry.id,

@@ -17,6 +17,10 @@
  *
  * @module dsh-connect-qoder/offpeak
  */
+import type { CatalogEntry } from './domain.ts'
+
+/** One of the `Intl.DateTimeFormatPart` types this module reads. */
+type ClockPart = 'hour' | 'minute' | 'second'
 
 /**
  * Seconds past local midnight in `timezone`, or `undefined` when the zone is
@@ -35,7 +39,7 @@
  * declared in a named zone (`Asia/Shanghai`) and China has no DST — but a zone
  * that does would silently drift with a fixed offset.
  */
-function localSecondsOf(date, timezone) {
+function localSecondsOf(date: Date, timezone: string): number | undefined {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
@@ -44,7 +48,7 @@ function localSecondsOf(date, timezone) {
       minute: '2-digit',
       second: '2-digit',
     }).formatToParts(date)
-    const read = (type) => Number(parts.find((part) => part.type === type)?.value ?? Number.NaN)
+    const read = (type: ClockPart) => Number(parts.find((part) => part.type === type)?.value ?? Number.NaN)
     const hour = read('hour') % 24
     const minute = read('minute')
     const second = read('second')
@@ -56,7 +60,7 @@ function localSecondsOf(date, timezone) {
 }
 
 /** Parse `HH:MM` (or `HH:MM:SS`) into seconds past midnight. */
-function parseClock(text) {
+function parseClock(text: unknown): number | undefined {
   const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(text).trim())
   if (match === null) return undefined
   const hour = Number(match[1])
@@ -78,7 +82,12 @@ function parseClock(text) {
  * is the case Qoder actually uses), so the test is a disjunction rather than a
  * range check.
  */
-export function windowIsOpen(windowStart, windowEnd, timezone, now = new Date()) {
+export function windowIsOpen(
+  windowStart: unknown,
+  windowEnd: unknown,
+  timezone: string | undefined,
+  now: Date = new Date(),
+): boolean {
   const start = parseClock(windowStart)
   const end = parseClock(windowEnd)
   if (start === undefined || end === undefined || start === end) return false
@@ -99,7 +108,7 @@ export function windowIsOpen(windowStart, windowEnd, timezone, now = new Date())
  * @param now - the instant to evaluate.
  * @returns true when the discount applies.
  */
-export function isOffPeakActive(entry, now = new Date()) {
+export function isOffPeakActive(entry: CatalogEntry, now: Date = new Date()): boolean {
   const promotion = entry.promotion
   if (promotion === undefined || promotion.active !== true) return false
   return windowIsOpen(promotion.windowStart, promotion.windowEnd, promotion.timezone, now)
@@ -123,7 +132,7 @@ export function isOffPeakActive(entry, now = new Date()) {
  * @param now - the instant to evaluate.
  * @returns the multiplier, or `NaN` when nothing usable is declared.
  */
-export function effectiveRate(entry, now = new Date()) {
+export function effectiveRate(entry: CatalogEntry, now: Date = new Date()): number {
   const base = Number(entry.priceFactor)
   const promotion = entry.promotion
   if (promotion === undefined) return Number.isFinite(base) ? base : Number.NaN
@@ -148,7 +157,7 @@ export function effectiveRate(entry, now = new Date()) {
  * @param now - the instant to evaluate.
  * @returns the countdown, or `undefined` when no window is in play.
  */
-export function offPeakRemaining(entry, now = new Date()) {
+export function offPeakRemaining(entry: CatalogEntry, now: Date = new Date()): number | undefined {
   const promotion = entry.promotion
   if (promotion === undefined || promotion.active !== true) return undefined
   const start = parseClock(promotion.windowStart)

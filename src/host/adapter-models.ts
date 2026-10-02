@@ -22,7 +22,7 @@
  */
 import { filterByEnabled } from './catalog-entry.ts'
 import { toPiModel } from './pi-model.ts'
-import type { Region } from './domain.ts'
+import type { CatalogEntry, Region } from './domain.ts'
 
 /**
  * The slice of a region runtime this builder reads.
@@ -32,7 +32,17 @@ import type { Region } from './domain.ts'
  * this function actually depends on, which is two reads and a `region.id`.
  */
 export interface ModelRuntime {
-  catalog(): { current(): unknown[] }
+  /**
+   * The store's catalog, or a getter for it.
+   *
+   * Both spellings are real and they are not interchangeable: `index.ts` builds
+   * the adapter's runtime with `catalog: () => runtime.catalog.current()`, while
+   * the runtime itself carries the `CatalogStore` as a property and the card
+   * route reads `runtime.catalog.current()` directly. Declaring only one of
+   * them typechecks and breaks the other at runtime, which is exactly what
+   * happened here — the suite caught it in seven tests.
+   */
+  catalog: { current(): CatalogEntry[] } | (() => CatalogEntry[])
   region: Region
 }
 
@@ -70,7 +80,8 @@ export function buildModelsFor(runtime: ModelRuntime, options: BuildModelsOption
   // offered at all and a default-on here would publish a region the user
   // turned off.
   if (options.regionEnabled !== true) return []
-  return filterByEnabled(runtime.catalog(), options.enabledIds).map((entry) =>
+  const catalog = typeof runtime.catalog === 'function' ? runtime.catalog() : runtime.catalog.current()
+  return filterByEnabled(catalog, options.enabledIds).map((entry) =>
     toPiModel(entry, options.baseUrl, runtime.region.id, options.preferMaximumContext === true, options.imageModeFor(entry.id)),
   )
 }

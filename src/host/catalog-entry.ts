@@ -20,6 +20,49 @@
 import { regionEnabledFor, HIDE_ALL_MODELS } from './preferences.ts'
 import { contextWindowLabelFor, resolveContextWindow } from './pi-model.ts'
 import { unwrapVolatile } from './volatile.ts'
+import type { CatalogEntry, Promotion, Region } from './domain.ts'
+import type { Preferences } from './preferences.ts'
+
+/**
+ * The entry shape `fetchModels` produces, before `normalizeEntry` mints an id.
+ *
+ * Distinct from {@link CatalogEntry} on purpose: the two differ in exactly the
+ * field that matters — `name` here becomes both `name` and the derived `id` on
+ * the way in — and collapsing them into one type is what would let a future edit
+ * read `entry.id` off a pre-normalization value and silently get `undefined`.
+ */
+export interface FetchedEntry {
+  name: string
+  key: string
+  isVL?: boolean
+  isReasoning?: boolean
+  supportsEffort?: boolean
+  alwaysThinking?: boolean
+  effortLevels?: string[]
+  maxInputTokens?: number
+  defaultContextWindow?: number
+  contextOptions?: unknown[]
+  priceFactor?: number
+  isFree?: boolean
+  isDefault?: boolean
+  promotion?: Promotion
+}
+
+/** The rate helpers `projectModelRow` calls, injected to keep this peer-free. */
+export interface RateHelpers {
+  rateNow: (entry: CatalogEntry, now: Date) => number
+  offPeakActive: (entry: CatalogEntry, now: Date) => boolean
+  offPeakRemaining: (entry: CatalogEntry, now: Date) => number | undefined
+}
+
+/** One started region, as the payload builder sees it. */
+export interface RuntimeRef {
+  runtime: {
+    region: Region
+    catalog: { current(): CatalogEntry[]; fetchedAt?: number }
+    refreshFailed?: { reason: string; error?: unknown } | undefined
+  }
+}
 
 /**
  * A model id is the catalog display name with whitespace removed, so the id is
@@ -33,8 +76,12 @@ import { unwrapVolatile } from './volatile.ts'
  * into a property, so a future catalog carrying an odd name cannot silently
  * collide with the sentinel and make one model's row behave as "hide all".
  */
-function modelIdFor(entry) {
-  const id = (entry.display_name || 'QoderModel').replace(/\s+/g, '')
+function modelIdFor(entry: { display_name?: unknown }): string {
+  // Coerced before the regex rather than after: the value comes from an upstream
+  // catalog, and `.replace` exists only on a string — an entry carrying a
+  // numeric `display_name` would throw here instead of yielding an id. The
+  // `|| 'QoderModel'` fallback is unchanged.
+  const id = String(entry.display_name || 'QoderModel').replace(/\s+/g, '')
   // Prefixed rather than rejected: dropping such a model would hide a real
   // model, which is worse than renaming its id in a way the user never sees
   // (the picker shows the display name, not the id).
@@ -51,7 +98,7 @@ function modelIdFor(entry) {
  * @param entry - one entry as `fetchModels` produced it.
  * @returns the stored catalog entry.
  */
-export function normalizeEntry(entry) {
+export function normalizeEntry(entry: FetchedEntry): CatalogEntry {
   return {
     id: modelIdFor({ display_name: entry.name }),
     key: entry.key,
@@ -118,7 +165,10 @@ export function normalizeEntry(entry) {
  * @param enabled - the user's allow-list; a non-array or empty list means "no filter".
  * @returns the entries the picker should offer.
  */
-export function filterByEnabled(models, enabled) {
+export function filterByEnabled(
+  models: CatalogEntry[],
+  enabled: unknown,
+): CatalogEntry[] {
   const list = Array.isArray(enabled) ? enabled.filter((id) => typeof id === 'string' && id.length > 0) : []
   if (list.length === 0) return models
   const allowed = new Set(list)
@@ -155,8 +205,20 @@ export function filterByEnabled(models, enabled) {
  * @param options.rates - the rate helpers `projectRow` uses.
  * @returns the JSON body.
  */
-export function buildModelRowsPayload({ runtimes, settings, now, projectRow, rates }) {
-  const models = []
+export function buildModelRowsPayload({
+  runtimes,
+  settings,
+  now,
+  projectRow,
+  rates,
+}: {
+  runtimes: RuntimeRef[]
+  settings: Preferences | undefined
+  now: Date
+  projectRow: (entry: CatalogEntry, region: Region, now: Date, rates: RateHelpers, preferMax: boolean) => unknown
+  rates: RateHelpers
+}): Record<string, unknown> {
+  const models: unknown[] = []
   const preferMax = unwrapVolatile(settings?.useMaximumContextWindow) === true
   for (const { runtime } of runtimes) {
     // A switched-off region contributes nothing here either, so the card's
@@ -201,8 +263,8 @@ export function buildModelRowsPayload({ runtimes, settings, now, projectRow, rat
  * @param runtimes - `[{ runtime }]`, as passed to the payload builder.
  * @returns epoch milliseconds, or `undefined`.
  */
-function oldestFetchedAtOf(runtimes) {
-  let oldest
+function oldestFetchedAtOf(runtimes: RuntimeRef[]): number | undefined {
+  let oldest: number | undefined
   for (const { runtime } of runtimes) {
     // A runtime stand-in without a store (the tests' minimal shapes) simply has
     // no timestamp to contribute; that must not throw inside a pure builder.
@@ -225,8 +287,10 @@ function oldestFetchedAtOf(runtimes) {
  * @param runtimes - `[{ runtime }]`, as passed to the payload builder.
  * @returns `[{ region, regionName, reason, detail }]`, one per stale region.
  */
-function refreshFailuresOf(runtimes) {
-  const failures = []
+function refreshFailuresOf(
+  runtimes: RuntimeRef[],
+): Array<{ region?: string; regionName?: string; reason: string; detail?: string }> {
+  const failures: Array<{ region?: string; regionName?: string; reason: string; detail?: string }> = []
   for (const { runtime } of runtimes) {
     const failure = runtime?.refreshFailed
     if (failure === undefined || failure === null) continue
@@ -235,7 +299,9 @@ function refreshFailuresOf(runtimes) {
       regionName: runtime?.region?.displayName,
       reason: String(failure.reason ?? 'fetch'),
       // The message is upstream's own text, already truncated at the throw site.
-      detail: typeof failure.error?.message === 'string' ? failure.error.message : undefined,
+      detail: typeof (failure.error as { message?: unknown } | undefined)?.message === 'string'
+        ? (failure.error as { message: string }).message
+        : undefined,
     })
   }
   return failures
@@ -264,7 +330,13 @@ function refreshFailuresOf(runtimes) {
  *   this stays free of the adapter import.
  * @returns the row shape the card consumes.
  */
-export function projectModelRow(entry, region, now, rates, preferMax = false) {
+export function projectModelRow(
+  entry: CatalogEntry,
+  region: Region,
+  now: Date,
+  rates: RateHelpers,
+  preferMax = false,
+): Record<string, unknown> {
   return {
     id: entry.id,
     name: entry.name,
