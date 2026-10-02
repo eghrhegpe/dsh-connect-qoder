@@ -100,7 +100,17 @@ function QuotaBlock({ t, label, quota, when, badge }: QuotaBlockProps) {
 					<strong>{`${quota.used} / ${quota.total}`}</strong>
 					{` (${Math.round(percent)}%)`}
 				</span>
-				<span>{`${t("usage.remaining")} ${known ? remaining : "—"}${unit ? ` ${unit}` : ""}`}</span>
+				{/* Two figures, two weights. "266 / 1300 (21%)" is bookkeeping and
+				    drops to the secondary label; "剩余 1034 Credits" is the answer
+				    the bar exists for, so it keeps the primary label at a larger
+				    size. The count itself is wrapped rather than concatenated into
+				    one string so the number can be sized independently of its
+				    "剩余" prefix and its unit suffix. */}
+				<span className="dsm-qoder-usage-remain">
+					{`${t("usage.remaining")} `}
+					<strong>{known ? remaining : "—"}</strong>
+					{unit ? ` ${unit}` : ""}
+				</span>
 			</div>
 		</div>
 	);
@@ -624,14 +634,52 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 									// The rate is resolved against the ticking clock, not
 									// the server's snapshot, so it flips at the window
 									// boundary.
-									const offPeak = offPeakState(model, clock);
-									const rate = rateLabelOf(t, rateAt(model, clock));
-									const offPeakTitle =
-										model.promotion === undefined
-											? t("row.rateLabel")
-											: offPeak?.active === true
-												? `${t("row.offPeakOn")} · ${formatCountdown(offPeak.remainingSeconds)}`
-												: t("row.offPeakOff");
+										const offPeak = offPeakState(model, clock);
+										const rate = rateLabelOf(t, rateAt(model, clock));
+										const offPeakTitle =
+											model.promotion === undefined
+												? t("row.rateLabel")
+												: offPeak?.active === true
+													? `${t("row.offPeakOn")} · ${formatCountdown(offPeak.remainingSeconds)}`
+													: t("row.offPeakOff");
+										// The badge names the WINDOW BOUNDARY, not a per-second countdown.
+										// A ticking HH:MM:SS beside the multiplier reset this row's visual
+										// anchor sixty times a minute to restate a fact nobody acts on
+										// second by second — and it was the only thing on the card that
+										// moved, so the eye kept going back to it. "至 08:00" answers the
+										// same question (how long the cheap rate lasts) without the churn.
+										// The exact countdown is unchanged; it moved to the tooltip, where
+										// a user who wants it can still read it.
+										const boundary =
+											model.promotion == null
+												? undefined
+												: offPeak?.active === true
+													? model.promotion.windowEnd
+													: model.promotion.windowStart;
+										const offPeakBadge =
+											offPeak === undefined
+												? ""
+												: boundary === undefined
+													? t(offPeak.active ? "row.offPeakOn" : "row.offPeakOff")
+													: `${t(offPeak.active ? "row.offPeakOn" : "row.offPeakOff")} ${t(
+															offPeak.active ? "row.offPeakEnd" : "row.offPeakStart",
+															{ time: boundary },
+														)}`;
+										// Static facts about the model, as flat muted text: the context
+										// window and whether it takes images. As pills they competed with
+										// the rate — four same-sized chips with two colours between them,
+										// so "1M" and "视觉" read as loudly as "x0.20". They are
+										// attributes, not status, so they get the quiet label and no
+										// border. `windowLabelOf` is read once rather than twice: it is
+										// the same argument either way, and the old spelling called it in
+										// the condition and again in the body.
+										const windowLabel = windowLabelOf(model, maxWindow);
+										const metaParts: string[] = [];
+										if (windowLabel !== "") metaParts.push(windowLabel);
+										metaParts.push(model.isVL === true ? t("row.vision") : t("row.textOnly"));
+									const contextTitle = model.contextOptions?.length
+										? `${t("row.maxWindow")}: ${model.contextOptions.map(formatContextWindowForUi).join(" / ")}`
+										: t("row.maxWindowNote");
 									return (
 										<li
 											key={`${model.region}:${model.id}`}
@@ -671,35 +719,25 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 														{rate}
 													</span>
 												) : null}
-												{windowLabelOf(model, maxWindow) ? (
-													<span
-														className="dsm-qoder-badge"
-														title={
-															model.contextOptions?.length
-																? `${t("row.maxWindow")}: ${model.contextOptions
-																		.map(formatContextWindowForUi)
-																		.join(" / ")}`
-																: t("row.maxWindowNote")
-														}
-													>
-														{windowLabelOf(model, maxWindow)}
-													</span>
-												) : null}
-												{offPeak !== undefined ? (
-													<span
-														className={`dsm-qoder-badge${
-															offPeak.active ? " dsm-qoder-badge-offer" : ""
-														}`}
-														title={model.promotion?.description ?? ""}
-													>
-														{`${offPeak.active ? t("row.offPeakOn") : t("row.offPeakOff")} ${formatCountdown(
-															offPeak.remainingSeconds,
-														)}`}
-													</span>
-												) : null}
-												<span className="dsm-qoder-badge">
-													{model.isVL === true ? t("row.vision") : t("row.textOnly")}
+											{offPeak !== undefined ? (
+												<span
+													className={`dsm-qoder-badge${
+														offPeak.active ? " dsm-qoder-badge-offer" : ""
+													}`}
+													title={
+														model.promotion?.description !== undefined
+															? String(model.promotion.description)
+															: offPeakTitle
+													}
+												>
+													{offPeakBadge}
 												</span>
+											) : null}
+											{metaParts.length > 0 ? (
+												<span className="dsm-qoder-meta" title={contextTitle}>
+													{metaParts.join(" · ")}
+												</span>
+											) : null}
 											</span>
 											<label className="dsm-qoder-switch">
 												<span>{t("row.imageTitle")}</span>

@@ -153,7 +153,13 @@ test('the region strip sits ABOVE the account card, not inside it', async () => 
   assert.equal(strip.nextElementSibling, account, 'the account card is not the strip\u2019s next sibling')
 })
 
-test('a live off-peak promotion renders a ticking countdown badge', async () => {
+// The badge used to print a per-second HH:MM:SS countdown, which reset the
+// row's visual anchor sixty times a minute to restate a fact nobody acts on
+// second by second. It now names the BOUNDARY the rate flips at, and the
+// precise countdown moved to the tooltip. Both halves are asserted here: the
+// visible text must be stable (no seconds), and the exact count must still be
+// one hover away — dropping it entirely would lose information.
+test('a live off-peak promotion names the window boundary, with the countdown in its tooltip', async () => {
   const { container } = await mount({
     models: [
       model({
@@ -167,9 +173,15 @@ test('a live off-peak promotion renders a ticking countdown badge', async () => 
       }),
     ],
   })
-  const countdown = [...container.querySelectorAll('.dsm-qoder-badge')]
-    .find((b) => /\d{2}:\d{2}:\d{2}/.test(b.textContent ?? ''))
-  assert.ok(countdown !== undefined, 'no countdown badge for a live off-peak window')
+  const badge = container.querySelector('.dsm-qoder-badge-offer')
+  assert.ok(badge !== null, 'a live off-peak window must render the discount badge')
+  const text = badge.textContent ?? ''
+  assert.ok(/至\s*08:00/.test(text), `the badge must name the window end, got: ${text}`)
+  assert.equal(/\d{2}:\d{2}:\d{2}/.test(text), false, 'the badge must not tick — no seconds on screen')
+  assert.ok(
+    /\d{2}:\d{2}:\d{2}/.test(badge.getAttribute('title') ?? ''),
+    'the precise countdown must still be reachable in the tooltip',
+  )
 })
 
 test('a promotion Qoder has switched off never shows the discount', async () => {

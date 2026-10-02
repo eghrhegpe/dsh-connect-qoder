@@ -35,20 +35,38 @@ const QODER_CARD_CSS = [
 	".dsm-plugin-card-chevron-open{transform:rotate(180deg)}",
 	".dsm-plugin-card-body{border-top:1px solid var(--dsw-alias-border-l2,#36373b);margin:0 16px;padding:0 0 8px}",
 	// --- Card body, owned by this plugin ---
+	// Text hierarchy: the card used to spend `--dsw-alias-label-primary` on
+	// eleven rules and `--dsw-alias-label-secondary` on none, so explanatory
+	// prose, the filter counter and the quota figures all rendered at body
+	// weight — the one thing a dense settings card cannot afford. Everything
+	// that is a NOTE about the content above it now takes the middle stop.
+	// The token is real: the shipped 0.1.7 frontend defines
+	// `--dsw-alias-label-secondary` twice (`var(--dsw-static-neutral-bluish-700)`
+	// light / `-300` dark, i.e. #61666b / #cfd3d6), confirmed against
+	// %LOCALAPPDATA%\Programs\DeepSeek Harness\resources\app.asar — so the
+	// fallback below is the token's own value, not a guess, and a misspelling
+	// would not have been visible anyway (see the warn token note below).
 	".dsm-qoder-body{padding:12px 14px;display:flex;flex-direction:column;gap:12px}",
-	".dsm-qoder-hint{margin:0;color:var(--dsw-alias-label-primary,#1a1a1a);font-size:12px;line-height:1.6}",
+	".dsm-qoder-hint{margin:0;color:var(--dsw-alias-label-secondary,#61666b);font-size:12px;line-height:1.6}",
 	".dsm-qoder-switch{display:flex;align-items:center;gap:8px;font-size:13px}",
 	".dsm-qoder-models{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow:auto}",
 	".dsm-qoder-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:8px}",
 	".dsm-qoder-row-main{display:flex;align-items:center;gap:8px;min-width:0}",
 	".dsm-qoder-name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-	".dsm-qoder-badge{font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap}",
+	".dsm-qoder-badge{font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-secondary,#61666b);white-space:nowrap}",
 	// The model-row "活动价" highlight. This class was drifting: `card.tsx`
 	// applied `dsm-qoder-badge-offer` to the off-peak badge but styles.ts had
 	// never defined it, so an active promotion rendered identically to a
 	// normal badge. The rule is the success-colour modifier the usage block's
 	// own offer badge (`.dsm-qoder-usage-badge-offer`) already carries.
 	".dsm-qoder-badge-offer{border-color:var(--dsw-alias-state-success-primary,#12b76a);color:var(--dsw-alias-state-success-primary,#12b76a)}",
+	// Static model facts — the context window and whether the model takes
+	// images — as flat muted text. As pills they competed with the rate (the
+	// one number that changes and therefore the one worth a pill): a row
+	// carried four same-sized chips with only two colours between them, so
+	// "1M" and "视觉" read as loudly as "x0.20". They are attributes, not
+	// status, so they take the quietest label stop and no border.
+	".dsm-qoder-meta{font-size:11px;color:var(--dsw-alias-label-tertiary,#999);white-space:nowrap}",
 	".dsm-qoder-select{font-size:12px;padding:3px 6px;border-radius:6px;background:var(--dsw-alias-bg-layer-3,#202126);color:inherit;border:1px solid var(--dsw-alias-border-l2,#36373b)}",
 	".dsm-qoder-state{margin:0;font-size:12px;color:var(--dsw-alias-label-primary,#1a1a1a)}",
 	".dsm-qoder-error{margin:0;font-size:12px;color:var(--dsw-alias-state-error-primary,#d92d20)}",
@@ -76,8 +94,12 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-checkin-gain{font-size:18px;font-weight:600;line-height:1.2;color:var(--dsw-alias-state-success-primary,#22c55e);font-variant-numeric:tabular-nums}",
 	".dsm-qoder-checkin-button{width:100%;padding:4px 10px}",
 	".dsm-qoder-usage-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px}",
-	".dsm-qoder-usage-when{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap}",
-	".dsm-qoder-bar{height:6px;border-radius:999px;background:var(--dsw-alias-bg-layer-3,#202126);overflow:hidden}",
+	".dsm-qoder-usage-when{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary,#61666b);white-space:nowrap}",
+	// The bar is the panel's only quantification — "how much is left" is what
+	// the user came here for — and at 6px it read as a hairline next to 12px
+	// text while the prose below it took the primary label colour. Doubling its
+	// height is the cheapest way to put the weight back where it belongs.
+	".dsm-qoder-bar{height:10px;border-radius:999px;background:var(--dsw-alias-bg-layer-3,#202126);overflow:hidden}",
 	".dsm-qoder-bar-fill{height:100%;border-radius:999px;background:var(--dsw-alias-state-success-primary,#12b76a);transition:width .3s ease}",
 	// The host's design token is the ABBREVIATED `--dsw-alias-state-warn-primary`
 	// (confirmed against the shipped 0.1.7 frontend CSS: the long `warning` form
@@ -89,11 +111,19 @@ const QODER_CARD_CSS = [
 	// = rgb(245,158,11) = #f59e0b, which is what the host resolves it to.
 	".dsm-qoder-bar-warn{background:var(--dsw-alias-state-warn-primary,#f59e0b)}",
 	".dsm-qoder-bar-full{background:var(--dsw-alias-state-error-primary,#d92d20)}",
-	".dsm-qoder-usage-figures{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12px;color:var(--dsw-alias-label-primary,#1a1a1a)}",
-	".dsm-qoder-usage-figures strong{color:inherit;font-weight:500}",
-	".dsm-qoder-usage-badge{font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap}",
+	// Two figures, two weights. "266 / 1300 (21%)" is bookkeeping and drops to
+	// the middle stop; "剩余 1034 Credits" is the answer and keeps the primary
+	// label at a larger size. Both numbers stay tabular so a refresh that moves
+	// the digits does not shift the row.
+	".dsm-qoder-usage-figures{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#61666b)}",
+	".dsm-qoder-usage-figures strong{color:inherit;font-weight:500;font-variant-numeric:tabular-nums}",
+	".dsm-qoder-usage-remain{color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap}",
+	".dsm-qoder-usage-remain strong{font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}",
+	".dsm-qoder-usage-badge{font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2,#36373b);color:var(--dsw-alias-label-secondary,#61666b);white-space:nowrap}",
 	".dsm-qoder-usage-badge-offer{border-color:var(--dsw-alias-state-success-primary,#12b76a);color:var(--dsw-alias-state-success-primary,#12b76a)}",
-	".dsm-qoder-usage-promo{margin:0;font-size:11px;line-height:1.6;color:var(--dsw-alias-label-primary,#1a1a1a)}",
+	// Promotions are upstream marketing, not a fact about this machine: they must
+// not outrank the quota they are printed under.
+".dsm-qoder-usage-promo{margin:0;font-size:11px;line-height:1.6;color:var(--dsw-alias-label-secondary,#61666b)}",
 	".dsm-qoder-usage-promo a{color:inherit}",
 	".dsm-qoder-usage-sep{height:1px;background:var(--dsw-alias-border-l2,#36373b);margin:0}",
 	".dsm-qoder-usage-spacer{flex:1}",
@@ -109,7 +139,7 @@ const QODER_CARD_CSS = [
 	// settings document.
 	".dsm-qoder-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}",
 	".dsm-qoder-search{font-size:12px;padding:5px 8px;border-radius:6px;background:var(--dsw-alias-bg-layer-3,#202126);color:inherit;border:1px solid var(--dsw-alias-border-l2,#36373b);min-width:150px;flex:1 1 150px}",
-	".dsm-qoder-count{font-size:11px;color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap;font-variant-numeric:tabular-nums}",
+	".dsm-qoder-count{font-size:11px;color:var(--dsw-alias-label-secondary,#61666b);white-space:nowrap;font-variant-numeric:tabular-nums}",
 	// Loading skeleton: three shimmering placeholder rows in the shape of a
 	// real model row, so the list does not jump when the data lands.
 	".dsm-qoder-skeleton{display:flex;flex-direction:column;gap:6px}",

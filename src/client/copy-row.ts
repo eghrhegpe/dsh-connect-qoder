@@ -47,6 +47,11 @@ export const zhRow = {
 	"row.protocolChanged": "Qoder 的接口返回了本插件不认识的格式——请更新插件（重新登录没有用）",
 	"row.offPeakOn": "错峰价",
 	"row.offPeakOff": "标准价",
+	// The badge names the boundary the rate flips at, not a countdown to it:
+	// "错峰价 至 08:00" / "标准价 22:00 起". The precise countdown stays in the
+	// badge's tooltip, where it is read on demand instead of ticking on screen.
+	"row.offPeakEnd": "至 {time}",
+	"row.offPeakStart": "{time} 起",
 	"row.offPeakUntil": "{time} 后切换",
 	"row.offPeakHint": "错峰时段 {window}（{zone}）享受折扣；倍率按当前时段显示，到点会自动变化。",
 	// Search, error retry, and the Escape-to-collapse affordance.
@@ -101,6 +106,8 @@ export const enRow = {
 	"row.protocolChanged": "Qoder replied in a format this plugin does not recognise — update the plugin (signing in again will not help)",
 	"row.offPeakOn": "off-peak",
 	"row.offPeakOff": "standard",
+	"row.offPeakEnd": "until {time}",
+	"row.offPeakStart": "from {time}",
 	"row.offPeakUntil": "switches in {time}",
 	"row.offPeakHint": "The off-peak discount applies {window} ({zone}); the rate shown follows the current window and changes on its own at the boundary.",
 	// Search, error retry, and the Escape-to-collapse affordance.
