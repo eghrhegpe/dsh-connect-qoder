@@ -19,13 +19,13 @@ export const zhUsage = {
 	"usage.viewDetails": "查看详情",
 	"usage.credits": "Credits",
 	// The daily check-in. Wording follows dsh-connect-workbuddy's own
-	// check-in row so two sibling cards read alike in the same list: a
-	// three-state button plus a line telling you what today's round is
-	// worth. `checkinGranted` names a real amount only when the upstream
-	// confirmed this call paid out — a repeat claim grants nothing and must
-	// not be rendered as though it did.
+	// check-in so two sibling cards read alike in the same list: a three-state
+	// button plus a line telling you what today's round is worth. `checkinGain`
+	// is the card's headline and reads the amount the HOST resolved from the
+	// live campaign — a repeat claim grants nothing and must not be rendered as
+	// though it did, which is why the granted/already notices stay separate.
 	"usage.checkin": "每日签到",
-	"usage.checkinAvailable": "今日可领 {amount} Credits",
+	"usage.checkinGain": "+{amount} Credits",
 	"usage.checkinClaim": "立即签到",
 	"usage.checkinClaiming": "签到中…",
 	"usage.checkinClaimed": "今日已签到",
@@ -54,7 +54,7 @@ export const enUsage = {
 	"usage.viewDetails": "View details",
 	"usage.credits": "Credits",
 	"usage.checkin": "Daily check-in",
-	"usage.checkinAvailable": "{amount} Credits to claim today",
+	"usage.checkinGain": "+{amount} Credits",
 	"usage.checkinClaim": "Check in",
 	"usage.checkinClaiming": "Claiming…",
 	"usage.checkinClaimed": "Checked in today",

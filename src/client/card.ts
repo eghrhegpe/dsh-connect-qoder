@@ -81,11 +81,20 @@ interface CardCampaign {
 	[key: string]: unknown
 }
 
-/** The daily check-in block. */
+/**
+ * The daily check-in block, as the host's `checkinStateFrom` answers it.
+ *
+ * `active` says upstream has a round running, `todayCheckedIn` says this
+ * account already collected it, and `amount` is the round's worth — taken from
+ * the live campaign's benefit, so it is a fact the host resolved rather than a
+ * number this card worked out. It is present whether or not the round has been
+ * claimed, which is what lets the card keep showing what today is worth after
+ * the button flips to "今日已签到".
+ */
 interface CardCheckin {
-	enabled?: boolean
-	claimed?: boolean
-	streak?: number
+	active?: boolean
+	todayCheckedIn?: boolean
+	amount?: number
 	[key: string]: unknown
 }
 
@@ -113,7 +122,7 @@ interface CardAccountEntry {
  * tolerate a missing translation — which is why this is not typed to a union of
  * literal keys.
  *
- * The second parameter is the interpolation bag (`t("usage.checkinAvailable",
+ * The second parameter is the interpolation bag (`t("usage.checkinGain",
  * { amount })`). Restricted to a record of `string | number` rather than
  * `unknown`: these values are substituted into copy, and a message that pasted
  * `[object Object]` on screen would be a real defect rather than a typing
@@ -463,54 +472,57 @@ function QuotaBlock({ t, label, quota, when, badge }: QuotaBlockProps) {
 	});
 }
 
-/**
- * Today's check-in row.
- *
- * Assembled from parts this card already had — the `.dsm-qoder-row` frame and
- * the pill button every other action uses — rather than new CSS, and shaped
- * after `dsh-connect-workbuddy`'s check-in row so the two sibling cards read
- * alike in the same settings list.
- *
- * Everything it decides comes from the state the host computed. An earlier bug
- * in this family of cards rendered an off-peak price the card had worked out
- * for itself while the picker charged another, so this row deliberately holds
- * no arithmetic of its own: whether today's round exists, and whether it has
- * been claimed, are answered upstream and merely rendered here.
- */
-/** Props for {@link CheckinRow}. */
-interface CheckinRowProps {
+/** Props for {@link CheckinCard}. */
+interface CheckinCardProps {
 	t: TranslateFn
-	checkin: Record<string, unknown>
+	checkin: CardCheckin
 	busy: boolean
+	notice?: { kind?: string; message?: string; amount?: number } | null
 	onClaim: EventHandler
 }
 
-function CheckinRow({ t, checkin, busy, onClaim }: CheckinRowProps) {
+/**
+ * Today's check-in, as a small card beside the usage panel.
+ *
+ * This used to be one more full-width row in the panel's stack, which spent a
+ * whole line on two short strings ("每日签到" / "今日已签到") and made the panel
+ * read as low-density. The facts are unchanged and still all come from the
+ * host: whether a round is running, whether it was claimed, and what it is
+ * worth. The card holds no arithmetic of its own — the amount is the host's
+ * `checkin.amount`, the same value the panel already printed as "今日可领".
+ */
+function CheckinCard({ t, checkin, busy, notice, onClaim }: CheckinCardProps) {
 	const claimed = checkin.todayCheckedIn === true;
 	const amount = typeof checkin.amount === "number" ? checkin.amount : undefined;
-	return (0, react_jsx_runtime.jsxs)("div", {
-		className: "dsm-qoder-row",
+	return (0, react_jsx_runtime.jsxs)("aside", {
+		className: "dsm-qoder-checkin",
 		children: [
-			(0, react_jsx_runtime.jsxs)("div", {
-				className: "dsm-qoder-row-main",
-				children: [
-					(0, react_jsx_runtime.jsx)("span", {
-						className: "dsm-qoder-usage-badge dsm-qoder-usage-badge-offer",
-						children: t("usage.checkin")
-					}),
-					amount !== undefined && !claimed ? (0, react_jsx_runtime.jsx)("span", {
-						className: "dsm-qoder-name",
-						children: t("usage.checkinAvailable", { amount })
-					}) : null
-				]
+			(0, react_jsx_runtime.jsx)("span", {
+				className: "dsm-qoder-checkin-title",
+				children: t("usage.checkin")
 			}),
+			amount !== undefined ? (0, react_jsx_runtime.jsx)("strong", {
+				className: "dsm-qoder-checkin-gain",
+				children: t("usage.checkinGain", { amount })
+			}) : null,
 			(0, react_jsx_runtime.jsx)("button", {
 				type: "button",
-				className: "dsm-qoder-button",
+				className: "dsm-qoder-button dsm-qoder-checkin-button",
 				disabled: busy || claimed,
 				onClick: onClaim,
 				children: busy ? t("usage.checkinClaiming") : claimed ? t("usage.checkinClaimed") : t("usage.checkinClaim")
-			})
+			}),
+			// `!= null` covers BOTH absent and explicit null, which is what the
+			// prop type allows (`… | null`). Testing only for `undefined` let a
+			// `null` through to the `.kind` reads below.
+			notice != null ? (0, react_jsx_runtime.jsx)("p", {
+				className: notice.kind === "error" ? "dsm-qoder-error" : "dsm-qoder-state",
+				children: notice.kind === "error" ? t("usage.checkinError", {
+					message: notice.message ?? ""
+				}) : notice.kind === "granted" && typeof notice.amount === "number" ? t("usage.checkinGranted", {
+					amount: notice.amount
+				}) : t("usage.checkinAlready")
+			}) : null
 		]
 	});
 }
@@ -519,13 +531,17 @@ function CheckinRow({ t, checkin, busy, onClaim }: CheckinRowProps) {
 interface RegionUsageProps {
 	t: TranslateFn
 	entry: CardUsageRegion & Record<string, unknown>
-	checkinBusy?: boolean
-	checkinNotice?: { kind?: string; message?: string; amount?: number } | null
-	onClaimCheckin?: EventHandler
 }
 
-/** One region's usage block, as returned by the host usage route. */
-function RegionUsage({ t, entry, checkinBusy = false, checkinNotice = undefined, onClaimCheckin = undefined }: RegionUsageProps) {
+/**
+ * One region's usage block, as returned by the host usage route.
+ *
+ * Holds only the quota bars and the promotional lines. The daily check-in is
+ * NOT part of this block: it is rendered by {@link QoderUsagePanel} as a card
+ * beside the whole panel, because a check-in row inside this stack spent a
+ * full-width line on two short strings.
+ */
+function RegionUsage({ t, entry }: RegionUsageProps) {
 	if (entry.available !== true) {
 		return (0, react_jsx_runtime.jsxs)("div", {
 			className: "dsm-qoder-usage-block",
@@ -572,31 +588,6 @@ function RegionUsage({ t, entry, checkinBusy = false, checkinNotice = undefined,
 					})
 				]
 			}, `pack:${pack.id}:${index}`)),
-			// The check-in sits next to the add-on quota because that is where
-			// the Credits land, and disappears entirely when no round is
-			// running instead of leaving a permanently grey button behind.
-			entry.checkin !== undefined && entry.checkin.active === true ? (0, react_jsx_runtime.jsxs)(react.Fragment, {
-				children: [
-					(0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-usage-sep" }),
-					(0, react_jsx_runtime.jsx)(CheckinRow, {
-						t,
-						checkin: entry.checkin,
-						busy: checkinBusy,
-						onClaim: onClaimCheckin
-					}),
-					// `!= null` covers BOTH absent and explicit null, which is what
-					// the prop type allows (`… | null`). Testing only for
-					// `undefined` let a `null` through to the `.kind` reads below.
-					checkinNotice != null ? (0, react_jsx_runtime.jsx)("p", {
-						className: checkinNotice.kind === "error" ? "dsm-qoder-error" : "dsm-qoder-state",
-						children: checkinNotice.kind === "error" ? t("usage.checkinError", {
-							message: checkinNotice.message ?? ""
-						}) : checkinNotice.kind === "granted" && typeof checkinNotice.amount === "number" ? t("usage.checkinGranted", {
-							amount: checkinNotice.amount
-						}) : t("usage.checkinAlready")
-					}) : null
-				]
-			}) : null,
 			campaigns.length > 0 ? (0, react_jsx_runtime.jsx)("div", { className: "dsm-qoder-usage-sep" }) : null,
 			campaigns.map((camp) => (0, react_jsx_runtime.jsxs)("p", {
 				className: "dsm-qoder-usage-promo",
@@ -721,60 +712,78 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 		void load(true);
 	}, [refreshToken, load]);
 	return (0, react_jsx_runtime.jsxs)("div", {
-		className: "dsm-qoder-usage",
+		className: "dsm-qoder-usage-row",
 		children: [
 			(0, react_jsx_runtime.jsxs)("div", {
-				className: "dsm-qoder-usage-head",
+				className: "dsm-qoder-usage",
 				children: [
-					// The head is a stable title row: the panel title stays
-					// on the left and the refresh control stays on the
-					// right. Loading and error states render below it,
-					// next to the selected region's block.
-					(0, react_jsx_runtime.jsx)("h4", {
-						className: "dsm-qoder-usage-title",
-						children: t("usage.title")
+					(0, react_jsx_runtime.jsxs)("div", {
+						className: "dsm-qoder-usage-head",
+						children: [
+							// The head is a stable title row: the panel title stays
+							// on the left and the refresh control stays on the
+							// right. Loading and error states render below it,
+							// next to the selected region's block.
+							(0, react_jsx_runtime.jsx)("h4", {
+								className: "dsm-qoder-usage-title",
+								children: t("usage.title")
+							}),
+							(0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "dsm-qoder-button",
+								disabled: busy,
+								onClick: () => {
+									void load(true);
+								},
+								children: t("usage.refresh")
+							})
+						]
 					}),
-					(0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "dsm-qoder-button",
-						disabled: busy,
-						onClick: () => {
-							void load(true);
-						},
-						children: t("usage.refresh")
-					})
+					status === "loading" ? (0, react_jsx_runtime.jsx)("p", {
+						className: "dsm-qoder-hint",
+						children: t("usage.loading")
+					}) : null,
+					status === "error" ? (0, react_jsx_runtime.jsx)("p", {
+						className: "dsm-qoder-error",
+						children: `${t("usage.error")}: ${notice ?? ""}`
+					}) : null,
+					// Scoped to the selected region (the convergence point on the
+					// version strip), so only one usage block renders instead of
+					// one per region. The fetch still pulls every region; this
+					// just picks the one the strip has selected.
+					(() => {
+						const active = regions.find((entry) => entry.region === activeRegion);
+						if (active !== undefined) return (0, react_jsx_runtime.jsx)(RegionUsage, {
+							t,
+							entry: active
+						});
+						// The selected edition has no quota entry yet — it is not
+						// signed in or not started — so say so instead of leaving
+						// the panel body empty under its header.
+						return status === "ready" ? (0, react_jsx_runtime.jsx)("p", {
+							className: "dsm-qoder-state",
+							children: t("usage.none")
+						}) : null;
+					})()
 				]
 			}),
-			status === "loading" ? (0, react_jsx_runtime.jsx)("p", {
-				className: "dsm-qoder-hint",
-				children: t("usage.loading")
-			}) : null,
-			status === "error" ? (0, react_jsx_runtime.jsx)("p", {
-				className: "dsm-qoder-error",
-				children: `${t("usage.error")}: ${notice ?? ""}`
-			}) : null,
-			// Scoped to the selected region (the convergence point on the
-			// version strip), so only one usage block renders instead of
-			// one per region. The fetch still pulls every region; this
-			// just picks the one the strip has selected.
+			// The daily check-in sits BESIDE the usage panel rather than as one
+			// more stacked row inside it: as a row it spent a full-width line on
+			// "每日签到" and one short button. It is only rendered when upstream
+			// has a round running, so no permanently grey card is left behind —
+			// and the panel then keeps the full width to itself.
 			(() => {
 				const active = regions.find((entry) => entry.region === activeRegion);
-				if (active !== undefined) return (0, react_jsx_runtime.jsx)(RegionUsage, {
+				if (active?.checkin === undefined || active.checkin.active !== true) return null;
+				return (0, react_jsx_runtime.jsx)(CheckinCard, {
 					t,
-					entry: active,
-					checkinBusy: claimBusy,
-					checkinNotice: claimNotice,
-					onClaimCheckin: () => {
+					checkin: active.checkin,
+					busy: claimBusy,
+					notice: claimNotice,
+					onClaim: () => {
 						void claimCheckin();
 					}
 				});
-				// The selected edition has no quota entry yet — it is not
-				// signed in or not started — so say so instead of leaving
-				// the panel body empty under its header.
-				return status === "ready" ? (0, react_jsx_runtime.jsx)("p", {
-					className: "dsm-qoder-state",
-					children: t("usage.none")
-				}) : null;
 			})()
 		]
 	});

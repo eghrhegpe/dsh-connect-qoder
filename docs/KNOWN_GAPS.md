@@ -284,7 +284,7 @@ handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"�
 **发现（2026-09-27，本机两个真实账号）**：国际版 `GET /sash/api/v1/me/campaigns`
 对**不带 umid 机器身份头**的请求只下发常驻的 `VIEW_DETAILS` 横幅（首月翻倍广告），
 **不下发**每日 `CLAIM_BENEFIT` 轮次（100 Credits）。于是插件的 `checkinStateFrom`
-读到的列表里没有可领轮次，判 `{ active: false }`，卡片签到行按设计不渲染——判断逻辑
+读到的列表里没有可领轮次，判 `{ active: false }`，卡片签到卡片按设计不渲染——判断逻辑
 本身没有 bug，缺的是请求侧的机器身份。
 
 **判别证据**（全部只读探测，脚本在 `probe/`）：
@@ -312,7 +312,7 @@ CN 与 PAT 凭据不受影响。二进制每进程只跑一次（`umidInfo` 缓�
 - `runtime-info.exe` 的 0.4.3 版本路径是**当前实测值**：0.4.x 的 `.qoder-versions`
   布局升级后版本目录会变（例如 0.4.4），`umidRootsFor` 需要同步补档。
 - 跨平台（第 6 条）依旧：umid 二进制是 Windows 专物，macOS / Linux 上国际版
-  签到行会继续缺席，与跨平台凭据链缺口同源。
+  签到卡片会继续缺席，与跨平台凭据链缺口同源。
 - **领取幂等性未实测**：本轮只读验证了"看见轮次"，没有真发 POST 领取
   （领取会真实进账，属于账号变更操作）。`normalizeClaimResult` 的 `replayed`
   语义在 CN 端有既测，国际端同链路但缺一次实领确认。

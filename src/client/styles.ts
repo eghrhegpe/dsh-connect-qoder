@@ -57,6 +57,17 @@ const QODER_CARD_CSS = [
 	".dsm-qoder-usage-head{display:flex;align-items:center;justify-content:space-between;gap:8px}",
 	".dsm-qoder-usage-title{margin:0;font-size:13px;font-weight:600}",
 	".dsm-qoder-usage-block{display:flex;flex-direction:column;gap:6px}",
+	// The usage panel and the check-in card sit side by side, so "how many
+	// Credits do I have" (the panel's bars) and "claim today's" are read in one
+	// glance instead of two stacked rows. The panel keeps the space it needs;
+	// the card is sized to its own content and wraps BELOW the panel on a
+	// narrow card rather than squeezing it.
+	".dsm-qoder-usage-row{display:flex;align-items:stretch;gap:12px;flex-wrap:wrap}",
+	".dsm-qoder-usage-row>.dsm-qoder-usage{flex:1 1 260px;min-width:0}",
+	".dsm-qoder-checkin{flex:0 1 auto;min-width:132px;max-width:200px;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:12px;border:1px solid var(--dsw-alias-border-l2,#36373b);border-radius:10px;background:var(--dsw-alias-bg-layer-2,#24262c)}",
+	".dsm-qoder-checkin-title{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}",
+	".dsm-qoder-checkin-gain{font-size:18px;font-weight:600;line-height:1.2;color:var(--dsw-alias-state-success-primary,#22c55e);font-variant-numeric:tabular-nums}",
+	".dsm-qoder-checkin-button{width:100%;padding:4px 10px}",
 	".dsm-qoder-usage-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px}",
 	".dsm-qoder-usage-when{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-primary,#1a1a1a);white-space:nowrap}",
 	".dsm-qoder-bar{height:6px;border-radius:999px;background:var(--dsw-alias-bg-layer-3,#202126);overflow:hidden}",

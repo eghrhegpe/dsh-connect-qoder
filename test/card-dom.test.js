@@ -175,7 +175,7 @@ test('a promotion Qoder has switched off never shows the discount', async () => 
   assert.equal(offer, null, 'a switched-off promotion must not render the discount badge')
 })
 
-test('the usage panel renders the active region and the check-in row', async () => {
+test('the usage panel renders the active region and the check-in card', async () => {
   const { container } = await mount({
     usageRegions: [
       {
@@ -198,6 +198,80 @@ test('the usage panel renders the active region and the check-in row', async () 
     .find((b) => /签到/.test(text(b)))
   assert.ok(checkinButton !== undefined, 'no check-in button rendered')
   assert.equal(checkinButton.disabled, false, 'an unclaimed round must offer the claim button')
+})
+
+test('the check-in is a card beside the usage panel, not a row inside it', async () => {
+  // The regression this pins, twice over:
+  //  1. the check-in used to be one more `.dsm-qoder-row` in the panel's
+  //     stack, which spent an entire line on "每日签到" and one short button;
+  //  2. a first attempt at the fix nested the card inside `.dsm-qoder-usage`,
+  //     which put it beside the quota BARS but still inside the bordered
+  //     panel. It belongs beside the PANEL, as its sibling.
+  const { container } = await mount({
+    usageRegions: [
+      {
+        region: 'qoder-cn',
+        available: true,
+        addOnQuota: { used: 255, total: 1300, remaining: 1045, percentage: 0.2, unit: 'credits' },
+        checkin: { active: true, todayCheckedIn: true, amount: 100 },
+      },
+    ],
+  })
+
+  const usage = container.querySelector('.dsm-qoder-usage')
+  assert.ok(usage !== null, 'no usage panel rendered')
+  assert.equal(
+    usage.querySelector('.dsm-qoder-row'),
+    null,
+    'the check-in must not render as a full-width usage row',
+  )
+
+  const checkin = container.querySelector('.dsm-qoder-checkin')
+  assert.ok(checkin !== null, 'no check-in card rendered')
+  // The whole point: the card is a sibling of the panel, not a child of it.
+  assert.equal(
+    usage.contains(checkin),
+    false,
+    'the check-in card must not be nested inside the usage panel',
+  )
+  const row = container.querySelector('.dsm-qoder-usage-row')
+  assert.ok(row !== null, 'the panel and the card must share a row')
+  assert.equal(usage.parentElement, row, 'the usage panel must be a direct child of the row')
+  assert.equal(checkin.parentElement, row, 'the check-in card must be a direct child of the row')
+
+  // The bars stay in the panel, the button in the card.
+  assert.equal(usage.querySelectorAll('.dsm-qoder-bar').length, 1, 'the bars belong to the panel')
+  assert.equal(checkin.querySelectorAll('.dsm-qoder-bar').length, 0, 'the check-in card carries no bar')
+  assert.ok(checkin.querySelector('button') !== null, 'the check-in card must own its button')
+
+  // The amount the host resolved is the headline, and it stays visible after
+  // the round is claimed — that is the whole point of the card.
+  assert.equal(text(checkin.querySelector('.dsm-qoder-checkin-gain')), '+100 Credits')
+  assert.equal(text(checkin.querySelector('button')), '今日已签到')
+})
+
+test('no check-in card is rendered when upstream has no round running', async () => {
+  const { container } = await mount({
+    usageRegions: [
+      {
+        region: 'qoder-cn',
+        available: true,
+        addOnQuota: { used: 0, total: 100, remaining: 100, percentage: 0, unit: 'credits' },
+        checkin: { active: false, todayCheckedIn: false },
+      },
+    ],
+  })
+  assert.equal(
+    container.querySelector('.dsm-qoder-checkin'),
+    null,
+    'an inactive round must not leave a permanently grey card behind',
+  )
+  const usage = container.querySelector('.dsm-qoder-usage')
+  assert.equal(
+    usage.querySelectorAll('.dsm-qoder-bar').length,
+    1,
+    'the quota bar still renders without a check-in',
+  )
 })
 
 test('a save the host endpoint refuses surfaces the reason, not a "saved" banner', async () => {
