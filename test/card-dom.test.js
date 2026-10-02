@@ -318,6 +318,38 @@ test('a save the host endpoint refuses surfaces the reason, not a "saved" banner
   )
 })
 
+test('a provider switch the host refuses reverts and names the reason', async () => {
+  // The account panel's region switch writes through the settings pipeline
+  // (host endpoint first, scope mirror second) with the COMPLETE map. A
+  // refused write — the endpoint answers 503 AND the scope mirror does not
+  // persist — must leave the switch in its old position and SHOW the reason.
+  // A silent no-op here is the "everything looks fine" reading the PLAN
+  // forbids: the user flips the switch, sees it move, and believes the
+  // region is (not) offered when it still is (isn't).
+  const { container, react } = await mount({ saveStatus: 503, scopePersist: false })
+
+  const toggles = [...container.querySelectorAll('.dsm-qoder-region-toggle')]
+  assert.equal(toggles.length, 2, 'one provider switch per region')
+  const qoder = toggles[1]
+  assert.equal(qoder.checked, true, 'the region starts offered')
+
+  await update(react, () => qoder.click())
+  // The write is a two-hop chain (endpoint 503, then the scope read-back);
+  // yield enough turns for the failure to settle and the switch to revert.
+  for (let i = 0; i < 4; i++) await update(react, () => {})
+
+  assert.equal(
+    qoder.checked,
+    true,
+    'a refused write must leave the switch in its old position, not a stale new one',
+  )
+  const notes = [...container.querySelectorAll('.dsm-qoder-account-note-error')].map((n) => text(n))
+  assert.ok(
+    notes.some((n) => n.startsWith('保存「模型」开关失败')),
+    `the refusal must be shown with its reason, not swallowed; saw: ${JSON.stringify(notes)}`,
+  )
+})
+
 test('the name filter narrows the roster and counts what remains', async () => {
   const { container, react } = await mount({
     models: [model({ id: 'a1', name: 'Alpha' }), model({ id: 'b1', name: 'Beta' })],

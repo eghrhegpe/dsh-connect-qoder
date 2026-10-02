@@ -23,10 +23,15 @@
  * pinned only by scraping the artifact or by mirroring it in a test, and both
  * drift. See `docs/KNOWN_GAPS.md`.
  *
- * NOTE: `describeThrown` stays in `card.tsx`, not here. It is called from two
- * `catch` blocks that format a *display* string, not from any pure rule, and
- * it is a one-line narrowing duplicated from `src/host/errors.ts` on purpose
- * (no client file imports from `src/host/`).
+ * `describeThrown` lives here, next to the other display helpers, not in
+ * `card.tsx` as it used to. It is a browser-free formatting rule (no React, no
+ * DOM) shared by every card `catch` block that shows a failure reason, and the
+ * panel containers (`account-panel.tsx` / `usage-panel.tsx`) import it from
+ * this module — which imports nothing client-side — instead of reaching back
+ * into `card.tsx`, which would close two circular-import pairs around the
+ * assembly module. The duplication of `host/errors.ts#describeThrown` is still
+ * on purpose: no client file imports from `src/host/`, and hoisting a two-line
+ * narrowing into the generated `lib/client.js` is not worth that coupling.
  */
 
 /** One model row as the models route serves it. */
@@ -353,4 +358,30 @@ export function refreshNoticeKey(value: unknown): string | null {
 	if (failures.some((f) => (f as { reason?: string } | null | undefined)?.reason === "protocol-shape-changed")) return "protocol-shape-changed";
 	if (failures.some((f) => (f as { reason?: string } | null | undefined)?.reason === "persist")) return "persist";
 	return "transient";
+}
+
+/**
+ * A readable description of a thrown value, for the card's `catch` blocks
+ * that show a failure reason to the user.
+ *
+ * A catch binding is `unknown` (`useUnknownInCatchVariables`), so `.message`
+ * is not readable without narrowing. The spelling this replaces —
+ * `error instanceof Error ? error.message : String(error)` — leaves a
+ * non-`Error` throw (a bare object, a rejection carrying only a code)
+ * rendering as `[object Object]`, and a thrown `undefined` rendering as the
+ * literal text `"undefined"`: a failure message that says nothing at all.
+ *
+ * This is a LOCAL copy of `host/errors.ts#describeThrown` on purpose. The
+ * card is a separate bundle built by `scripts/build-client.mjs`, and no
+ * client file imports from `src/host/`, so sharing one implementation would
+ * mean either bundling host code into the browser card or hoisting this
+ * helper into the generated `lib/client.js`. The duplication is two lines of
+ * narrowing against a stable language rule; the coupling is not worth that
+ * price.
+ */
+export function describeThrown(error: unknown): string {
+	const message = (error as { message?: unknown } | null | undefined)?.message;
+	if (typeof message === "string" && message !== "") return message;
+	if (typeof error === "string") return error;
+	return String(error);
 }

@@ -33,33 +33,9 @@ import {
 	windowLabelOf,
 	rateAt,
 	refreshNoticeKey,
+	describeThrown,
 } from "./card-model.ts"
-
-
-/**
- * A readable description of a thrown value, for the two `catch` blocks in this
- * card that show a failure reason to the user.
- *
- * A catch binding is `unknown` (`useUnknownInCatchVariables`), so `.message` is
- * not readable without narrowing. The spelling this replaces —
- * `String(error?.message ?? error)` — had a real defect beyond the type error:
- * for a non-`Error` throw with no `message` (a bare object, or a rejection
- * carrying only a code) it produces the literal text `"undefined"`, which is
- * how a failed save could show the user a message that says nothing at all.
- *
- * This is a LOCAL copy of `host/errors.ts#describeThrown` on purpose. The card
- * is a separate bundle built by `scripts/build-client.mjs`, and no client file
- * imports from `src/host/`, so sharing one implementation would mean either
- * bundling host code into the browser card or hoisting this helper into the
- * generated `lib/client.js`. The duplication is two lines of narrowing against
- * a stable language rule; the coupling is not worth that price.
- */
-export function describeThrown(error: unknown): string {
-	const message = (error as { message?: unknown } | null | undefined)?.message;
-	if (typeof message === "string" && message !== "") return message;
-	if (typeof error === "string") return error;
-	return String(error);
-}
+import { getJson } from "./http.ts"
 
 
 /** Props for {@link QuotaBlock}. */
@@ -71,11 +47,6 @@ interface QuotaBlockProps {
 	badge?: string
 }
 
-/**
- * One quota row: label, optional badges, an optional date, a bar, and the
- * used/total figures. Shared by the plan quota, the add-on package and the
- * per-model dedicated packages, which differ only in their wording.
- */
 /**
  * One quota row: label, optional badges, an optional date, a bar, and the
  * used/total figures. Shared by the plan quota, the add-on package and the
@@ -288,7 +259,7 @@ interface QoderPluginCardProps {
 
 export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps) {
 	if (t === void 0) throw new Error("Qoder settings card requires its translation function");
-	const [open, setOpen] = (0, react.useState)(() => initialOpenForView(view));
+	const [open, setOpen] = react.useState(() => initialOpenForView(view));
 	const [models, setModels] = react.useState<CardModelRow[]>([]);
 	// The editable-state machine (staged/saved fields, `dirty`, `save`,
 	// `discard`, and the derived roster view) lives in `controller.ts`, not in
@@ -298,20 +269,20 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	// methods — no `useState` in the rules, only around what React must own.
 	//
 	// Created once, via the initializer form, so a re-render never resets it.
-	const [controller] = (0, react.useState)(() => new QoderCardController<CardModelRow>({ imageOverrides: {}, maxWindow: false, enabledIds: {} }));
+	const [controller] = react.useState(() => new QoderCardController<CardModelRow>({ imageOverrides: {}, maxWindow: false, enabledIds: {} }));
 	// Keep the roster the fetch returned in sync with the controller, so the
 	// derived `regionModels` / `visibleModels` / `regionAllTicked` are current.
 	// The roster is live catalog state, never persisted, so feeding it here is
 	// not a write.
-	(0, react.useEffect)(() => {
+	react.useEffect(() => {
 		controller.setModels(models);
 	}, [controller, models]);
 	// Subscribe to the controller. `getSnapshot` is referentially stable until
 	// a mutation, so this does not loop.
-	const snap = (0, react.useSyncExternalStore)(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
-	const [status, setStatus] = (0, react.useState)("loading");
+	const snap = react.useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+	const [status, setStatus] = react.useState("loading");
 	const [notice, setNotice] = react.useState<string | undefined>(undefined);
-	const [refreshing, setRefreshing] = (0, react.useState)(false);
+	const [refreshing, setRefreshing] = react.useState(false);
 	const [refreshedAt, setRefreshedAt] = react.useState<number | undefined>(undefined);
 	// The host's own verdict about the last refresh, folded to one of
 	// `null` / "transient" / "persist" / "protocol-shape-changed" by
@@ -326,7 +297,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	const [refreshFailure, setRefreshFailure] = react.useState<string | null>(null);
 	// Bumped when the account panel's re-read lands; the usage panel
 	// treats a non-zero value as "force a fresh quota pull".
-	const [usageBump, setUsageBump] = (0, react.useState)(0);
+	const [usageBump, setUsageBump] = react.useState(0);
 	// The model id whose row should flash, set by the last in-place edit
 	// (checkbox tick or image-mode pick). A timeout clears it, so the CSS
 	// animation plays once and the row settles back.
@@ -341,9 +312,9 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	// off-peak window (`promotion.active === true`); with no active
 	// window the rate and countdown are static and a per-second
 	// re-render would cost nothing but gain nothing either.
-	const [clock, setClock] = (0, react.useState)(() => new Date());
-	const mounted = (0, react.useRef)(true);
-	(0, react.useEffect)(() => {
+	const [clock, setClock] = react.useState(() => new Date());
+	const mounted = react.useRef(true);
+	react.useEffect(() => {
 		mounted.current = true;
 		return () => {
 			mounted.current = false;
@@ -351,12 +322,12 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	}, []);
 	// Clear the row flash after one animation cycle; a new pulse id re-arms
 	// this timer because the effect re-runs on every id change.
-	(0, react.useEffect)(() => {
+	react.useEffect(() => {
 		if (pulse === undefined) return undefined;
 		const timer = window.setTimeout(() => setPulse(undefined), 1300);
 		return () => window.clearTimeout(timer);
 	}, [pulse]);
-	(0, react.useEffect)(() => {
+	react.useEffect(() => {
 		// Tick only when a promotion window is active on at least one
 		// model; otherwise the clock is inert and re-rendering every
 		// second just churns the model list for no visible change.
@@ -382,16 +353,19 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	 * the first load: a refresh must not clobber edits the user has staged
 	 * but not yet saved.
 	 */
-	const load = (0, react.useCallback)(async (refresh, signal?: AbortSignal) => {
+	const load = react.useCallback(async (refresh, signal?: AbortSignal) => {
 		if (refresh) setRefreshing(true);
 		try {
-			const response = await fetch(`${QODER_MODELS_PATH}${refresh ? "?refresh=1" : ""}`, {
-				headers: { accept: "application/json" },
-				credentials: "same-origin",
-				signal
-			});
-			const value = await response.json().catch((): undefined => void 0);
-			if (!response.ok || value === void 0) throw new Error(`HTTP ${response.status}`);
+			// The model read goes through the card's only fetch surface, the
+			// same `getJson` the two panels use: the "one place" contract
+			// includes this roster pull, not just the account / usage reads.
+			// An unparseable or non-OK answer throws (the roster has no
+			// "no data" state to fall back to), which lands in the catch
+			// below as a visible failure, never a silent empty list.
+			const value = await getJson<{ models?: unknown; refreshedAt?: unknown }>(
+				`${QODER_MODELS_PATH}${refresh ? "?refresh=1" : ""}`,
+				{ signal },
+			);
 			if (!mounted.current) return;
 			setModels(Array.isArray(value.models) ? value.models : []);
 			if (!refresh) controller.seedSaved(initialEditableState(value));
@@ -407,12 +381,14 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 		} catch (error) {
 			if (!mounted.current || signal?.aborted === true) return;
 			setStatus("error");
-			setNotice(error instanceof Error ? error.message : String(error));
+			// A bare-object rejection or a thrown `undefined` would otherwise
+			// reach the banner as "[object Object]" / "undefined".
+			setNotice(describeThrown(error));
 		} finally {
 			if (mounted.current) setRefreshing(false);
 		}
 	}, []);
-	(0, react.useEffect)(() => {
+	react.useEffect(() => {
 		const controller = new AbortController();
 		void load(false, controller.signal);
 		return () => {
@@ -422,14 +398,14 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	// The account panel's "the sign-ins just changed" callback: re-read
 	// the catalog so the picker offers what the host now routes, and
 	// bump the usage panel into a fresh quota pull.
-	const reconcile = (0, react.useCallback)(() => {
+	const reconcile = react.useCallback(() => {
 		void load(true);
 		setUsageBump((n) => n + 1);
 	}, [load]);
 	// An in-place edit and the row flash that acknowledges it. The flash is a
 	// rendering concern (a one-shot CSS animation), so it stays here; the edit
 	// itself is a controller mutation.
-	const setMode = (0, react.useCallback)((modelId: string, mode: string) => {
+	const setMode = react.useCallback((modelId: string, mode: string) => {
 		controller.setMode(modelId, mode);
 		setPulse(modelId);
 	}, [controller]);
@@ -441,7 +417,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	 * allow-list rather than a diff. That is what lets a partially curated
 	 * region stay curated when the catalog later grows.
 	 */
-	const toggleModel = (0, react.useCallback)((regionId: string, modelId: string) => {
+	const toggleModel = react.useCallback((regionId: string, modelId: string) => {
 		controller.toggleModel(regionId, modelId);
 		setPulse(modelId);
 	}, [controller]);
@@ -456,7 +432,7 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	 * touched; the sibling region's allow-list is preserved, exactly
 	 * like a per-model tick.
 	 */
-	const setRegionAll = (0, react.useCallback)((regionId: string, allOn: boolean) => {
+	const setRegionAll = react.useCallback((regionId: string, allOn: boolean) => {
 		controller.setRegionAll(regionId, allOn);
 	}, [controller]);
 	/**
@@ -468,23 +444,23 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	 * values that actually persisted. The banner text is derived from the
 	 * controller's `lastSave` in the JSX, not set here.
 	 */
-	const save = (0, react.useCallback)(() => {
+	const save = react.useCallback(() => {
 		if (settingsScope === undefined) return Promise.resolve();
 		return controller.save(persistViaScope(settingsScope));
 	}, [controller, settingsScope]);
-	const discard = (0, react.useCallback)(() => {
+	const discard = react.useCallback(() => {
 		controller.discard();
 	}, [controller]);
 	// View-only setters. The name filter narrows the VIEW, never the saved
 	// document, and the selected region is a rendering concern too — so both
 	// are controller state but neither feeds `dirty` or `save()`.
-	const setQuery = (0, react.useCallback)((value: string) => {
+	const setQuery = react.useCallback((value: string) => {
 		controller.setQuery(value);
 	}, [controller]);
-	const setActiveRegion = (0, react.useCallback)((regionId: string) => {
+	const setActiveRegion = react.useCallback((regionId: string) => {
 		controller.setActiveRegion(regionId);
 	}, [controller]);
-	const setMaxWindow = (0, react.useCallback)((on: boolean) => {
+	const setMaxWindow = react.useCallback((on: boolean) => {
 		controller.setMaxWindow(on);
 	}, [controller]);
 	// The derived roster view (the active region's models, the filtered
@@ -501,6 +477,17 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 	const maxWindow = snap.maxWindow;
 	const enabledIds = snap.enabledIds;
 	const activeRegion = snap.activeRegion;
+	// The off-peak footnote below the roster reads the promotion block of the
+	// first model that carries one (the window its discount hours imply), rather
+	// than re-running the `find` four times at the render site. The predicate
+	// rejects BOTH `undefined` and `null`: a row's `promotion` is typed
+	// `CardPromotion | null | undefined`, and a `null` block is as unusable as
+	// an absent one — the old `!== undefined` gate let a `null` promotion
+	// through and printed "undefined–undefined" into the window slot. The JSX
+	// test below is `!= null` (loose) for the same reason: the `find`
+	// predicate's narrowing does not flow into the `.promotion` type, so the
+	// read site has to exclude both absent and `null` itself.
+	const offPeakWindow = regionModels.find((model) => model.promotion !== undefined && model.promotion !== null)?.promotion;
 	return (
 		<li
 			className={`dsm-plugin-card${open ? " dsm-plugin-card-open" : ""}`}
@@ -741,16 +728,13 @@ export function QoderPluginCard({ t, settingsScope, view }: QoderPluginCardProps
 						    the off-peak window belongs to the rates shown on the rows
 						    above, and the image hint explains the per-model selects on
 						    those same rows. */}
-						{regionModels.some((model) => model.promotion !== undefined) ? (
+						{offPeakWindow != null ? (
 							<p className="dsm-qoder-hint">
 								{t("row.offPeakHint", {
-									window: `${regionModels.find((model) => model.promotion !== undefined)?.promotion?.windowStart}–${
-										regionModels.find((model) => model.promotion !== undefined)?.promotion?.windowEnd
-									}`,
+									window: `${offPeakWindow.windowStart}–${offPeakWindow.windowEnd}`,
 									zone:
-										typeof regionModels.find((model) => model.promotion !== undefined)?.promotion?.timezone ===
-										"string"
-											? (regionModels.find((model) => model.promotion !== undefined)?.promotion?.timezone as string)
+										typeof offPeakWindow.timezone === "string"
+											? offPeakWindow.timezone
 											: "Asia/Shanghai",
 								})}
 							</p>

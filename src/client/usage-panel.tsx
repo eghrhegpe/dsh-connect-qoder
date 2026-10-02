@@ -14,7 +14,8 @@
  * the same order — only the module boundary moved.
  */
 import * as react from "react"
-import type { CardUsageRegion, CardAccountEntry, TranslateFn } from "./card-model.ts"
+import type { CardUsageRegion, TranslateFn } from "./card-model.ts"
+import { describeThrown } from "./card-model.ts"
 import { QODER_USAGE_PATH, QODER_CHECKIN_PATH } from "./paths.ts"
 import { getJson, postJson } from "./http.ts"
 import { RegionUsage, CheckinCard } from "./card.tsx"
@@ -37,19 +38,19 @@ interface QoderUsagePanelProps {
 
 function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: QoderUsagePanelProps) {
 	const [regions, setRegions] = react.useState<CardUsageRegion[]>([]);
-	const [status, setStatus] = (0, react.useState)("loading");
-	const [notice, setNotice] = (0, react.useState)<string | undefined>(undefined);
-	const [busy, setBusy] = (0, react.useState)(false);
-	const [claimBusy, setClaimBusy] = (0, react.useState)(false);
+	const [status, setStatus] = react.useState("loading");
+	const [notice, setNotice] = react.useState<string | undefined>(undefined);
+	const [busy, setBusy] = react.useState(false);
+	const [claimBusy, setClaimBusy] = react.useState(false);
 	const [claimNotice, setClaimNotice] = react.useState<{ kind?: string; message?: string; amount?: number } | undefined>(undefined);
-	const mounted = (0, react.useRef)(true);
-	(0, react.useEffect)(() => {
+	const mounted = react.useRef(true);
+	react.useEffect(() => {
 		mounted.current = true;
 		return () => {
 			mounted.current = false;
 		};
 	}, []);
-	const load = (0, react.useCallback)(async (refresh: boolean) => {
+	const load = react.useCallback(async (refresh: boolean) => {
 		setBusy(true);
 		try {
 			const value = await getJson<{ regions?: unknown }>(`${QODER_USAGE_PATH}${refresh ? "?refresh=1" : ""}`);
@@ -60,7 +61,7 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 		} catch (error) {
 			if (!mounted.current) return;
 			setStatus("error");
-			setNotice(error instanceof Error ? error.message : String(error));
+			setNotice(describeThrown(error));
 		} finally {
 			if (mounted.current) setBusy(false);
 		}
@@ -70,7 +71,7 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 	// that carried its own campaign id could claim a round that closed
 	// yesterday. The usage re-read follows every claim because the Credits land
 	// in the add-on quota rendered a few lines above the button.
-	const claimCheckin = (0, react.useCallback)(async () => {
+	const claimCheckin = react.useCallback(async () => {
 		setClaimBusy(true);
 		setClaimNotice(void 0);
 		try {
@@ -85,20 +86,20 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 		} catch (error) {
 			if (mounted.current) setClaimNotice({
 				kind: "error",
-				message: error instanceof Error ? error.message : String(error),
+				message: describeThrown(error),
 			});
 		} finally {
 			if (mounted.current) setClaimBusy(false);
 		}
 	}, [activeRegion, load]);
-	(0, react.useEffect)(() => {
+	react.useEffect(() => {
 		void load(false);
 	}, [load]);
 	// The card's "the account just changed" signal: a re-read landed, so
 	// re-pull the quota for whatever the host can serve now. The mount
 	// effect already did the initial read, so a zero token must not
 	// force a second fetch.
-	(0, react.useEffect)(() => {
+	react.useEffect(() => {
 		if (refreshToken === 0) return;
 		void load(true);
 	}, [refreshToken, load]);
@@ -160,7 +161,4 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 	);
 }
 
-// Re-exported so `account-panel.tsx` and `card.tsx` never reach across to
-// an unrelated module for a type that belongs to the account surface.
-export type { CardAccountEntry }
 export { QoderUsagePanel }

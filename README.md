@@ -243,11 +243,11 @@ dsh plugin --profile web add <本仓库路径>
 | `src/client/controller.ts` | 卡片可编辑状态机（staged/saved 三字段、`dirty`、`save`、`discard` 与派生的模型视图）——无 React、无 DOM，可被 `node:test` 直接测 |
 | `src/client/copy.ts` | 卡片文案聚合入口（中/英），`index.ts` 与 `card.tsx` 只从这里取 |
 | `src/client/copy-row.ts` `copy-usage.ts` `copy-account.ts` | 按面板拆分的三段文案：模型行与错峰、用量与签到、账号与区域标签条 |
-| `src/client/card-model.ts` | 卡片的**浏览器无关决策层**：视图模型类型词汇 + 纯规则（`offPeakState` / `rateAt` / `windowLabelOf` / `refreshNoticeKey` / 格式化）。无 React、无 DOM、无 `fetch`，因此 Node 测试可直接 import 真规则，而非镜像副本（这是向 sensenova `snapshot.ts` 对齐的那一刀） |
-| `src/client/http.ts` | 卡片**唯一的 `fetch` 收口**：`getJson` / `postJson`，两台容器（用量 / 账号）都只通过这里读宿主路由（向 sensenova `http.ts` 看齐）；失败统一带宿主的 `error` 字段，避免「假 undefined 失败」 |
+| `src/client/card-model.ts` | 卡片的**浏览器无关决策层**：视图模型类型词汇 + 纯规则（`offPeakState` / `rateAt` / `windowLabelOf` / `refreshNoticeKey` / 格式化 / `describeThrown`——卡片所有 catch 块给用户看的失败文案都过它）。无 React、无 DOM、无 `fetch`，因此 Node 测试可直接 import 真规则，而非镜像副本（这是向 sensenova `snapshot.ts` 对齐的那一刀；`describeThrown` 也从 `card.tsx` 挪进来，拆掉装配层与两个容器之间的循环 import） |
+| `src/client/http.ts` | 卡片**唯一的 `fetch` 收口**：`getJson` / `postJson`，模型名册读与两台容器（用量 / 账号）共六道宿主路由 fetch 都只通过这里（向 sensenova `http.ts` 看齐）；GET 失败带 `HTTP {status}` 抛出、POST 失败带宿主的 `error` 字段，避免「假 undefined 失败」 |
 | `src/client/usage-panel.tsx` | 用量容器 `QoderUsagePanel`：自有额度读 + 每日签到领取两条 fetch，渲染 `RegionUsage` / `CheckinCard`（二者留在 `card.tsx` 作为无 hook 纯展示件） |
 | `src/client/account-panel.tsx` | 账号容器 `QoderAccountPanel`：区域条 + 选中区域登录卡，四道 fetch（读 / 重读 / 确认 / 开关写），开关写仍带完整 `enabledRegions` map |
-| `src/client/card.tsx` | 卡片的装配层 + 三个无 hook 纯展示件（`QoderPluginCard` / `RegionUsage` / `CheckinCard` / `QuotaBlock`）：`QoderPluginCard` 把 `QoderAccountPanel` / `QoderUsagePanel` 与模型列表拼起来，纯规则委托 `card-model.ts`、可编辑状态委托 `controller.ts` |
+| `src/client/card.tsx` | 卡片的装配层 `QoderPluginCard`（把 `QoderAccountPanel` / `QoderUsagePanel` 与模型列表拼起来，纯规则委托 `card-model.ts`、可编辑状态委托 `controller.ts`、名册读走 `http.ts`）+ 三个无 hook 纯展示件（`RegionUsage` / `CheckinCard` / `QuotaBlock`） |
 | `src/client/index.ts` | 注册入口（`apply` / `inject` / `name`） |
 | `src/client/react-shim.d.ts` | 最小 React 类型垫片（只管类型检查，不参与构建、不随包发布） |
 

@@ -16,12 +16,11 @@
  */
 import * as react from "react"
 import type { CardAccountEntry, TranslateFn, CheckboxEvent } from "./card-model.ts"
-import { withDate } from "./card-model.ts"
+import { withDate, describeThrown } from "./card-model.ts"
 import { QODER_ACCOUNT_PATH, QODER_ACCOUNT_RELOAD_PATH, QODER_ACCOUNT_CONFIRM_PATH } from "./paths.ts"
 import { getJson, postJson } from "./http.ts"
 import { writeSettingsField } from "./settings-write.ts"
 import type { SettingsScope } from "./settings-write.ts"
-import { describeThrown } from "./card.tsx"
 
 /** Props for {@link QoderAccountPanel}. */
 interface QoderAccountPanelProps {
@@ -34,8 +33,8 @@ interface QoderAccountPanelProps {
 
 function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qoder-cn", onRegionChange }: QoderAccountPanelProps) {
 	const [accounts, setAccounts] = react.useState<CardAccountEntry[]>([]);
-	const [status, setStatus] = (0, react.useState)("loading");
-	const [reloading, setReloading] = (0, react.useState)(false);
+	const [status, setStatus] = react.useState("loading");
+	const [reloading, setReloading] = react.useState(false);
 	// One confirm outcome per region: `{ kind: "confirmed" |
 	// "sign-in-expired" | "unavailable", detail? }`. Absent means
 	// "not asked since the last re-read".
@@ -47,16 +46,16 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 	// sibling region, and the scope-mirror fallback replaces a field
 	// it always holds in full.
 	const [enabledRegions, setEnabledRegions] = react.useState<Record<string, boolean>>({});
-	const [toggling, setToggling] = (0, react.useState)(false);
+	const [toggling, setToggling] = react.useState(false);
 	const [offerError, setOfferError] = react.useState<string | undefined>(undefined);
-	const mounted = (0, react.useRef)(true);
-	(0, react.useEffect)(() => {
+	const mounted = react.useRef(true);
+	react.useEffect(() => {
 		mounted.current = true;
 		return () => {
 			mounted.current = false;
 		};
 	}, []);
-	const load = (0, react.useCallback)(async () => {
+	const load = react.useCallback(async () => {
 		try {
 			const value = await getJson<{ regions?: unknown; enabledRegions?: unknown }>(QODER_ACCOUNT_PATH);
 			if (!mounted.current) return;
@@ -72,10 +71,10 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 			if (mounted.current) setStatus("error");
 		}
 	}, []);
-	(0, react.useEffect)(() => {
+	react.useEffect(() => {
 		void load();
 	}, [load]);
-	const reload = (0, react.useCallback)(async () => {
+	const reload = react.useCallback(async () => {
 		setReloading(true);
 		try {
 			// The re-read only adds: drop the cached credential, refresh the
@@ -104,14 +103,14 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 	// start any region that looks signed-out. Once per open is enough;
 	// selecting a still-bad tab (below) covers the "I just signed in
 	// while the card was open" case.
-	const autoReloaded = (0, react.useRef)(false);
-	(0, react.useEffect)(() => {
+	const autoReloaded = react.useRef(false);
+	react.useEffect(() => {
 		if (status !== "ready" || autoReloaded.current) return;
 		if (!accounts.some((entry) => entry.state !== "ok")) return;
 		autoReloaded.current = true;
 		void reload();
 	}, [status, accounts, reload]);
-	const confirm = (0, react.useCallback)(async (regionId) => {
+	const confirm = react.useCallback(async (regionId) => {
 		setConfirmBusy((current) => ({ ...current, [regionId]: true }));
 		setConfirmState((current) => {
 			const next = { ...current };
@@ -156,7 +155,7 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 	// the switch settles on the authoritative state rather than an
 	// optimistic guess; on failure the switch reverts and the reason
 	// is shown instead of a silent no-op.
-	const toggleRegion = (0, react.useCallback)(async (regionId, nextOn) => {
+	const toggleRegion = react.useCallback(async (regionId, nextOn) => {
 		setToggling(true);
 		setOfferError(undefined);
 		const next = { ...enabledRegions, [regionId]: nextOn };

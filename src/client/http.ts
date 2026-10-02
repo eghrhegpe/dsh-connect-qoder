@@ -1,10 +1,12 @@
 /**
  * The card's only `fetch` surface.
  *
- * Both card containers (`QoderUsagePanel`, `QoderAccountPanel`) read the host
- * routes through here, so the requests are in exactly one place. The host
- * routes serve the plugin's own `lib/`, so they are same-origin and answer
- * JSON; this wraps that contract once.
+ * Every host-route read the card performs — the two containers'
+ * (`QoderUsagePanel`, `QoderAccountPanel`) fetches and the model-roster read
+ * the assembly layer keeps in `card.tsx` — goes through here, so the request
+ * contract lives in exactly one place. The host routes serve the plugin's own
+ * `lib/`, so they are same-origin and answer JSON; this wraps that contract
+ * once.
  *
  * Every call sends `accept: application/json` and `credentials:
  * "same-origin"` — the routes are behind the loopback origin check in
@@ -15,19 +17,23 @@
  * status throws with the host's own `error` field when present, so the card's
  * catch blocks can show the real reason instead of a fabricated one (the
  * "undefined" failure message that issue 06 was about is what this prevents).
- * A body that will not parse is treated as an empty answer, never as a throw,
- * so a malformed-but-200 payload degrades to "no data" rather than "broken".
+ * A `POST` body that will not parse degrades to an empty answer (`undefined`),
+ * never a throw — a write that the host did not echo back is "no data". A
+ * `GET` that will not parse THROWS instead: the reads that use it (roster,
+ * accounts, quotas) have no "no data" state to fall back to, and a caller
+ * that asked for a fact must be told the fact did not arrive.
  */
 
 /** Read the host route at `path` and decode its JSON answer. */
-export async function getJson<T = unknown>(path: string): Promise<T> {
+export async function getJson<T = unknown>(path: string, options?: { signal?: AbortSignal }): Promise<T> {
 	const response = await fetch(path, {
 		headers: { accept: "application/json" },
 		credentials: "same-origin",
+		signal: options?.signal,
 	});
 	if (!response.ok) throw new Error(`HTTP ${response.status}`);
 	const value = (await response.json().catch((): undefined => undefined)) as T | undefined;
-	if (value === undefined) throw new Error(`HTTP ${response.status}`);
+	if (value === undefined) throw new Error(`unparseable JSON body (HTTP ${response.status})`);
 	return value as T;
 }
 

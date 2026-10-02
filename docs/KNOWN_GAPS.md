@@ -154,12 +154,17 @@ React 装配层，模块**无 React、无 DOM、无 fetch**——这正是向 `d
 风格的「装配层 + 小容器 + fetch 收口」三层——`card.tsx` 只留 `QoderPluginCard` 装配件与三个
 无 hook 纯展示件（`RegionUsage` / `CheckinCard` / `QuotaBlock`）；`QoderUsagePanel` 搬入
 `usage-panel.tsx`、`QoderAccountPanel` 搬入 `account-panel.tsx`，各自持有自己的 fetch 与
-effect；六道 `fetch` 全部收口到 `http.ts` 的 `getJson` / `postJson`（失败统一带宿主 `error`
-字段，避免「假 undefined 失败」）。拆分后行为零回退由两道**位置门禁**守：`test/card-position.test.js`
-对 `lib/client.js` 实渲染、断言卡片主体按「账号条 → 用量面板 → 模型列表」固定顺序自上而下（区域条
-是整段 body 的表头，顺序错即语义错）；`test/registration-consistency.test.js` 断言 README 目录表
-列出的 `src/client` 文件集合与磁盘**完全一致**（双向，既不漏列也不残留已删文件的行）。两道门禁都
-读真实产物/真实目录，不依赖手抄副本。
+effect；六道宿主路由 fetch（名册 / 账号读 / 账号重读 / 账号确认 / 用量读 / 签到领）全部收口到
+`http.ts` 的 `getJson` / `postJson`（失败统一带宿主 `error` 字段，避免「假 undefined 失败」；
+名册读原先是装配层里唯一一道裸 `fetch`，已并入 `getJson`，settings 的 `__save` 写属于
+`settings-write.ts` 的读回校验管线，不在此收口之列）。`describeThrown`（卡片 catch 块给用户看的
+失败文案窄化）随拆层从 `card.tsx` 挪进 `card-model.ts`：它本就不碰 React/DOM，而容器反向伸手进
+装配层取它会把 `card.tsx` ↔ `account-panel.tsx`、`card.tsx` ↔ `usage-panel.tsx` 两条循环 import
+闭环——现在容器只 import 浏览器无关的 `card-model.ts`，环解开。拆分后行为零回退由两道**位置门禁**
+守：`test/card-position.test.js` 对 `lib/client.js` 实渲染、断言卡片主体按「账号条 → 用量面板 → 模型
+列表」固定顺序自上而下（区域条是整段 body 的表头，顺序错即语义错）；`test/registration-consistency.test.js`
+断言 README 目录表列出的 `src/client` 文件集合与磁盘**完全一致**（双向，既不漏列也不残留已删文件的行）。
+两道门禁都读真实产物/真实目录，不依赖手抄副本。
 
 ---
 
