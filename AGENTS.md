@@ -111,6 +111,7 @@ npm run verify             # typecheck + 两道 audit + build + test + host/bund
 | 了解已知差距与未做项 | `docs/KNOWN_GAPS.md` |
 | 对 Qoder 平台事实（计费系数、Credits、签到、免费模型） | `docs/docs-qoder-cn/`（上游官方文档转换件） |
 | 探测宿主版本/协议漂移 | `docs/howto/host-version-probe.md`、`test/protocol-drift.test.js` |
+| 排查报错去哪看（Host 进程 vs Client 控制台；本插件非"永远 200"） | `docs/howto/plugin-error-where-to-look.md` |
 | 动设置激活路径 / 宿主代际问题前 | `docs/history/0.5.0-abi-cutover.md`（0.5.0 砍 0.1.x ABI 的取证、决定与"为什么下限是 `>=0.2.0-rc.0`"） |
 | client 恢复源码的来龙去脉与旧补丁 | `docs/history/`（含 `restore-client-src.mjs`） |
 | 上架提交材料 | `docs/submission/`、根目录 `README.md` / `CHANGELOG.md` |
