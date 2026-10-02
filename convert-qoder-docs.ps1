@@ -8,7 +8,7 @@
 #  6) 逐行 strip 标题(#)和列表项(-)的前导空格（代码围栏内除外）
 #  7) 压缩多余空行
 
-$srcDir = "C:\Users\zhujieling11\.dsh\fork\dsh-connect-qoder\docs\docs-qoder-cn"
+$srcDir = Join-Path $PSScriptRoot 'docs\docs-qoder-cn'
 
 function Convert-Block([string]$inner, [string]$label) {
     # 内部按行，去每行前导空格，再以 "> " 前缀拼成引用块

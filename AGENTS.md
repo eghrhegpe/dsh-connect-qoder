@@ -23,7 +23,7 @@ DSH 插件：把本机已登录的 **Qoder**（国内版 `qoder-cn` / 国际版 
 
 ## 工作目录与装载方式（先搞清你改的东西怎么生效）
 
-- 本目录 `~/.dsh/fork/dsh-connect-qoder` 是**开发副本**，web 端以符号链接载入：
+- 本目录 `~/.dsh/plugins/dsh-connect-qoder` 是**开发副本**，web 端以符号链接载入：
   `~/.dsh/profiles/web/node_modules/@eghrhegpe/dsh-connect-qoder` → 本目录。
 - 浏览器与 Host 实际执行的是 **`lib/` 产物，不是 `src/`**。只改 `src/` 不 rebuild，界面不会变。
 - 桌面端走安装副本；以 `~/.dsh/profiles/{web,desktop}/node_modules` 里的实际 junction 为准。
