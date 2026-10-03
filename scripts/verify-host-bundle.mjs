@@ -10,8 +10,9 @@
  * impossible. Now `src/host/*.ts` is the source of truth and `lib/index.js` is
  * a build artifact, which introduces a failure mode the old layout could not
  * have — edit the source, forget to rebuild, and the deployed plugin runs last
- * week's code with a version number that says otherwise. `lib/` is git-ignored,
- * so nothing else in the repository would notice.
+ * week's code with a version number that says otherwise. `lib/` is versioned
+ * (docs/issues/19), so a fresh build and the committed bytes are compared
+ * directly rather than leaving the check to git's ignore rules.
  *
  * WHAT IT CHECKS
  *

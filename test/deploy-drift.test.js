@@ -21,7 +21,7 @@ import { MARKERS, compareInstall, hashFile, installNamesFor, installsIn, profile
 /**
  * The marker files, in the shape MARKERS describes.
  *
- * `lib/` is a pure build artifact and holds exactly two files now: the client
+ * `lib/` is a build artifact and holds exactly two files now: the client
  * card, and the single host bundle that every `src/host/*.ts` module is
  * compiled into — so the account-state marker and the account-route marker
  * both live inside `INDEX`, exactly as they do in the real bundle.

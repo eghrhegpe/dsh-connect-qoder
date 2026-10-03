@@ -3,9 +3,11 @@
  * Build configuration — the mainstream layout: source in `src/`, runtime in
  * `lib/`, nothing hand-edited in `lib/`.
  *
- * `src/` holds ALL sources (host + client); `lib/` is a pure build artifact,
- * git-ignored, and fully rebuildable from `src/` via `npm run build` (the
- * `prepack` hook runs it, so a published tarball still carries the artifacts).
+ * `src/` holds ALL sources (host + client); `lib/` is a versioned build
+ * artifact — rebuildable from `src/` via `npm run build` (the `prepack` hook
+ * runs it, so a published tarball still carries the artifacts), and committed
+ * alongside the sources so a `github:` source install is usable out of the box
+ * (docs/issues/19). A stale artifact is now caught by CI, not by git.
  *
  * ONE entry here:
  *

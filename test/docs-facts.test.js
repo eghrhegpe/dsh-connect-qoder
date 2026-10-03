@@ -39,8 +39,11 @@ const LIVE_FILES = [
   'README.md',
   'package.json',
   'docs/KNOWN_GAPS.md',
-  // `lib/` is a pure build artifact (git-ignored); the live host sources are
-  // `src/host/*.ts`, so the doc-fact guard reads those instead.
+  // `lib/` is a versioned build artifact, not a live source; the live host
+  // sources are `src/host/*.ts`, so the doc-fact guard reads those instead.
+  // (It is still worth guarding: the `git-ignored` wording the four files below
+  // used to carry is now factually wrong, and CI's freshness gate does not read
+  // prose.)
   ...readdirSync(join(root, 'src', 'host')).map((f) => `src/host/${f}`),
   ...readdirSync(join(root, 'src', 'client')).map((f) => `src/client/${f}`),
   ...readdirSync(join(root, 'scripts')).map((f) => `scripts/${f}`),
@@ -64,6 +67,10 @@ const FOSSILS = [
   [/由 5 个 从不提交的 TypeScript|从不提交的 TypeScript/, 'the client sources are committed'],
   [/根治仍取决于.*入库/, 'src/client was restored and committed (121d1a3)'],
   [/价值最高的一条待办/, 'that 待办 is done; do not re-file it as open'],
+  [
+    /`?lib\/`?[^.\n]{0,40}?git-ignored|is git-ignored|lib\/ is a pure build artifact/i,
+    '`lib/` is a VERSIONED build artifact since docs/issues/19: committing it is what makes a `github:` source install work, and CI (`.github/workflows/test.yml`) diffs a fresh build against the committed bytes. "git-ignored" describes the layout that was reverted.',
+  ],
 ]
 
 /**

@@ -20,7 +20,7 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [04-empty-catalog-freeze.md](04-empty-catalog-freeze.md) | ~~P0~~ **已修** | 刷新成功但 0 模型时目录冻结 |
 | [05-refreshedat-not-truthful.md](05-refreshedat-not-truthful.md) | ~~P0~~ **已修** | "已更新（时间）"在刷新失败时照显 |
 | [06-save-route-and-false-saved.md](06-save-route-and-false-saved.md) | ~~P0~~ **已修** | 假"已保存" + 不可达的 503 → `__save` 只 gate `webServer`，503 可达，回退仅限 legacy 404（`save-route-wiring.test.js` 文本守门） |
-| [07-credential-read-blocks-event-loop.md](07-credential-read-blocks-event-loop.md) | ~~P1~~ **已修**（异步化未做，见文） | 账号路由同步起 PowerShell（上限 30 s） |
+| [07-credential-read-blocks-event-loop.md](07-credential-read-blocks-event-loop.md) | ~~P1~~ **已修**（异步化已做：`runUnwrap` + `execFile`，29 ms vs 490 ms 实测） | 账号路由同步起 PowerShell（上限 30 s） |
 | [08-keycache-staleness.md](08-keycache-staleness.md) | ~~P1~~ **已修** | `keyCache` 无失效路径 → 重装后永久 needs-app |
 | [09-card-mirrors-host-logic.md](09-card-mirrors-host-logic.md) | ~~P1~~ **已修**（错峰为必要重复，已有产物级门禁） | 卡片自算错峰价/窗口标签，与宿主分歧 |
 | [10-protocol-drift-probe.md](10-protocol-drift-probe.md) | ~~P1~~ **已修**（分诊落地；6 小时周期探测仍未做） | 上游协议漂移与"没登录"不可区分 |
@@ -30,6 +30,6 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [14-namespace-convergence.md](14-namespace-convergence.md) | ~~P2~~ **部分** | 设置命名空间四套说法 → 已收敛为两套（`resolveNamespace` 与 `settingsNamespaceOf` 共享精确候选对，`__save` 候选去重）；跨 bundle 共享的完全体受双 bundle 边界限制，登记在 ADR |
 | [15-delivery-docs-curation.md](15-delivery-docs-curation.md) | P3 | 交付漂移、文档与事实不符、默认不策展 |
 | [16-silent-failure-policy.md](16-silent-failure-policy.md) | P2 | 门禁：新代码不得再新增静默失败分支 |
-| [17-client-source-restore.md](17-client-source-restore.md) | P1 | `src/client` 已机械还原（内容等价）；字节一致经实测不可达，产物去留待拍板 |
+| [17-client-source-restore.md](17-client-source-restore.md) | ~~P1~~ **已修**（产物去留已由 19 拍板：`lib/` 入库 + CI 新鲜度门禁） | `src/client` 已机械还原（内容等价）；字节一致经实测不可达——这不是未决项，19 已替它决策 |
 | [18-account-expired-link-no-context.md](18-account-expired-link-no-context.md) | ~~P2~~ **已修** | 账号失效提示裸链接跳官网无说明 → 已改为「先提示客户端重登/下载 + 带说明的下载链接」（issue 文件即验收基线） |
 | [19-lib-committed-github-install.md](19-lib-committed-github-install.md) | **P2 已决策** | `github:` 源安装缺 `lib/` 静默失效 → `lib/` 改回受版本管理 + CI 新鲜度门禁（pnpm 11 allowBuilds 审批流证据链） |

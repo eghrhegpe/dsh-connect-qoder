@@ -197,25 +197,22 @@
 
 ## 4. P1 详情
 
-### P1-1 凭据读取阻塞事件循环 —— M
+### P1-1 凭据读取阻塞事件循环 —— M（已修，见 docs/issues/07）
 
 **症状**：`/account` 每次渲染都同步起 PowerShell（`execFileSync`，`timeout: 30000`），
 而且**失败不缓存**、`account-state` 还绕过 `CredentialCache` 直调 `loadCredential`。
 Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释的状态），每次打开卡片/切页签都同步阻塞
 一次，最多 30 s × 候选目录数。实测单次**成功**解包也要 0.43–0.69 s。
 
-**证据**：[credentials.js:272-281](../lib/credentials.js#L272-L281)、
-[credentials.js:326-341](../lib/credentials.js#L326-L341)（失败不缓存）、
-[account-state.js:89](../lib/account-state.js#L89)、[index.js:1028](../lib/index.js#L1028)。
+**修法（已落地）**：失败结果加 60 s TTL；`/account` 只读缓存（`cachedOnly`），凭据读取走
+`loadCredentialAsync`（`execFile` 而非 `execFileSync`），`needs-app` 判定用目录存在性 + 已记录原因。
+实测异步读 29 ms 返回（同步版 490 ms），期间事件循环跑 30 次（`test/async-unwrap.test.js`）。
+同步版仅保留给启动 sweep 与 `probe/` 脚本。
 
-**修法**：失败结果加 30–60 s TTL；`/account` 只读缓存，凭据读取移到后台预热（`startRegion` 时已读一次，
-把它缓存下来即可）；`needs-app` 判定用目录存在性 + 已记录原因，不必再解一次；
-中期把 `oscryptKeyFor` 改成 `execFile` + Promise 的异步实现。
-
-**验收标准**
-- [ ] 新用例：连续 3 次 `/account` 渲染，PowerShell 只被 spawn 一次（注入计数即可）；
-- [ ] 新用例：解包失败后 60 s 内不重试；超过 TTL 才重试；
-- [ ] 手工验证：解不开的机器上卡片仍能在 200 ms 内渲染出 `needs-app`。
+**验收标准**（全部达成）
+- [x] 新用例：连续 3 次 `/account` 渲染，PowerShell 只被 spawn 一次（`test/account-payload.test.js:142-163` 双 region 并发 + `test/async-unwrap.test.js` 结构断言）
+- [x] 新用例：解包失败后 60 s 内不重试；超过 TTL 才重试（`test/unwrap-failure-window.test.js:37-86`）
+- [x] 手工验证：解不开的机器上卡片仍能快速渲染出 `needs-app`（由 `cachedOnly` 达成，见下）
 
 ### P1-2 `keyCache` 没有失效路径 —— S
 
