@@ -29,7 +29,7 @@
  */
 import { test, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadCardBundle, renderCards } from './helpers/render-card.js'
+import { loadCardBundle, renderCards, withFrozenClock } from './helpers/render-card.js'
 
 /** The most recently mounted card, so `afterEach` can release its timers. */
 let mountedRoot = null
@@ -160,28 +160,41 @@ test('the region strip sits ABOVE the account card, not inside it', async () => 
 // visible text must be stable (no seconds), and the exact count must still be
 // one hover away — dropping it entirely would lose information.
 test('a live off-peak promotion names the window boundary, with the countdown in its tooltip', async () => {
-  const { container } = await mount({
-    models: [
-      model({
-        id: 'm1',
-        promotion: {
-          active: true,
-          windowStart: '22:00',
-          windowEnd: '08:00',
-          timezone: 'Asia/Shanghai',
-        },
-      }),
-    ],
+  // The window below (22:00–08:00 Asia/Shanghai) is only open at night, so
+  // this test used to pass or fail on the wall clock of the machine running
+  // it — red every morning, green at night, with no code changed. The clock
+  // is frozen for the mount and the assertions (see
+  // `test/helpers/render-card.js` `withFrozenClock`), and the root is released
+  // BEFORE the clock is restored, so the per-second interval never ticks
+  // against a clock that just flipped out-of-window.
+  await withFrozenClock(async () => {
+    const handle = await mount({
+      models: [
+        model({
+          id: 'm1',
+          promotion: {
+            active: true,
+            windowStart: '22:00',
+            windowEnd: '08:00',
+            timezone: 'Asia/Shanghai',
+          },
+        }),
+      ],
+    })
+    try {
+      const badge = handle.container.querySelector('.dsm-qoder-badge-offer')
+      assert.ok(badge !== null, 'a live off-peak window must render the discount badge')
+      const badgeText = badge.textContent ?? ''
+      assert.ok(/至\s*08:00/.test(badgeText), `the badge must name the window end, got: ${badgeText}`)
+      assert.equal(/\d{2}:\d{2}:\d{2}/.test(badgeText), false, 'the badge must not tick — no seconds on screen')
+      assert.ok(
+        /\d{2}:\d{2}:\d{2}/.test(badge.getAttribute('title') ?? ''),
+        'the precise countdown must still be reachable in the tooltip',
+      )
+    } finally {
+      handle.unmount()
+    }
   })
-  const badge = container.querySelector('.dsm-qoder-badge-offer')
-  assert.ok(badge !== null, 'a live off-peak window must render the discount badge')
-  const text = badge.textContent ?? ''
-  assert.ok(/至\s*08:00/.test(text), `the badge must name the window end, got: ${text}`)
-  assert.equal(/\d{2}:\d{2}:\d{2}/.test(text), false, 'the badge must not tick — no seconds on screen')
-  assert.ok(
-    /\d{2}:\d{2}:\d{2}/.test(badge.getAttribute('title') ?? ''),
-    'the precise countdown must still be reachable in the tooltip',
-  )
 })
 
 test('a promotion Qoder has switched off never shows the discount', async () => {

@@ -314,6 +314,10 @@ effect；六道宿主路由 fetch（名册 / 账号读 / 账号重读 / 账号�
   后 `NaN` 会取 `%CurrentDateTime%`，即引擎内部槽，任何 `Date` 覆盖都够不着；且卡片用的
   是 `formatToParts` 而非 `format`，只改后者等于没改（第一次尝试就是这样白跑的）。
   现在连跑 15 次全绿。
+  同一类脆弱性也已堵在 jsdom 端：`test/card-dom.test.js` 的「live off-peak」用例此前直接
+  读真实墙钟（22:00–08:00 窗口，白天跑必红、夜里绿，代码没动过），现已复用同一手法——`test/helpers/render-card.js`
+  的 `withFrozenClock` 冻结 Node realm 的 `Date` 与 `Intl.DateTimeFormat`（bundle 在
+  `new Function` 里跑，读的是 Node 全局而非 jsdom window 的），该用例在任何时刻都绿。
 
 ---
 

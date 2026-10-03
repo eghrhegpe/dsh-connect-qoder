@@ -107,6 +107,78 @@ async function installDom() {
   return { dom, window: w }
 }
 
+/**
+ * The instant every clock read lands on while the clock is frozen: 23:30 in
+ * Asia/Shanghai — inside the 22:00–08:00 off-peak window the card's live-window
+ * badge tests use, so those tests are deterministic at any hour of day.
+ */
+const FROZEN_NOW = Date.parse('2026-09-26T23:30:30+08:00')
+
+/** The instant a formatter should use for one argument. */
+function frozenInstantOf(date) {
+  if (date === undefined || date === null) return FROZEN_NOW
+  return date
+}
+
+/**
+ * Run `task` with the clock frozen, in the realm the shipped bundle reads it.
+ *
+ * The bundle executes inside a `new Function` in the NODE realm, so the card's
+ * `new Date()` / `Intl.DateTimeFormat` calls resolve to Node's globals, not the
+ * jsdom window's. Both are patched, for the reason already proven in
+ * `scripts/verify-bundle-behaviour.mjs` (see its header and
+ * docs/KNOWN_GAPS.md §7): the card reads the clock through
+ * `Intl.DateTimeFormat.formatToParts`, and per ECMA-402 a non-Date argument is
+ * converted via `ToNumber` — `NaN` for `undefined` — landing on
+ * `%CurrentDateTime%`, an engine-internal slot no `Date` override can reach.
+ * So `Intl.DateTimeFormat` is replaced as well.
+ *
+ * Only the no-argument `new Date()` and the no-instant format calls are
+ * rewritten; an explicit argument (including a real `Date`) is the caller's
+ * intent and passes through — this patches the clock, not the card's parsing.
+ *
+ * Each test FILE runs in its own process under `node --test`, and the tests
+ * within a file run sequentially, so the global patch never leaks into another
+ * file's assertions.
+ */
+async function withFrozenClock(task) {
+  const RealDate = globalThis.Date
+  const RealIntl = globalThis.Intl
+  class FrozenDate extends RealDate {
+    constructor(...args) {
+      // `new Date()` with no argument is the only form that reads the clock; an
+      // explicit argument is the caller's real intent and must not be rewritten.
+      if (args.length === 0) super(FROZEN_NOW)
+      else super(...args)
+    }
+    static now() {
+      return FROZEN_NOW
+    }
+  }
+  globalThis.Date = FrozenDate
+  // A subclass keeps the real implementation for every case except the one that
+  // matters here: a formatter asked to format a non-Date is given the frozen
+  // instant instead of `%CurrentDateTime%`. Both entry points are covered
+  // because the card uses `formatToParts`, not `format`.
+  class FrozenDateTimeFormat extends RealIntl.DateTimeFormat {
+    format(date) {
+      return super.format(frozenInstantOf(date))
+    }
+    formatToParts(date) {
+      return super.formatToParts(frozenInstantOf(date))
+    }
+  }
+  const FrozenIntl = Object.create(RealIntl)
+  FrozenIntl.DateTimeFormat = FrozenDateTimeFormat
+  globalThis.Intl = FrozenIntl
+  try {
+    return await task()
+  } finally {
+    globalThis.Date = RealDate
+    globalThis.Intl = RealIntl
+  }
+}
+
 /** A `t` that interpolates `{key}` against the table the card registered. */
 function makeTranslate(table) {
   return (key, params) => {
@@ -254,4 +326,4 @@ async function renderCards({ card, registered, scope, window: w, props = {}, loc
   }
 }
 
-export { loadCardBundle, renderCards, makeTranslate, HOST_NAMESPACE }
+export { loadCardBundle, renderCards, makeTranslate, withFrozenClock, HOST_NAMESPACE }
