@@ -1,7 +1,25 @@
 # AGENTS.md — AI 会话纪律
 
 给 AI 协作会话的第一站。不重复 `docs/` 的内容，只钉死：**去哪参考、怎么验证、什么红线**。
-每次会话先读本文件；细节按下面的文档地图跳。
+每次会话先读本文件；想最快上手，先跳到「探索顺序」按任务挑一条路，再回来读下面的纪律。
+
+## 探索顺序（按任务挑一条路，别从头读到尾）
+
+AGENTS.md 是**纪律文件**不是**教程**：它钉死红线、验证、导航，不教一步步做。按你当下的任务，
+照下面一条路走最快；每条都给「先读 → 再读 → 动手前确认」三段式。
+
+| 你的任务 | 第一站（先读） | 第二站（再读） | 动手前确认 |
+|---|---|---|---|
+| 改 host 逻辑 / 加路由 | 本文件「三条事实」「红线」 | `docs/issues/README.md` 索引找对应 NN | `npm run build:host` + 补/读对应 `test/*-test.js` |
+| 改 client 卡片 / 构建 | 本文件红线 3、构建注释 | `scripts/build-client.mjs` 头部 + `docs/issues/03`、`17` | `npm run build:client` 闸门不得 bypass |
+| 排查"为什么没生效 / 报错" | `docs/howto/plugin-error-where-to-look.md` | `docs/howto/host-version-probe.md` | 先分清 Host 进程 vs Client 控制台 |
+| 动凭据 / 临时目录 / OSCrypt | 本文件红线 2 | `docs/issues/01`、`02`（越界与残留两类事故） | 改完必带越界 + 残留两类测试 |
+| 动设置激活 / 双 region 写入 | 本文件三条事实 1、红线 4 | `docs/history/0.5.0-abi-cutover.md` | 写设置带完整 map，不丢兄弟区 |
+| 发版 / 上架 | `RELEASING.md`（唯一权威） | `docs/submission/` + 根 `README`/`CHANGELOG` | 状态判定表 + 人机 handoff 契约 |
+| 通览事故史 / 接手维护 | `docs/PLAN.md`（P0–P3 总览） | `docs/KNOWN_GAPS.md`（当前缺口） | module-mocks 在 Node 24.16 实测不可行，别再排那坑（#1/#2 已证） |
+
+下面两张大表（「去哪参考」「去哪查」）是**第二层字典**——路走了一半、要定位某个具体文件或细节
+时才去翻，不必一开始通读。
 
 ## 项目一句话
 
