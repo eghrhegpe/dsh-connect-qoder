@@ -121,6 +121,18 @@ confirm 读取停摆区凭据的那条接缝同理——它原先调的是**同�
 套件从不真解包。要覆盖它得把 `appDataRootFor` 的 env 透传成第三个接缝，代价大于收益；
 `handlers.ts` 函数覆盖因此是 93.33% 而非 100%（整体 86.11%，远高于地板 66）。
 
+**provider 注册的回滚判定**（`src/host/publish-regions.ts`）：发布区域集给宿主的两个调用
+（`registerAdapter` / `registerConfigurableProviders`）与失败时的三层回滚原本是 `activate()`
+里的内联闭包，包着十一个可变绑定，所以它此前**没有任何可执行测试**——只有
+`test/account-route-wiring.test.js` 一条正则确认零区域早退还在。回滚恰恰是出事的地方：
+重载会重新发布整个区域集，而新注册开始时旧的一对**已经释放**，失败不回滚就等于插件
+悄悄什么都不再提供、且用户看不到任何错误。现已按 `handlers.ts` 同样的手法抽出，两处宿主
+调用改为注入，`test/publish-regions.test.js` 13 例钉住每个终态（干净发布 / 失败后装回
+旧的一对 / 无旧的对则如实留空 / 设置行失败时释放半注册的 adapter / 回滚中途再次失败时
+释放它自己刚装上的那个 / 宿主不返回 release 时不当成故障 / 旧 release 抛错仍继续并
+上报）。抽取过程本身查出**两个真 bug**：半注册的 adapter 会残留无人能释放；回滚中途
+失败会丢弃刚注册成功的 adapter 的句柄。两者都已修并各有变异验证（去掉即红）。
+
 **剩下的风险**：`ctx.inject(['webServer'])` 里的路由**注册**接线本身；
 `ctx.effect` 的 dispose 时序（定时器与在途 `refreshCatalog` 的竞态）；
 `registerAdapter` 失败时的回滚是否真的释放了 shim 端口。

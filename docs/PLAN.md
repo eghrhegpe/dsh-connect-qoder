@@ -284,11 +284,17 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 改走「抽出 handler」这条路——七条卡片路由的 handler 本体抽进无 peer 依赖的
 `src/host/handlers.ts`，`index.ts` 每条路由只剩 `webServer.register` + deps 装配一行委托，
 `test/handlers.test.js` 以假 req/res **直接执行**每条 handler。`handlers.ts` 已进覆盖率分母。
-**仍余**：`adapter.ts`（顶层 import pi-ai）与 `index.ts` 的注册/dispose/回滚接线还没进分母。
+第二轮把 **provider 注册与回滚**也抽出来：`publishRegions` 原是 `activate()` 里的内联闭包，
+包着十一个可变绑定，回滚三层 catch **零可执行覆盖**（只有 `account-route-wiring.test.js`
+一条正则确认零区域早退还在）。现抽进无 peer 依赖的 `src/host/publish-regions.ts`，
+两处宿主注册调用改为注入，`test/publish-regions.test.js` 13 例钉住每个终态。
+**仍余**：`adapter.ts`（顶层 import pi-ai，且该包 5 个 peer 实测全 `ERR_MODULE_NOT_FOUND`）
+与 `index.ts` 的路由注册/dispose 接线还没进分母。
 
 **验收标准**
 - [x] 至少 6 条路由有直接断言（method/鉴权/错误码）——`test/handlers.test.js` 覆盖全部 7 条，38 例；
-- [x] `handlers.ts` 进入覆盖率分母（行 100% / 函数 100%）；`lib/index.js`、`lib/adapter.js` **整体**尚未（余接线）；
+- [x] `handlers.ts` 进入覆盖率分母（行 100% / 函数 100%）；`publish-regions.ts` 亦已进分母
+      （回滚每个终态可执行断言）；`lib/index.js`、`lib/adapter.js` **整体**尚未（余路由注册/dispose 接线）；
 - [ ] 门槛数字重新标定后写回 `package.json` 与 KNOWN_GAPS——本轮 handlers 入分母后整体仍
       90.29/82.33/86.35，地板（68/82/66）**未动**，故此项留空（无需重标）。
 
@@ -309,20 +315,24 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 | [index.js:272-282](../lib/index.js#L272-L282) | 缺 Origin 即放行、Origin 只比主机名不比端口 | 至少文档写清，设置写路由可加 token |
 | [index.js:608-611](../lib/index.js#L608-L611) | 0 区域启动时整块 return → "没登录"文案不可达，用户看到 404 | 路由照常注册，回答"无区域可用" |
 
-### P2-3 生命周期尾巴 —— M（需先确认宿主语义）
+### P2-3 生命周期尾巴 —— M（已修，见 docs/issues/13）
 
 **症状**：（a）在途的 `doRefreshCatalog` 没有 AbortController，dispose 后仍会 `catalog.replace()`（落盘）
 并向已释放的 fiber `emit('llm/adapters-updated')`；（b）所有 `webServer.register()` 的返回值被丢弃，
 全程没有任何注销路径——若宿主不按 fiber 回收注册，dispose 后再 POST reload 会新起 shim + interval 而
 cleanup 已结束，**永久泄漏**。
 
-**修法**：给刷新加 AbortController 并在 cleanup 里 abort；先花 1 小时确认
-`@deepseek-ai/dsh-host-webserver` 的 `register` 是否随 fiber 注销（本机 asar 不可读，需从包源码确认），
-再决定是否需要显式注销。
+**修法（已落地）**：（a）每次抓取建 `AbortController`，dispose 时 `abort()`，且
+`isRefreshObsolete` 在**成功与失败两条路径**都查（只查一条是典型的"改一半"）；
+（b）宿主语义**无法确认**（`@deepseek-ai/dsh-host-webserver` 打在宿主 `app.asar` 里，
+插件 checkout 读不到，本机四条路都试过），故**不猜**：把 7 处 `register()` 的返回值
+收集进 `lifecycle.ts` 的 sink，**仅当它是可调用的**才在 dispose 时调用——随 fiber 回收的
+宿主会忽略这次多余调用，不回收的宿主则拿到了它原本缺失的注销。
 
-**验收标准**
-- [ ] 新用例：dispose 后调用在途刷新，`catalog.replace` 与 `emit` 都不再发生；
-- [ ] 宿主语义有明确结论并写进注释（"随 fiber 自动注销，故不需要显式注销"或反过来）。
+**验收标准**（全部达成）
+- [x] 新用例：dispose 后调用在途刷新，`catalog.replace` 与 `emit` 都不再发生
+- [x] 宿主语义有明确结论并写进注释（"无法确认，故两种宿主语义下都正确"——第三种答案，
+      比题面给的两种更诚实：它不对看不见的契约下断言，形状变了也只退化成今天的行为）
 
 ### P2-4 设置命名空间收敛 —— S（依赖 P0-3①）
 

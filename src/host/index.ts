@@ -52,6 +52,7 @@ import type { RouteRelease } from './lifecycle.ts'
 import type { CatalogEntry, CatalogOutcome, HostContext, PluginLogger, RefreshFailure, Region } from './domain.ts'
 import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
 import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
+import { publishRegions as publishRegionSet } from './publish-regions.ts'
 import { __dshQoderUmidState, exchangePat, fetchModels, fetchUsage } from './upstream.ts'
 import type { UsageSnapshot } from './upstream.ts'
 import { isProtocolShapeChangedError } from './errors.ts'
@@ -881,7 +882,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     declared: false,
   })
 
-  function publishRegions(): { ok: boolean; error?: unknown } {    const previousAdapter = adapter
+  function publishRegions(): { ok: boolean; error?: unknown } {
+    const previousAdapter = adapter
+    const previousReleases = { releaseAdapter, releaseDirectory }
+    // Captured before anything is released: these describe the pair that is
+    // about to be taken down, and they are the only record of it once its
+    // releases have run.
     const previousProviderIds = started.map(({ runtime }) => runtime.region.id)
     const previousDirectory = started.map(({ runtime }) => providerRowFor(runtime))
     // Nothing started: there is no adapter to publish, and `createQoderAdapter`
@@ -892,44 +898,32 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // non-empty set.
     if (started.length === 0) return { ok: true }
     adapter = buildAdapter()
-    releaseAdapter?.()
-    releaseDirectory?.()
-    try {
-      releaseAdapter = ctx.llm.registerAdapter(
-        started.map(({ runtime }) => runtime.region.id),
-        adapter.adapter,
-      )
-      releaseDirectory = ctx.llm.registerConfigurableProviders(
-        started.map(({ runtime }) => providerRowFor(runtime)),
-      )
-    } catch (error) {
-      // Release anything the failed registration managed to install.
-      releaseAdapter?.()
-      releaseDirectory?.()
-      // Restore the previous registration when there was one; a region that
-      // was serving before the reload must not be taken down by it.
-      if (previousAdapter !== undefined) {
-        try {
-          releaseAdapter = ctx.llm.registerAdapter(previousProviderIds, previousAdapter.adapter)
-          releaseDirectory = ctx.llm.registerConfigurableProviders(previousDirectory)
-          invalidateAdapter = previousAdapter.invalidate
-        } catch {
-          // The previous pair cannot be re-registered either: the host's
-          // registration service is broken across the board. Leave nothing
-          // registered rather than claiming a pair that does not exist.
-          releaseAdapter = undefined
-          releaseDirectory = undefined
-          invalidateAdapter = () => {}
-        }
-      } else {
-        releaseAdapter = undefined
-        releaseDirectory = undefined
-        invalidateAdapter = () => {}
-      }
-      return { ok: false, error }
-    }
-    invalidateAdapter = adapter.invalidate
-    return { ok: true }
+    const result = publishRegionSet(
+      {
+        providerIds: started.map(({ runtime }) => runtime.region.id),
+        adapter: adapter.adapter,
+        directory: started.map(({ runtime }) => providerRowFor(runtime)),
+        invalidate: adapter.invalidate,
+      },
+      previousAdapter === undefined
+        ? undefined
+        : {
+            providerIds: previousProviderIds,
+            adapter: previousAdapter.adapter,
+            directory: previousDirectory,
+            invalidate: previousAdapter.invalidate,
+          },
+      previousReleases,
+      {
+        registerAdapter: ctx.llm.registerAdapter,
+        registerConfigurableProviders: ctx.llm.registerConfigurableProviders,
+        onRollbackFailed: (error) => ctx.logger.error?.('dsh-connect-qoder: a release did not complete', error),
+      },
+    )
+    releaseAdapter = result.releaseAdapter
+    releaseDirectory = result.releaseDirectory
+    invalidateAdapter = result.invalidate
+    return { ok: result.ok, error: result.error }
   }
 
   /** Wire one runtime's invalidation to the current adapter pair. */
