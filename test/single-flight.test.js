@@ -112,3 +112,62 @@ test('coalescing does not swallow the second caller into a stale first run when 
   assert.equal(await task(), 2)
   assert.equal(await task(), 3)
 })
+
+test('reset lets the next call start a fresh run while the old one is still live', async () => {
+  // The invalidation shape `RegionRuntime.invalidateUsage` needs: a reading is
+  // in flight, an event (a claim) makes it worthless, and the caller that KNOWS
+  // that must be able to ask for a new one instead of being joined onto the
+  // worthless run.
+  const { runs, task } = deferredTask()
+  const doomed = task('before-claim')
+  assert.equal(runs.length, 1)
+
+  task.reset()
+  const fresh = task('after-claim')
+
+  assert.equal(runs.length, 2, 'reset must release the slot so a fresh run can start')
+  assert.deepEqual(runs[1].args, ['after-claim'], 'the fresh run must see the fresh arguments')
+
+  runs[0].resolve('stale-balance')
+  runs[1].resolve('claimed-balance')
+
+  // The abandoned run still answers the caller that was already waiting on it —
+  // `reset` releases the SLOT, it does not cancel the work or strand an awaiter.
+  assert.equal(await doomed, 'stale-balance')
+  assert.equal(await fresh, 'claimed-balance')
+})
+
+test('a run abandoned by reset does not evict the run that replaced it', async () => {
+  // The subtle half of `reset`. The abandoned run settles LATER, and its cleanup
+  // runs then; clearing the slot unconditionally at that moment would evict the
+  // newer run and reopen the coalescing window — the next caller would start a
+  // third run while the second is still live.
+  const { runs, task } = deferredTask()
+  const abandoned = task('old')
+  task.reset()
+  const replacement = task('new')
+  assert.equal(runs.length, 2)
+
+  // The abandoned one settles FIRST, which is the dangerous ordering: if its
+  // cleanup freed the slot, the call below would start run #3.
+  runs[0].resolve('old-value')
+  assert.equal(await abandoned, 'old-value')
+
+  const joined = task('joiner')
+  assert.equal(runs.length, 2, 'the replacement must still hold the slot')
+  assert.deepEqual(runs[1].args, ['new'], 'the joiner must join the replacement run')
+
+  runs[1].resolve('new-value')
+  assert.equal(await replacement, 'new-value')
+  assert.equal(await joined, 'new-value')
+})
+
+test('reset with nothing in flight is a no-op', async () => {
+  const { runs, task } = deferredTask()
+  task.reset()
+  const p = task('only')
+  assert.equal(runs.length, 1)
+  assert.deepEqual(runs[0].args, ['only'])
+  runs[0].resolve('done')
+  assert.equal(await p, 'done')
+})

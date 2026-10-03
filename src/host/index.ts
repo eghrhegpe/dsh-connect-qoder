@@ -35,7 +35,7 @@ import { CredentialCache } from './credential-cache.ts'
 import { FileThrottleStore } from './throttle-store.ts'
 import { settingsNamespaceOf } from './settings-save.ts'
 import type { SettingsService } from './settings-save.ts'
-import { createSingleFlight } from './single-flight.ts'
+import { createSingleFlight, type SingleFlight } from './single-flight.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   enabledIdsFor as resolveEnabledIds,
@@ -295,10 +295,20 @@ class RegionRuntime {
   usage: UsageSnapshot | undefined
   /** Epoch ms of the last usage reading. */
   usageAt: number
+  /**
+   * Bumped by {@link RegionRuntime.invalidateUsage}, and captured by a read
+   * before it awaits so a superseded answer can tell it is superseded.
+   *
+   * This is the half of invalidation the cache fields alone cannot express:
+   * clearing `usage`/`usageAt` says nothing to a fetch that is already in
+   * flight, and that fetch would otherwise write its pre-invalidation answer
+   * back with a fresh timestamp. See {@link RegionRuntime.doReadUsage}.
+   */
+  usageGeneration: number
   /** One live catalog run, shared across triggers. */
   catalogFlight: () => Promise<void>
   /** One live usage run, shared across triggers. */
-  usageFlight: (force?: boolean) => Promise<UsageSnapshot | undefined>
+  usageFlight: SingleFlight<[force?: boolean], UsageSnapshot | undefined>
   /** Whether this runtime has been disposed. */
   disposed: boolean
   /** The controller for the catalog fetch currently in flight. */
@@ -356,6 +366,7 @@ class RegionRuntime {
     /** Last usage reading and when it was taken; see {@link RegionRuntime.readUsage}. */
     this.usage = undefined
     this.usageAt = 0
+    this.usageGeneration = 0
     // The refresh triggers (timer, the card's ?refresh=1 route, the account
     // panel's re-read) do not know about each other; without coalescing, two
     // overlapping fetches each ended in `catalog.replace` and whichever landed
@@ -543,25 +554,52 @@ class RegionRuntime {
     if (!force && this.usage !== undefined && Date.now() - this.usageAt < USAGE_TTL_MS) {
       return this.usage
     }
+    // Captured BEFORE the first await. A claim that lands while this fetch is
+    // in flight calls `invalidateUsage`, and this answer then describes the
+    // balance from before that claim.
+    const generation = this.usageGeneration
     const credential = await this.resolveCredential()
     if (credential === undefined) return undefined
     const usage = await fetchUsage(this.region, credential)
-    this.usage = usage
-    this.usageAt = Date.now()
+    // The answer is handed back to whoever awaited this run either way — a
+    // caller that asked for a reading is owed one, and answering `undefined`
+    // would render as "usage unavailable" instead of the pre-claim number it
+    // actually is. What the check withholds is the CACHE WRITE: re-stamping a
+    // superseded reading with `Date.now()` is what made it look brand new and
+    // kept the pre-claim balance on screen for a further full TTL.
+    if (generation === this.usageGeneration) {
+      this.usage = usage
+      this.usageAt = Date.now()
+    }
     return usage
   }
 
   /**
-   * Drop the cached usage reading.
+   * Drop the cached usage reading, including any read already in flight.
    *
    * Claiming puts Credits into the very add-on quota this panel shows, so the
    * next render has to re-read rather than serve a number taken before the
    * claim. {@link RegionRuntime.doReadUsage}'s own freshness window would
    * otherwise keep the old balance on screen for its full TTL.
+   *
+   * Three things have to move together, and the first two alone were not
+   * enough:
+   *
+   * 1. The generation, so a fetch already in flight — one that started before
+   *    this claim and would otherwise write its pre-claim answer back with a
+   *    fresh timestamp — is refused the cache write (see `doReadUsage`).
+   * 2. The cache fields, so the next caller does not short-circuit on them.
+   * 3. The flight slot itself. Without this the claim handler's own
+   *    `readUsage(true)` simply JOINS the doomed pre-claim fetch and is handed
+   *    the old balance — coalescing wins over `force`, because a joiner always
+   *    receives the starting run's result. Releasing the slot is what makes
+   *    the forced re-read actually start a new fetch.
    */
   invalidateUsage() {
+    this.usageGeneration += 1
     this.usage = undefined
     this.usageAt = 0
+    this.usageFlight.reset()
   }
 }
 

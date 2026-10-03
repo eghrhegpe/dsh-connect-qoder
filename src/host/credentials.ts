@@ -739,7 +739,23 @@ function runUnwrap(
       // the synchronous function is mirrored by the two handlers below.
       return (spawned as PromiseLike<unknown>).then(
         () => {
-          const read = readUnwrappedKey(outFile)
+          // `readUnwrappedKey` is the one step in this chain that can THROW,
+          // and a bare throw here rejects the promise without ever reaching
+          // `settle` — leaving the child's `key.b64` in `%TEMP%` and recording
+          // no failure reason, so the card reports an ordinary "not signed in"
+          // (red lines 1 and 2; docs/issues/01, 02).
+          //
+          // The synchronous tail below cannot lose that way: its read sits
+          // inside the `try` at the top of this function, so the `catch` still
+          // runs `settle(undefined)`. This catch is what makes the two paths
+          // the "identical by construction" the header claims, rather than
+          // identical only when nothing throws.
+          let read: UnwrappedKeyRead
+          try {
+            read = readUnwrappedKey(outFile)
+          } catch (error) {
+            return finishUnwrap(appDir, settle(undefined), describeUnwrapError(error), identity)
+          }
           if (read.failure !== undefined) lastFailure = read.failure
           return finishUnwrap(appDir, settle(read.key), lastFailure, identity)
         },

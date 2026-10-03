@@ -138,6 +138,23 @@ confirm 读取停摆区凭据的那条接缝同理——它原先调的是**同�
 `registerAdapter` 失败时的回滚是否真的释放了 shim 端口。
 （handler 主体已不再是风险——见上。）
 
+**一处刚补上、但只有一半有测试的守卫**（2026-10）：`readUsage` 的用法读缓存此前会在
+**签到成功后回退**——`invalidateUsage()` 只清 `usage`/`usageAt`，对**已经在飞**的那次读
+毫无作用，而 `doReadUsage` 落定时无条件用 `Date.now()` 重新盖章，于是签到前的旧余额被
+盖成"刚读过"，钉住整个 `USAGE_TTL_MS`（20 秒）；叠加 `usageFlight` 会吞掉 joiner 的实参，
+签到后那次 `readUsage(true)` 直接 join 到这次注定作废的读上（`docs/PLAN.md` 里"领取后作废
+重读"的意图因此没有兑现）。现在拆成两半修：
+
+- **可测的一半**：`createSingleFlight` 增加 `reset()`（`src/host/single-flight.ts`），
+  放弃在飞槽位但不取消在飞的那次运行——它仍会把结果交给已经在等的调用方，只是不再占槽位。
+  四条断言在 `test/single-flight.test.js`（新起一次运行 / 被放弃的运行仍答复原等待者 /
+  **被放弃运行的清理不得驱逐替换它的新运行** / 空槽 reset 是 no-op）。
+- **不可测的一半**：`RegionRuntime.usageGeneration` 的换代守卫，以及
+  `invalidateUsage()` 里"换代 + 清缓存 + reset 槽位"三件事的顺序。它落在本条目登记的
+  不可测区域内（`index.ts` 顶层 import peer 包），**没有可执行断言**——行为验证靠上面那半
+  加一次人工推演，别把它当成已测。要真进分母，得先把这段抽成一个纯模块（与
+  `single-flight.ts`、`region-gate.ts` 同样的手法），那是下一步而不是现状。
+
 **要补上需要**：`index.ts` 仍因顶层 import 四个 `@deepseek-ai/*` peer 包不能被测试 import，
 所以**注册/dispose/回滚**这三块要真进分母，仍需 module-mocks 之外的新路子。
 **注意**：第 1 条里那条"module mocks 可行"的说法经实测是错的，不要按它排期。
