@@ -42,7 +42,10 @@ function patchRow(key) {
   const yml = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
   // Accept quoted or bare scalars; the scoped '@' needs quoting in YAML, the
   // bare historical form did not, and both spellings mean the same string.
-  const match = yml.match(new RegExp(`^\\s*${key}:\\s*"?([^"\\n]+)"?\\s*$`, 'm'))
+  // The `- ` is a YAML sequence marker and lands directly before the FIRST key
+  // of the row (`- id: llm-qoder`), so it has to be allowed for — a row whose
+  // first key is not `id` never reaches this at all, but `id` does.
+  const match = yml.match(new RegExp(`^\\s*(?:-\\s+)?${key}:\\s*"?([^"\\n]+)"?\\s*$`, 'm'))
   assert.ok(match, `cordis.patch.yml must declare the row ${key}`)
   return match[1].trim()
 }
@@ -98,6 +101,65 @@ test('the card slots are registered under the current identity', () => {
   assert.ok(
     cardRegistrationIdentities(built).includes(pkgName),
     'lib/client.js is stale against its source — run npm run build',
+  )
+})
+
+test('the served settings namespace is the Loader row id, in every place it is written', () => {
+  // The host derives the settings namespace from the Loader row's `id`
+  // (`settingsNamespaceOf` reads `ctx.fiber.entry.options.id`), so that id is
+  // what the host serves — and the client half cannot import the host module
+  // (two separate bundles). The value therefore has to be *written* twice, and
+  // the two copies can only be kept honest by comparing them.
+  //
+  // The failure this guards is silent in both directions. The models settings
+  // page resolves a provider's row by EXACT namespace match, so a client that
+  // registers copy or a card slot under a namespace the host does not serve
+  // makes the whole configuration surface vanish — no error, no log. That is
+  // what a stale `PROVIDER_NS` would cause after an id change, and it is the
+  // same shape as the 0.3.2 scoped rename that silently dropped the card.
+  const loaderId = patchRow('id')
+  const source = readFileSync(join(root, 'src', 'client', 'index.ts'), 'utf8')
+  const providerNs = source.match(/const PROVIDER_NS = "([^"]+)"/)
+  assert.ok(providerNs, 'src/client/index.ts must declare PROVIDER_NS')
+
+  assert.equal(
+    providerNs[1],
+    loaderId,
+    `the client looks up settings under "${providerNs[1]}" but the Loader row id is ` +
+      `"${loaderId}", so the host serves a namespace the client never matches — ` +
+      'resolveNamespace() falls back silently and the settings row disappears',
+  )
+
+  // Same check against the shipped artifact, so a stale bundle is caught by the
+  // test that already knows how to read it rather than only in review.
+  const built = readFileSync(join(root, 'lib', 'client.js'), 'utf8')
+  const builtNs = built.match(/PROVIDER_NS\s*=\s*"([^"]+)"/) ?? built.match(/const PROVIDER_NS = "([^"]+)"/)
+  assert.ok(builtNs, 'lib/client.js carries no readable PROVIDER_NS')
+  assert.equal(
+    builtNs[1],
+    loaderId,
+    'lib/client.js carries a stale PROVIDER_NS — run npm run build',
+  )
+})
+
+test('the host fallback namespace is the one the client falls back to', () => {
+  // The second copy of the pair: the host's `settingsNamespaceOf` fallback and
+  // the client's `resolveNamespace` fallback are the same string, and both are
+  // reached when a host mounts the plugin with no Loader entry. If they drift,
+  // a Loader-less host serves one namespace while the card registers under
+  // another — invisible, again.
+  const hostSource = readFileSync(join(root, 'src', 'host', 'index.ts'), 'utf8')
+  const hostFallback = hostSource.match(/export const QODER_SETTINGS_NS = '([^']+)'/)
+  assert.ok(hostFallback, 'src/host/index.ts must declare QODER_SETTINGS_NS')
+
+  const clientSource = readFileSync(join(root, 'src', 'client', 'index.ts'), 'utf8')
+  const clientFallback = clientSource.match(/const fallback = "([^"]+)"/)
+  assert.ok(clientFallback, 'src/client/index.ts must declare its resolveNamespace fallback')
+
+  assert.equal(
+    clientFallback[1],
+    hostFallback[1],
+    'the two fallbacks must be the same string: they are both reached on a host with no Loader entry',
   )
 })
 

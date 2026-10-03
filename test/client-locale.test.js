@@ -66,12 +66,21 @@ assert.ok(
  * serve. Everything the card touches at load time is stubbed; the card body is
  * never rendered, only `apply()` is run.
  */
-function loadClient({ servedNamespace }) {
+function loadClient({ servedNamespace, servedNamespaces }) {
   const registered = []
   const bound = []
   const describeCalls = []
+  const logged = []
 
-  const namespaceList = servedNamespace === null ? [] : [{ ns: servedNamespace }]
+  // `servedNamespaces` drives the multi-namespace case (a host serving rows that
+  // are none of ours); `servedNamespace` keeps the single-row cases terse, and
+  // `null` still means "the host serves nothing at all".
+  const namespaceList = servedNamespaces !== undefined
+    ? servedNamespaces.map((ns) => ({ ns }))
+    : servedNamespace === null ? [] : [{ ns: servedNamespace }]
+
+  const realError = console.error
+  console.error = (...args) => { logged.push(args.map(String).join(' ')) }
 
   const forms = {
     describe: () => {
@@ -139,10 +148,44 @@ function loadClient({ servedNamespace }) {
   const app = entry.factory(require)
 
   assert.equal(typeof app?.apply, 'function', 'the bundle exposes no apply()')
-  app.apply(ctx)
+  try {
+    app.apply(ctx)
+  } finally {
+    console.error = realError
+  }
 
-  return { registered, bound, describeCalls }
+  return { registered, bound, describeCalls, logged }
 }
+
+test('a host serving rows, none of them ours, is named instead of silently taken over', () => {
+  // The Loader-less case this fallback is written for is an EMPTY namespace
+  // list, and that one is genuinely fine. A host that serves other rows while
+  // ours is missing is a different thing: the id moved, and the card is about
+  // to register copy and a settings scope under a namespace nobody serves —
+  // so the settings row is simply absent, with nothing in the UI to explain it.
+  //
+  // That is a silent failure by construction, so it gets said out loud. The
+  // point of the message is that the fix is a one-value edit: cordis.patch.yml's
+  // row id, plus the two literals that were written against it.
+  const { registered, logged } = loadClient({
+    servedNamespaces: ['llm-somebody-else', 'dsh-another-plugin'],
+  })
+
+  assert.equal(registered.length, 1, 'it still registers — degraded, not broken')
+  assert.equal(registered[0].ns, 'dsh-connect-qoder', 'falling back to our own name is the safe move')
+  assert.ok(
+    logged.some((line) => /none of them is this plugin/.test(line) && /llm-somebody-else/.test(line)),
+    `the mismatch must be named in the console; got ${JSON.stringify(logged)}`,
+  )
+})
+
+test('a host that serves nothing is NOT reported as a mismatch', () => {
+  // The Loader-less case: an empty list is a normal host, not an anomaly, and
+  // logging on every such host would be noise that trains people to ignore it.
+  const { registered, logged } = loadClient({ servedNamespace: null })
+  assert.equal(registered[0].ns, 'dsh-connect-qoder')
+  assert.deepEqual(logged, [], 'an empty namespace list is expected, not worth reporting')
+})
 
 test('the copy is registered under the namespace the host actually serves', () => {
   const { registered, bound } = loadClient({ servedNamespace: HOST_NAMESPACE })

@@ -29,6 +29,24 @@
 
 ## 验收标准
 
-- [ ] 仓库里只剩一处命名空间推导，其余位置引用它
-- [ ] 新用例：候选之间不一致时能显式报错（而不是静默消失）
-- [ ] `docs/history/` 有 ADR 说明各套说法的由来
+- [ ] 仓库里只剩一处命名空间推导，其余位置引用它 —— **仍不可行**：`src/client/index.ts` 与
+      `src/host/index.ts` 打进两个 bundle，client 无法 import host 模块（ADR 已登记）。
+- [x] 新用例：候选之间不一致时能显式报错（而不是静默消失）—— 已在两处落地：
+      (1) `resolveNamespace` 发现宿主**在服务若干命名空间、其中没有本插件的**时打
+      `console.error` 并说明修复只需改 `cordis.patch.yml` 的行 id 与两处字面量；
+      宿主一个都不服务（无 Loader 条目）时**不**报，那是正常形态，报了就成了噪声；
+      (2) `test/plugin-identity.test.js` 新增两条对拍：`PROVIDER_NS` 必须等于
+      `cordis.patch.yml` 的行 id（源码与产物各查一次），宿主 fallback
+      `QODER_SETTINGS_NS` 必须等于客户端 fallback。两条都做过变异验证。
+- [ ] `docs/history/` 有 ADR 说明各套说法的由来 —— 见
+      [`../history/0.5.0-abi-cutover.md`](../history/0.5.0-abi-cutover.md) 第 12、38-39 行，
+      该文件已覆盖 Loader 条目 id 与共享候选对；缺的只是"为什么不能跨 bundle 共享"一节。
+
+## 为什么"对拍"是这里唯一能做的事
+
+两侧推导**本来就读同一个源**：宿主读 `ctx.fiber.entry.options.id`（Loader 行 id），
+客户端读 `configForms.describe()` 的 `namespaces` 列表——都是活的。真正的风险不在推导，
+而在 `PROVIDER_NS` 这个**字面量**：`cordis.patch.yml` 改行 id 时，宿主会跟着变，客户端
+不会，于是 `resolveNamespace` 找不到就静默回落，slot key 也指向不存在的行。跨 bundle
+共享函数做不到，但**把这个字面量钉在它的源上**可以做到，且这正是 `plugin-identity.test.js`
+对 `package.json#name` 一直在做的事（同一套思路：一次改名只应改一个文件）。

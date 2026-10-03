@@ -125,10 +125,29 @@ function apply(ctx: ClientContext) {
 			// card silently configured someone else's section. The two names are
 			// the one the Loader serves (the entry id, `llm-qoder`) and the
 			// fallback declared above; the host's own `settingsNamespaceOf`
-			// resolves the same pair.
-			const served = (forms.describe().getSnapshot().view?.namespaces ?? [])
+			// resolves the same pair, and test/plugin-identity.test.js holds the
+			// two spellings against the Loader row id in cordis.patch.yml.
+			const namespaces = forms.describe().getSnapshot().view?.namespaces ?? [];
+			const served = namespaces
 				.find((entry) => entry.ns === fallback || entry.ns === PROVIDER_NS);
-			return served !== void 0 ? served.ns : fallback;
+			if (served !== void 0) return served.ns;
+			// A host that serves SOME namespaces but none of ours is not the
+			// Loader-less case this fallback is written for — there the list is
+			// empty. It means the id moved and every copy below was written
+			// against the old one, so the card will register where nobody is
+			// served and the settings row will simply be absent. That is
+			// invisible by construction, so it is named here: the whole failure
+			// is a one-value edit in cordis.patch.yml plus the two literals.
+			if (namespaces.length > 0) {
+				console.error(
+					`[dsh-connect-qoder] the host serves ${namespaces.length} settings namespace(s) ` +
+					`(${namespaces.map((entry) => entry.ns).join(", ")}) but none of them is this ` +
+					`plugin's (${fallback} / ${PROVIDER_NS}); the card is registering under ` +
+					`"${fallback}", which is not served — its settings row will be missing. ` +
+					'This is the Loader row id in cordis.patch.yml drifting from src/client/index.ts.',
+				);
+			}
+			return fallback;
 		} catch {
 			return fallback;
 		}

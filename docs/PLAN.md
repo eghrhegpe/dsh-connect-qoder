@@ -334,15 +334,25 @@ cleanup 已结束，**永久泄漏**。
 - [x] 宿主语义有明确结论并写进注释（"无法确认，故两种宿主语义下都正确"——第三种答案，
       比题面给的两种更诚实：它不对看不见的契约下断言，形状变了也只退化成今天的行为）
 
-### P2-4 设置命名空间收敛 —— S（依赖 P0-3①）
+### P2-4 设置命名空间收敛 —— S（大部分已修，见 docs/issues/14）
 
 **症状**：同一个命名空间有**四套说法**：Loader 条目 id `llm-qoder`、
 常量 `dsh-connect-qoder`、`__save` 的三元候选、卡片第三套推导
 （`entry.ns === "dsh-connect-qoder" || /qoder/i.test(entry.ns)` 交给 `.find`，
 [client.js:1957](../lib/client.js#L1957)）。失败形态是"整行从设置页消失，不报错"。
 
-**修法**：推导只留一处并让两侧共享；先把四套说法的来龙去脉写成一小段 ADR 放在 `docs/history/`。
-注意：这条只有等 P0-3① 的提取测试到位才敢动卡片。
+**修法（原案）与实际走的路**：原案是"推导只留一处并让两侧共享"——**实测不可行**：
+`src/client/index.ts` 与 `src/host/index.ts` 打进两个 bundle，客户端无法 import 宿主模块。
+但查下来两侧推导**本来就读同一个源**（宿主读 Loader 行 id，客户端读 `configForms` 的
+`namespaces` 列表，都是活的），真正的风险只在 `PROVIDER_NS` 这个**字面量**：`cordis.patch.yml`
+改行 id 时宿主跟着变、客户端不变，于是静默回落。于是改做两件跨 bundle 仍可行的事：
+- **对拍**：把 `PROVIDER_NS` 钉在 `cordis.patch.yml` 的行 id 上（源码与产物各查一次），
+  并断言宿主 fallback 与客户端 fallback 同串。两条均变异验证。
+- **让失配发声**：`resolveNamespace` 发现宿主在服务若干命名空间、其中没有本插件的，
+  打 `console.error` 并指出修复只需改行 id 与两处字面量；宿主一个都不服务（无 Loader
+  条目）时**不**报——那是正常形态，报了就成了噪声。
+
+card 正则推导已改为精确候选（`|| /qoder/i.test(...)` 那种子串匹配已不存在）。
 
 ---
 
