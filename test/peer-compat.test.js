@@ -159,13 +159,42 @@ test('widening the lid did not open the next generation', () => {
 
 test('the peers outside the hosts check keep their own ranges', () => {
   // Judged against the copy the host bundles, not its own gate: the floor
-  // is the 0.2 generation's bundle (cordis 4.0.4, schemastery ≥ 3.18.3,
-  // pi-ai 0.87.1). The host does not block installation on these — the
-  // ranges are this plugin's own contract about what it imports.
+  // is the 0.2 generation's bundle (cordis 4.0.4, schemastery ≥ 3.18.3).
+  // The host does not block installation on these — the ranges are this
+  // plugin's own contract about what it imports.
+  //
+  // pi-ai is the one that changed: the `^0.87.1` chosen at the 0.5.0 cut
+  // refused the version every host actually bundles. Measured on this
+  // machine (2026-10-03) both the desktop build and the standalone
+  // `dsh` 0.2.0-rc.1 CLI ship `@earendil-works/pi-ai@0.85.1`, so a plugin
+  // whose host entry imports pi-ai at module scope cannot even load —
+  // and with it every loopback card route 404s (the symptom that sent
+  // the 0.5.0 field down). The range spans 0.85.x through 0.87.x because
+  // the two imports this plugin makes (`createProvider`,
+  // `openAICompletionsApi`) both exist in 0.85.1.
   const { peerDependencies: peers } = JSON.parse(readFileSync(`${REPO_ROOT}package.json`, 'utf8'))
   assert.equal(peers['@deepseek-ai/cordis'], '>=4.0.4 <5.0.0')
   assert.equal(peers['@deepseek-ai/schemastery'], '^3.18.3')
-  assert.equal(peers['@earendil-works/pi-ai'], '^0.87.1')
+  assert.equal(peers['@earendil-works/pi-ai'], '>=0.85.0 <0.88.0')
+})
+
+test('the pi-ai range admits what the hosts bundle and refuses the next gen', () => {
+  // Golden values from semver 7.8.5 with the host's own includePrerelease:true,
+  // re-measured after the 0.5.1 range fix. The admission list is what the
+  // host actually ships today; the refusal list is the line the plugin has
+  // never been tested on.
+  const { peerDependencies: peers } = JSON.parse(readFileSync(`${REPO_ROOT}package.json`, 'utf8'))
+  const range = peers['@earendil-works/pi-ai']
+  for (const [version, why] of [
+    ['0.85.1', 'bundled by the desktop build and the standalone dsh 0.2.0-rc.1 CLI'],
+    ['0.86.0', 'the minor between the two known floors'],
+    ['0.87.1', 'the version the 0.5.0 cut was validated against'],
+  ]) {
+    assert.ok(satisfies(version, range), `${range} rejects pi-ai ${version} (${why})`)
+  }
+  for (const version of ['0.84.9', '0.88.0', '1.0.0']) {
+    assert.ok(!satisfies(version, range), `${range} now admits pi-ai ${version} (next generation)`)
+  }
 })
 
 test('the helper and the host agree on the range the 0.5.0 cut chose', () => {
