@@ -49,8 +49,11 @@
 - [x] `test/host-handoff-binding.test.js` 绿；把 `lib/index.js` 改回 `registerAdapter: ctx.llm.registerAdapter`
       该测试变红
 - [x] `npm run typecheck` 通过（`this:` 守卫生效）
-- [ ] （遗留）`publishRegions` 失败仍会短路卡片路由：应把卡片路由注册移到 `publishRegions` 之前，
-      让 provider 注册失败时卡片仍能展示真实错误（见 issue 16 的"不新增静默失败分支"）
+- [x] （已关闭）`publishRegions` 失败不再短路卡片路由：失败改为**记录而非回退**，卡片路由照常挂载，
+      并提供 always-mounted `/plugins/dsh-connect-qoder/status` 让"宿主没有这条路由"与"插件激活失败"
+      可区分。守门：`test/activation-gate-decoupling.test.js`（断言失败分支内无 `return`/`throw`，
+      变异验证过）+ `test/status-route.test.js`（实测 handler；错误只发布 `name`、不发布 message，
+      message 可能带凭据 URL，留在宿主日志）
 
 ## 教训
 
