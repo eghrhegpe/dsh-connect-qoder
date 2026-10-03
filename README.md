@@ -242,7 +242,9 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/routes.ts` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
 | `src/host/handlers.ts` | 七条卡片路由的 handler，`(req, res, deps) => Promise<void>` 形态：方法/来源两道闸 + 业务判定 + 应答全在这（含签到 `claimTodayFor` 与「重读登录」的失败保护），`index.ts` 只保留 `webServer.register` 与 deps 装配（从 `index.ts` 抽出以便直测，无 peer 依赖） |
 | `src/host/publish-regions.ts` | 把当前区域集发布给宿主（`registerAdapter` + `registerConfigurableProviders`）以及失败时的三层回滚：先释放旧的一对，新注册失败则释放半注册的 adapter 并把旧的一对装回去，装不回去则如实留空而不谎称已注册（从 `index.ts` 抽出以便直测，宿主两处注册接缝靠注入，无 peer 依赖） |
-| `src/host/index.ts` | 按区域注册 provider 的插件入口，与七条路由的注册接线（handler 本体在 `handlers.ts`；发布与回滚的判定在 `publish-regions.ts`） |
+| `src/host/route-mount.ts` | 一组路由的挂载判定：**要么全挂上、要么全撤下**。三个账号路由是一个功能，宿主若只收下 `/account` 而拒了 `/account/confirm`，旧写法会留下一个"能读状态、两个按钮却不动"的半截面板，且日志写着"account routes unavailable"——那句话是假的，比没有日志更坏，因为它让人不再往下查。组内任一注册被拒即回滚已拿到的 release 并如实报失败（无 peer 依赖） |
+| `src/host/dispose-order.ts` | fiber 注销时的**次序**（次序本身就是内容）：provider 注册先撤、路由先于 runtime 拆（否则 issue 13 那条泄漏）、`disposed` 必须在 `clearInterval` **之前**置位——否则一次还在途的 `refreshCatalog().then` 会把一个全新的 interval 装到已经没人管的 runtime 上，成为活过插件的僵尸凭据解析循环。此前这条只由注释担保（无 peer 依赖） |
+| `src/host/index.ts` | 按区域注册 provider 的插件入口，与七条路由的注册接线（handler 本体在 `handlers.ts`；发布与回滚的判定在 `publish-regions.ts`；挂载分组在 `route-mount.ts`；注销次序在 `dispose-order.ts`） |
 
 `docs/docs-qoder-cn/` 是从 Qoder CN 官方文档抓回并清洗的资料（**纯 Markdown，源 `.txt` 已删**），
 由根目录的 `convert-qoder-docs.ps1` 一次性转换而成——它**只处理这一批抓取件**，不是常规构建步骤；

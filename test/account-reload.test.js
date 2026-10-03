@@ -37,10 +37,11 @@ function slice(start, end, fromSource = source) {
 
 const startRegionBody = slice('async function startRegion(', '\n}\n')
 const startStoppedRegionsBody = slice('async function startStoppedRegions(', '\n  }\n')
-// The reload route's body ends where the NEXT registration begins. The
-// receiver is spelled `webServer.register` because each `inject` callback binds
-// the injected service to a local once; see test/lifecycle.test.js.
-const reloadHandler = slice('path: QODER_ACCOUNT_RELOAD_PATH', 'webServer.register')
+// The reload route's body ends where the account group ends. The three account
+// routes are mounted together by `mountRouteGroup` (see src/host/route-mount.ts
+// and test/route-mount.test.js), so the boundary is the group's closing bracket
+// rather than the next `webServer.register` call.
+const reloadHandler = slice('path: QODER_ACCOUNT_RELOAD_PATH', 'path: QODER_ACCOUNT_CONFIRM_PATH')
 
 test('startRegion returns an entry tagged with its region', () => {
   assert.match(

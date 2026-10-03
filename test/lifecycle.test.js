@@ -110,32 +110,42 @@ test('an absent sink is not a crash', () => {
 
 test('every route registration in the plugin is collected', () => {
   // src/host/index.ts cannot be imported, so this is the wiring assertion: a new
-  // route that forgets the wrapper would be a silent leak, and there are seven
-  // registration sites to keep in step.
+  // route that forgets the wrapper would be a silent leak.
+  //
+  // The spelling changed when the mounts moved into `route-mount.ts`: there is
+  // no longer a `webServer.register({ … })` call in index.ts at all, and the
+  // collection happens inside `mountRouteGroup`. So the subject of the guard is
+  // now every `mountRouteGroup(webServer, …)` call, and it must name the sink.
   const source = readFileSync(
     new URL('../src/host/index.ts', import.meta.url),
     'utf8',
   ).replaceAll('\r\n', '\n')
-  // The receiver is spelled `webServer.register` because each `inject`
-  // callback binds the injected service to a local once (`const webServer =
-  // injected(webCtx.webServer, 'webServer')`) rather than reading
-  // `webCtx.webServer` at every site. The guard's subject is the CALL, not the
-  // receiver expression, so it matches either spelling.
-  const registration = /(?:webCtx\.)?webServer\.register\(\{/g
-  const registrations = source.match(registration) ?? []
-  assert.ok(registrations.length > 0, 'no route registrations found — the pattern changed')
-  for (const match of source.matchAll(registration)) {
-    const before = source.slice(Math.max(0, match.index - 60), match.index)
+  const mount = /mountRouteGroup\(webServer,/g
+  const mounts = source.match(mount) ?? []
+  assert.ok(mounts.length > 0, 'no route mounts found — the pattern changed')
+  for (const match of source.matchAll(mount)) {
+    // The sink is the last argument, so the guard looks at the tail of the
+    // call rather than a prefix: `mountRouteGroup(webServer, [ … ], routeReleases)`.
+    const after = source.slice(match.index, match.index + 4000)
+    const call = after.slice(0, after.indexOf(')\n') + 1)
     assert.match(
-      before,
-      /rememberRouteRelease\(routeReleases, $/,
-      'a webServer.register is not wrapped in rememberRouteRelease — its release would be dropped',
+      call,
+      /routeReleases/,
+      'a mountRouteGroup call does not name routeReleases — its releases would be dropped',
     )
   }
+  // The last route path must be inside a group: a new route added as a bare
+  // `webServer.register` would not be collected at all, and the pattern above
+  // would find nothing to complain about.
+  assert.equal(
+    (source.match(/webServer\.register\(/g) ?? []).length,
+    0,
+    'index.ts must not call webServer.register directly any more',
+  )
   // And the cleanup must actually drain the sink.
   assert.match(
     source,
-    /releaseRoutes\(routeReleases\)/,
+    /releaseRoutes/,
     'the fiber cleanup must release the collected route registrations',
   )
 })

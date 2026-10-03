@@ -279,12 +279,31 @@ test('the refresh consults dispose on BOTH the success and the failure path', ()
     /fetchModels\(this\.region, credential, signal\)/,
     'the controller must actually reach the fetch — an unused one aborts nothing',
   )
-  // And dispose itself must fire it.
+  // And dispose itself must fire it. The abort moved into `dispose-order.ts`
+  // when the dispose order became testable (the reason it is worth reading
+  // there: `disposed` must be set before `clearInterval`, and that ordering
+  // lives beside the abort). The wiring assertion stays in index.ts — the
+  // effect must still delegate to the module rather than re-inline it.
   const dispose = /ctx\.effect\(\(\) => async \(\) => \{[\s\S]*?\n  \}\)/.exec(source)
   assert.ok(dispose !== null, 'src/host/index.ts no longer has the fiber effect cleanup')
   assert.match(
     dispose[0],
+    /disposeFiber\(/,
+    'the fiber cleanup must delegate to src/host/dispose-order.ts, not re-inline the order',
+  )
+  const order = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'host', 'dispose-order.ts'),
+    'utf8',
+  )
+  assert.match(
+    order,
     /refreshAbort\?\.abort\(\)/,
     'dispose must abort the in-flight catalog fetch, not only mark the runtime dead',
   )
+  // The ORDER is asserted EXECUTABLY in test/route-mount.test.js ("dispose marks
+  // a runtime dead BEFORE clearing its interval"), which watches the flag at
+  // the moment `clearInterval` is called. A regex cannot substitute: it sees
+  // where text sits, not when a statement runs. This file's job is to confirm
+  // the two halves are joined — the effect delegates, and the module it
+  // delegates to does abort.
 })

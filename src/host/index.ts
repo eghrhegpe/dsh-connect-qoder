@@ -51,7 +51,9 @@ import type { FetchedEntry } from './catalog-entry.ts'
 import type { RouteRelease } from './lifecycle.ts'
 import type { CatalogEntry, CatalogOutcome, HostContext, PluginLogger, RefreshFailure, Region } from './domain.ts'
 import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
-import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
+import { releaseRoutes } from './lifecycle.ts'
+import { mountRouteGroup } from './route-mount.ts'
+import { disposeFiber } from './dispose-order.ts'
 import { publishRegions as publishRegionSet } from './publish-regions.ts'
 import { __dshQoderUmidState, exchangePat, fetchModels, fetchUsage } from './upstream.ts'
 import type { UsageSnapshot } from './upstream.ts'
@@ -944,32 +946,22 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   }
 
   ctx.effect(() => async () => {
-    releaseAdapter?.()
-    releaseDirectory?.()
-    // Undo the route registrations, if the host handed back releases at all.
-    // Done before the runtimes are torn down so a route cannot be reached while
-    // a runtime is half-closed, and it never throws (see releaseRoutes).
-    const released = releaseRoutes(routeReleases)
-    if (released > 0) {
-      ctx.logger.debug?.(`dsh-connect-qoder: released ${released} card route registration(s)`)
+    // The order, and why each step is where it is, live in `dispose-order.ts`
+    // — extracted so the `disposed`-before-`clearInterval` invariant (the one
+    // that keeps a racing `refreshCatalog().then` from installing a zombie
+    // interval) is a test rather than a comment.
+    const report = await disposeFiber({
+      releaseAdapter,
+      releaseDirectory,
+      releaseRoutes,
+      routeSink: routeReleases,
+      runtimes: started.map(({ runtime }) => runtime),
+      shims: started.map(({ shim }) => shim),
+      timers: { clearInterval: (timer) => clearInterval(timer) },
+    })
+    if (report.releasedRoutes > 0) {
+      ctx.logger.debug?.(`dsh-connect-qoder: released ${report.releasedRoutes} card route registration(s)`)
     }
-    for (const { runtime } of started) {
-      // Mark the runtime dead before clearing anything: an in-flight
-      // `refreshCatalog().then` that races this dispose can still run and
-      // would otherwise install a fresh `setInterval` onto the dead runtime.
-      runtime.disposed = true
-      // Cut the upstream request rather than only ignoring its answer: without
-      // this a fetch started seconds earlier keeps a socket open against a
-      // gateway for a region this process is no longer serving (issue 13).
-      runtime.refreshAbort?.abort()
-      if (runtime.refreshTimer !== undefined) clearInterval(runtime.refreshTimer)
-    }
-    // `close()` is idempotent and swallows `ERR_SERVER_NOT_RUNNING`, so
-    // `allSettled` is safe even on a double-dispose. Awaiting the close means
-    // the fiber's cleanup is complete before the process moves on: any
-    // in-flight request has been aborted by `closeAllConnections` and the
-    // loopback port is released.
-    await Promise.allSettled(started.map(({ shim }) => shim.close()))
   })
 
   // Publish the settings surface. Without this the namespace a provider
@@ -1026,20 +1018,15 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // once instead of re-testing the optional at each of the registrations
     // below. See `HostContext.webServer` / `HostService.register`.
     const webServer = injected(webCtx.webServer, 'webServer')
-    try {
-      rememberRouteRelease(routeReleases, webServer.register({
-        kind: 'exact',
-        path: QODER_MODELS_PATH,
-        handler: (req: IncomingMessage, res: ServerResponse) => modelsHandler(req, res, {
-          started,
-          currentSettings: current,
-          logger: ctx.logger,
-          rates: MODEL_RATES,
-        }),
-      }))
-    } catch (error) {
-      ctx.logger.warn?.('dsh-connect-qoder: model route unavailable', error)
-    }
+    mountRouteGroup(webServer, [{
+      path: QODER_MODELS_PATH,
+      handler: (req: IncomingMessage, res: ServerResponse) => modelsHandler(req, res, {
+        started,
+        currentSettings: current,
+        logger: ctx.logger,
+        rates: MODEL_RATES,
+      }),
+    }], routeReleases, ctx.logger)
   })
 
   // The card's save button writes through this authoritative Host endpoint
@@ -1058,20 +1045,15 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // guaranteed present by the injection; see the note on the other
     // `inject(['webServer'], …)` callbacks.
     const webServer = injected(webCtx.webServer, 'webServer')
-    try {
-      rememberRouteRelease(routeReleases, webServer.register({
-        kind: 'exact',
-        path: QODER_SAVE_PATH,
-        handler: (req: IncomingMessage, res: ServerResponse) => saveHandler(req, res, {
-          getSettings: () => webCtx.get?.('settings') as SettingsService | undefined,
-          settingsNs,
-          fallbackNs: QODER_SETTINGS_NS,
-          refreshPicker,
-        }),
-      }))
-    } catch (error) {
-      ctx.logger.warn?.('dsh-connect-qoder: save route unavailable', error)
-    }
+    mountRouteGroup(webServer, [{
+      path: QODER_SAVE_PATH,
+      handler: (req: IncomingMessage, res: ServerResponse) => saveHandler(req, res, {
+        getSettings: () => webCtx.get?.('settings') as SettingsService | undefined,
+        settingsNs,
+        fallbackNs: QODER_SETTINGS_NS,
+        refreshPicker,
+      }),
+    }], routeReleases, ctx.logger)
   })
 
   // The usage panel needs the same treatment: the quota lives upstream behind a
@@ -1085,21 +1067,16 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // once instead of re-testing the optional at each of the registrations
     // below. See `HostContext.webServer` / `HostService.register`.
     const webServer = injected(webCtx.webServer, 'webServer')
-    try {
-      rememberRouteRelease(routeReleases, webServer.register({
-        kind: 'exact',
-        path: QODER_USAGE_PATH,
-        handler: (req: IncomingMessage, res: ServerResponse) => usageHandler(req, res, {
-          started,
-          logger: ctx.logger,
-          // Same seam the activation warn reads, so the card's explanation and
-          // the log line can never disagree about why the round is missing.
-          umidState: __dshQoderUmidState,
-        }),
-      }))
-    } catch (error) {
-      ctx.logger.warn?.('dsh-connect-qoder: usage route unavailable', error)
-    }
+    mountRouteGroup(webServer, [{
+      path: QODER_USAGE_PATH,
+      handler: (req: IncomingMessage, res: ServerResponse) => usageHandler(req, res, {
+        started,
+        logger: ctx.logger,
+        // Same seam the activation warn reads, so the card's explanation and
+        // the log line can never disagree about why the round is missing.
+        umidState: __dshQoderUmidState,
+      }),
+    }], routeReleases, ctx.logger)
   })
 
   // The daily check-in, from a route owned by this plugin.
@@ -1114,18 +1091,13 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // once instead of re-testing the optional at each of the registrations
     // below. See `HostContext.webServer` / `HostService.register`.
     const webServer = injected(webCtx.webServer, 'webServer')
-    try {
-      rememberRouteRelease(routeReleases, webServer.register({
-        kind: 'exact',
-        path: QODER_CHECKIN_PATH,
-        handler: (req: IncomingMessage, res: ServerResponse) => checkinHandler(req, res, {
-          started,
-          logger: ctx.logger,
-        }),
-      }))
-    } catch (error) {
-      ctx.logger.warn?.('dsh-connect-qoder: check-in route unavailable', error)
-    }
+    mountRouteGroup(webServer, [{
+      path: QODER_CHECKIN_PATH,
+      handler: (req: IncomingMessage, res: ServerResponse) => checkinHandler(req, res, {
+        started,
+        logger: ctx.logger,
+      }),
+    }], routeReleases, ctx.logger)
   })
 
   /**
@@ -1210,18 +1182,21 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     // once instead of re-testing the optional at each of the registrations
     // below. See `HostContext.webServer` / `HostService.register`.
     const webServer = injected(webCtx.webServer, 'webServer')
-    try {
-      rememberRouteRelease(routeReleases, webServer.register({
-        kind: 'exact',
+    // These three are ONE feature, so they mount as one group: a card that can
+    // read its account state but not re-read it or confirm it looks alive and
+    // does nothing on two of its buttons. `mountRouteGroup` rolls the group
+    // back if any of the three is refused, so a host that takes `/account` and
+    // rejects `/account/confirm` ends with NO account panel rather than half
+    // of one — and the log line it writes is then true.
+    mountRouteGroup(webServer, [
+      {
         path: QODER_ACCOUNT_PATH,
         handler: (req: IncomingMessage, res: ServerResponse) => accountHandler(req, res, {
           payload: accountPayload,
           logger: ctx.logger,
         }),
-      }))
-
-      rememberRouteRelease(routeReleases, webServer.register({
-        kind: 'exact',
+      },
+      {
         path: QODER_ACCOUNT_RELOAD_PATH,
         handler: (req: IncomingMessage, res: ServerResponse) => reloadHandler(req, res, {
           regions: REGIONS,
@@ -1230,19 +1205,15 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           payload: accountPayload,
           logger: ctx.logger,
         }),
-      }))
-
-      rememberRouteRelease(routeReleases, webServer.register({
-        kind: 'exact',
+      },
+      {
         path: QODER_ACCOUNT_CONFIRM_PATH,
         handler: (req: IncomingMessage, res: ServerResponse) => confirmHandler(req, res, {
           regions: REGIONS,
           started,
         }),
-      }))
-    } catch (error) {
-      ctx.logger.warn?.('dsh-connect-qoder: account routes unavailable', error)
-    }
+      },
+    ], routeReleases, ctx.logger)
   })
 
   // Load credentials and catalogs without blocking activation: the providers

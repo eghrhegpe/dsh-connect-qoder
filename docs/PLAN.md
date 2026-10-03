@@ -288,15 +288,28 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 包着十一个可变绑定，回滚三层 catch **零可执行覆盖**（只有 `account-route-wiring.test.js`
 一条正则确认零区域早退还在）。现抽进无 peer 依赖的 `src/host/publish-regions.ts`，
 两处宿主注册调用改为注入，`test/publish-regions.test.js` 13 例钉住每个终态。
-**仍余**：`adapter.ts`（顶层 import pi-ai，且该包 5 个 peer 实测全 `ERR_MODULE_NOT_FOUND`）
-与 `index.ts` 的路由注册/dispose 接线还没进分母。
+**第三轮把 `index.ts` 的路由注册与 dispose 接线**也抽出来——这两处此前只有注释、没有可执行
+断言，而且藏着两个真缺陷：
+(a) 三个账号路由原先在**同一个 try** 里逐个 `webServer.register`，宿主若收下 `/account` 而拒了
+`/account/confirm`，catch 写下"account routes unavailable"却把前一条留在服务中——卡片能读状态、
+两个按钮却不动，而那句日志是**假的**。现抽进 `src/host/route-mount.ts`，组内任一被拒即回滚已拿到的
+release 并如实报失败，宿主两种语义（按 fiber 回收 / 返回 release）下都成立。
+(b) `disposed` 必须在 `clearInterval` **之前**置位，否则一次还在途的 `refreshCatalog().then` 会把一个
+全新 interval 装到已经没人管的 runtime 上（活过插件的僵尸凭据解析循环）。现抽进
+`src/host/dispose-order.ts`，`test/route-mount.test.js` 22 例**可执行**地断言次序——在
+`clearInterval` 被调用的那一刻去看 flag，而不是去比文本位置。
+**仍余**：`adapter.ts`（顶层 import pi-ai，且该包 5 个 peer 实测全 `ERR_MODULE_NOT_FOUND`，
+`--experimental-test-module-mocks` 亦已实测不可行）——**已确认的硬阻塞，不再强攻**。
+`index.ts` 自身仍未进分母（它需要 Cordis 上下文才能 import），但其中**可测的决策已全部移出**。
 
 **验收标准**
-- [x] 至少 6 条路由有直接断言（method/鉴权/错误码）——`test/handlers.test.js` 覆盖全部 7 条，38 例；
-- [x] `handlers.ts` 进入覆盖率分母（行 100% / 函数 100%）；`publish-regions.ts` 亦已进分母
-      （回滚每个终态可执行断言）；`lib/index.js`、`lib/adapter.js` **整体**尚未（余路由注册/dispose 接线）；
-- [ ] 门槛数字重新标定后写回 `package.json` 与 KNOWN_GAPS——本轮 handlers 入分母后整体仍
-      90.29/82.33/86.35，地板（68/82/66）**未动**，故此项留空（无需重标）。
+- [x] 至少 6 条路由有直接断言（method/鉴权/错误码）——`test/handlers.test.js` 覆盖全部 7 条，46 例；
+- [x] `handlers.ts` 进入覆盖率分母（行 100% / 函数 100%）；`publish-regions.ts`、`route-mount.ts`、
+      `dispose-order.ts` 亦已进分母（回滚每个终态、挂载分组、注销次序均可执行断言）；
+      `lib/index.js`、`lib/adapter.js` **整体**尚未（余 Cordis 接线与 adapter 的 peer 依赖）；
+- [ ] 门槛数字重新标定后写回 `package.json` 与 KNOWN_GAPS——本轮后整体 89.72/82.82/84.82，
+      地板（68/82/66）**未动**，故此项留空（无需重标）。函数分母比上一轮低（86.41→84.82）
+      是因为 `index.ts` 变长而它仍不在分母里——新抽出的两个模块本身是 100/100/100。
 
 ### P2-2 十二处小时级小口子（一个 PR 清掉） —— S
 
