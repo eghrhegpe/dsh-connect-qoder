@@ -29,6 +29,7 @@
     "test:card": "node --test test/card-dom.test.js",
     "test:live": "node scripts/verify-live.mjs",
     "probe:maxtokens": "node scripts/probe-max-tokens.mjs",
+    "probe:params": "node scripts/probe-params.mjs",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-lines=68 --test-coverage-branches=82 --test-coverage-functions=66 \"test/*.test.js\"",
     "verify": "npm run typecheck && npm run audit:any && npm run audit:explicit:any && npm run build && npm test && npm run verify:host && npm run verify:bundle",
     "verify:deploy": "node scripts/check-deploy-drift.mjs",
