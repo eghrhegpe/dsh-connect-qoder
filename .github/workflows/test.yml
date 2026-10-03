@@ -50,6 +50,23 @@ jobs:
       - name: Build lib/ from src/
         run: npm run build
 
+      # Typecheck and the two `any` audits run HERE rather than only in the
+      # local `npm run verify` chain, because `npm test` cannot stand in for
+      # them: the suite imports `src/**/*.ts` through Node's native type
+      # stripping, which ERASES the annotations without checking a single one.
+      # Without this step every strict option in tsconfig.json
+      # (`noUncheckedIndexedAccess`, `noImplicitOverride`, …) and both any
+      # budgets are enforced on developer machines only, and a type error or a
+      # fresh `any` reaches a release with a fully green CI.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: No implicit any (second opinion for the compiler rule)
+        run: npm run audit:any
+
+      - name: No explicit any
+        run: npm run audit:explicit:any
+
       - name: Run tests
         run: npm test
 
@@ -57,7 +74,7 @@ jobs:
       # --test-coverage-lines/functions/branches set a little under the current
       # numbers, so a change that silently loses coverage fails the build while
       # an honest module split does not. A percentage still cannot say whether a
-      # specific regression is defended — test/KNOWN_GAPS.md remains the real
+      # specific regression is defended — docs/KNOWN_GAPS.md remains the real
       # register, and raising a threshold is a one-line review, not a redesign.
       - name: Coverage
         run: npm run test:coverage

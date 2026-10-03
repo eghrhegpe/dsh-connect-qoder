@@ -313,6 +313,22 @@ for (let i = 0; i < Math.max(oldPrint.length, newPrint.length); i++) {
 const gateOld = OLD.includes('promo.active !== true')
 const gateNew = NEW.includes('promo.active !== true')
 
+/**
+ * A byte-identical baseline makes every probe below vacuous.
+ *
+ * This is the normal case in CI, and it is nobody's fault: the `build` job runs
+ * `npm run build` and then `git diff --exit-code -- lib`, so by the time this
+ * script runs the worktree artifact IS the baseline commit's artifact. Comparing
+ * it against itself yields `IDENTICAL` for 8400 calls and proves nothing.
+ *
+ * It is still worth printing rather than skipping, because the same run in a
+ * developer's tree — sources edited, rebuilt, not yet committed — is the case
+ * this script exists for, and there `OLD` and `NEW` genuinely differ. The line
+ * below is what stops the vacuous run from being READ as evidence of the
+ * meaningful one.
+ */
+const baselineIsSelf = OLD === NEW
+
 console.log(`\n${PROBES.length} probes x ${oldPrint.length} calls, baseline=${baselineRef}`)
 console.log(`behaviour: ${diffs === 0 ? 'IDENTICAL' : `${diffs} differing call(s)`}`)
 console.log(`off-peak gate: baseline=${gateOld} rebuilt=${gateNew}`)
@@ -320,9 +336,25 @@ if (newFingerprint.missing.length > 0) {
   console.log(`absent from the rebuild: ${newFingerprint.missing.join(', ')}`)
 }
 
+if (baselineIsSelf) {
+  console.log(
+    `\nNOT EVIDENCE: \`${baselineRef}:lib/client.js\` is byte-identical to the worktree\n` +
+    `  artifact, so these ${oldPrint.length} calls compared the bundle with itself. The run\n` +
+    `  passed, but it would also pass on a bundle whose sources no longer match it — which\n` +
+    `  is the drift this script is for. Compare against a ref that differs:\n` +
+    `    node scripts/verify-bundle-behaviour.mjs --baseline HEAD^\n` +
+    `  (Freshness itself is unaffected and still proven by \`git diff --exit-code -- lib\`\n` +
+    `  and by scripts/build-client.mjs's byte-for-byte check.)`,
+  )
+}
+
 if (diffs !== 0 || !gateNew || newFingerprint.missing.length > 0) {
   console.log('\nFAIL: the rebuilt bundle does not behave like its baseline.')
   process.exitCode = 1
+} else if (baselineIsSelf) {
+  // Deliberately NOT the plain "OK" line: with a self-baseline it would be read
+  // as "behaviour verified" by anyone skimming the log.
+  console.log('OK (vacuous): behaviour matches a baseline that is this same artifact.')
 } else {
   console.log('OK: the rebuilt bundle behaves like its baseline on every probed call.')
 }

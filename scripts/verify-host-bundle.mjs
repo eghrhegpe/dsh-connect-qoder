@@ -30,7 +30,15 @@
  *
  * A machine without dev dependencies (no `tsdown`) prints a loud SKIP and exits
  * 0: the suite is deliberately installable-free, and a missing devDependency is
- * not a regression. CI's offline job always takes that path.
+ * not a regression.
+ *
+ * That path is reached by a bare checkout running `node scripts/verify-host-bundle.mjs`
+ * directly, NOT by CI. Both jobs in `.github/workflows/test.yml` run
+ * `npm install` and `npm run build` first, so `tsdown` is always present there
+ * and the FRESH checks always execute; and `npm run verify` could not reach the
+ * SKIP anyway, because its own `build` step needs tsdown and fails first. The
+ * earlier wording here claimed "CI's offline job always takes that path", which
+ * described a job that does not exist.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'

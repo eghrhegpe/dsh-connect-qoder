@@ -32,12 +32,23 @@
  * Token material is never printed.
  */
 
+import { pathToFileURL } from 'node:url'
+import { resolve } from 'node:path'
 import { loadCredentialAsync, loadEnvCredential, REGIONS } from '../src/host/credentials.ts'
 import { fetchModels, streamChat } from '../src/host/upstream.ts'
 import { describeThrown, thrownFlag } from '../src/host/errors.ts'
 import { PROBED_MAX_TOKENS } from '../src/host/pi-model.ts'
 
-const GAP_MS = Number(process.argv[process.argv.indexOf('--gap') + 1]) || 60_000
+/**
+ * `--gap 0` means "no spacing", not "unset".
+ *
+ * `Number(x) || 60_000` read a deliberate 0 as falsy and silently reinstated the
+ * full minute between probes, so a run asking for back-to-back probes quietly
+ * took N minutes instead. Only a missing or unparseable value falls back now.
+ */
+const gapArg = process.argv.indexOf('--gap')
+const gapRaw = gapArg === -1 ? Number.NaN : Number(process.argv[gapArg + 1])
+const GAP_MS = Number.isFinite(gapRaw) && gapRaw >= 0 ? gapRaw : 60_000
 
 /** Sleep so probes are spaced, not burst. */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -204,7 +215,18 @@ function describeWhy(result) {
   return result.message?.length > 160 ? `${result.message.slice(0, 160)}…` : result.message
 }
 
-main().catch((error) => {
-  console.error('探针自身出错:', describeThrown(error))
-  process.exitCode = 1
-})
+/**
+ * Run only when invoked as a command, never when imported.
+ *
+ * This probe spends real Credits on the user's account. At module scope it did
+ * that on IMPORT too, so any tooling that reached the file — a future test, a
+ * REPL, an editor's module graph — would bill the user for a probe they never
+ * asked for. Every other script in this directory guards its entry point; this
+ * is the one where the omission has a price attached.
+ */
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    console.error('探针自身出错:', describeThrown(error))
+    process.exitCode = 1
+  })
+}

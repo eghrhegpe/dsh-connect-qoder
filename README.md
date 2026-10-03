@@ -315,8 +315,8 @@ npm run build           # 从 src/ 重建 lib/（宿主 bundle + 卡片产物）
 | `typecheck` | `src/**` 的每个 `.ts` 都过类型检查 | `tsc` 退出 0、无输出 |
 | `npm test` | 卡片逻辑与宿主半边没被改坏 | 最后一行 `# fail 0` |
 | `build`（宿主 + 卡片） | `lib/index.js` 与 `lib/client.js` 确实由 `src/` 生成 | `MATCH: … byte-for-byte identical` |
-| `verify:host` | 宿主 bundle 不陈旧、公开面与 peer 外置都还在 | `all 11 checks passed` |
-| `verify:bundle` | 重建产物与上一份已发布产物的行为一致 | `behaviour: IDENTICAL` |
+| `verify:host` | 宿主 bundle 不陈旧、公开面与 peer 外置都还在 | `all 11 checks passed`（装了 `tsdown` 时 11 条；没装时 9 条，见下） |
+| `verify:bundle` | 重建产物与上一份已发布产物的行为一致 | `behaviour: IDENTICAL` + `OK: …` |
 
 中间那条是最要紧的：宿主与卡片两步都**只比较、不认账**。它过了，就说明产物不是手抄进来的
 副本——改 `src/` 而产物不变的情况会在这里红。`verify:host` 补的是迁移带来的新缺口：源码
@@ -332,8 +332,20 @@ npm run build           # 从 src/ 重建 lib/（宿主 bundle + 卡片产物）
 
 `npm run build` 需要构建器（`tsdown`），它是 devDependency，跑之前先 `npm install`。
 **测试与 `typecheck` 都不需要 `lib/`**：测试直接 import `src/**` 的源码（Node 原生剥类型），
-`verify:host` 在没有 `tsdown` 时打印一声响亮的 SKIP 并以 0 退出。两者是 CI 里分开的 job：
-一个证明源码自足，一个证明产物可重建。
+`verify:host` 在没有 `tsdown` 时打印一声响亮的 SKIP 并以 0 退出。
+
+两条关于这道 SKIP 的实话，免得它被当成 CI 的实际路径：
+
+- **CI 永远走不到 SKIP**：两个 job 都是先 `npm install` 再 `npm run build`，`tsdown` 一定在。
+  那是给裸检出直接 `node scripts/verify-host-bundle.mjs` 的人准备的。
+- **`npm run verify` 也走不到**：它自己的 `build` 那步就需要 `tsdown`，会先在 `build` 失败。
+  换句话说，这一条**不可能**靠跳过而"绿着通过"。
+
+`verify:bundle` 另有一条容易误读的性质：它的 baseline 默认取 `HEAD`，而 CI 的 `build` job 在它
+之前已经用 `git diff --exit-code -- lib` 证明工作树产物与 HEAD 逐字节相同——于是那 8400 次调用
+是产物跟自己比，**必然 IDENTICAL，什么也没证明**。脚本现在会把这种情况显式打成
+`NOT EVIDENCE` 与 `OK (vacuous)`，不再混进正常的 `OK` 里；要真正对拍就传
+`--baseline HEAD^`（或任意一份不同的已发布产物）。
 
 对拍覆盖不到渲染：JSX 被 stub 成 `null`，所以**改了 UI 仍然要在浏览器里看一眼**（展开卡片 →
 切区域 → 改图像档位 → 保存 → 看错峰倒计时）。

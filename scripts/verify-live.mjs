@@ -24,6 +24,8 @@
  * where it came from and whether it expired.
  */
 
+import { pathToFileURL } from 'node:url'
+import { resolve } from 'node:path'
 import { loadCredentialAsync, loadEnvCredential, REGIONS } from '../src/host/credentials.ts'
 import { fetchModels, fetchUsage, fetchUserInfo } from '../src/host/upstream.ts'
 
@@ -171,4 +173,14 @@ function errorMessage(error) {
   return message.length > 200 ? `${message.slice(0, 200)}…` : message
 }
 
-await main()
+/**
+ * Run only when invoked as a command, never when imported.
+ *
+ * `await main()` at module scope meant importing this file performed live
+ * network probes against the Qoder endpoints — with the user's real credential
+ * — as a side effect of the import. A module that reads is one thing; a module
+ * whose import talks to a third party is a trap for anything that touches it.
+ */
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await main()
+}

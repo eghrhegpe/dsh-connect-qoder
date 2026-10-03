@@ -89,6 +89,63 @@ function hostTokenSource() {
 
 const HOST_CSS = hostTokenSource()
 
+/**
+ * The tokens this card has already been checked against a real host.
+ *
+ * WHY AN INVENTORY, when a hardcoded token vocabulary is exactly what the
+ * comment above refuses to keep. The two lists answer different questions:
+ *
+ * - `HOST_CSS` answers "does the host define this name?" — authoritative, and
+ *   deliberately not copied into this file, because a copy would rot when the
+ *   host renames a token.
+ * - This list answers "has a human ever verified this name against the host?" —
+ *   which is the question the `HOST_CSS` assertions CANNOT ask on a machine
+ *   without the host installed, and that machine is CI.
+ *
+ * The realistic error this file exists to catch is a maintainer writing a token
+ * name from memory (the long-form `-warning-` slip below is exactly that). On a
+ * bare checkout the discovery assertions skip, so that error would sail through
+ * CI with nothing but a skipped test to show for it. Requiring an ADDITION to
+ * appear here means a new guess fails on every machine, while the existing
+ * entries never rot: they are names already confirmed against the host, and the
+ * `HOST_CSS` assertions remain the ones that notice if the host moves.
+ */
+const VERIFIED_TOKENS = [
+  '--dsw-alias-bg-layer-2',
+  '--dsw-alias-bg-layer-3',
+  '--dsw-alias-border-l2',
+  '--dsw-alias-brand-primary',
+  // Referenced by the host and used here as a border with a literal fallback;
+  // the host does not declare it in the stylesheet this gate reads, so it is
+  // recorded as a deliberate exception rather than presented as verified.
+  // docs/issues/12 carries the decision.
+  '--dsw-alias-label-dimmed',
+  '--dsw-alias-label-primary',
+  '--dsw-alias-label-secondary',
+  '--dsw-alias-label-tertiary',
+  '--dsw-alias-state-error-primary',
+  '--dsw-alias-state-success-primary',
+  '--dsw-alias-state-warn-primary',
+]
+
+/**
+ * Say out loud when the host-shape assertions could not run.
+ *
+ * A skipped test is a green suite. Red line 5 ("new tokens must be checked
+ * against the host CSS") has exactly one mechanical guard, and on a machine
+ * without the host installed — which is CI — that guard is off. Leaving that
+ * fact in a per-test skip reason means it is visible only to whoever expands
+ * the reporter output; a line here is visible to everyone.
+ */
+if (HOST_CSS === null) {
+  console.log(
+    '[theme-token] the host stylesheet was not found on this machine, so the two\n' +
+    '[theme-token] host-shape assertions below are SKIPPED. Token spelling is still\n' +
+    '[theme-token] checked against VERIFIED_TOKENS, but "does the host define this\n' +
+    '[theme-token] name?" is NOT verified by this run (red line 5).',
+  )
+}
+
 /** Every `--dsw-*` custom property the card references, with a fallback. */
 function tokensIn(text) {
   return [...new Set([...text.matchAll(/var\((--dsw-[a-z0-9-]+)\s*,/g)].map((m) => m[1]))]
@@ -111,6 +168,32 @@ test('the card does not use the long-form state token', () => {
     (STYLES.match(/--dsw-alias-state-warning-primary/g) ?? []).length,
     0,
     'the host token is the abbreviated --dsw-alias-state-warn-primary; the long form is never defined and always falls through to the literal',
+  )
+})
+
+test('every token the card references has been verified against a host', () => {
+  // Runs everywhere, host installed or not — see `VERIFIED_TOKENS`. A token
+  // added from memory fails here even on a CI runner, which is the whole point:
+  // the `HOST_CSS` assertions above are skipped there.
+  const unverified = tokensIn(STYLES).filter((token) => !VERIFIED_TOKENS.includes(token))
+  assert.deepEqual(
+    unverified,
+    [],
+    `these tokens are not in VERIFIED_TOKENS, so no run has confirmed the host defines them: ${unverified.join(', ')}. ` +
+    'Check each against the host stylesheet (`hostTokenSource`, or the asar: ' +
+    '`%LOCALAPPDATA%\\Programs\\DeepSeek Harness\\resources\\app.asar`), then add it to the list with the evidence.',
+  )
+})
+
+test('VERIFIED_TOKENS carries no token the card has stopped using', () => {
+  // The other direction, so the inventory cannot quietly accumulate names that
+  // no longer appear: a list that only ever grows stops describing the card.
+  const referenced = tokensIn(STYLES)
+  const stale = VERIFIED_TOKENS.filter((token) => !referenced.includes(token))
+  assert.deepEqual(
+    stale,
+    [],
+    `these entries are in VERIFIED_TOKENS but the card no longer references them: ${stale.join(', ')}`,
   )
 })
 
