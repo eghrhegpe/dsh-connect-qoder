@@ -205,6 +205,16 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 				// a CN-only user looking at the CN tab must not be told their
 				// check-in is unavailable. The host already conditions the
 				// activation warn the same way (KNOWN_GAPS §8).
+				//
+				// Note what "the edition that was actually selected" does NOT mean,
+				// because it reads like an invitation to gate this line on
+				// `activeRegion` and that is exactly wrong: `checkin` here belongs
+				// to the REGION block the host answered for, while the hint is a
+				// machine property reported once. Gating it on the CN region would
+				// hide the reason on the CN tab, where a missing check-in card is
+				// otherwise indistinguishable from "no round today" — the silent
+				// failure red line 1 forbids, and what
+				// test/card-dom.test.js:319 pins (§8).
 				<p className="dsm-qoder-account-note dsm-qoder-account-note-error">{t("usage.checkinUnavailable", { reason: checkinHint })}</p>
 			) : null}
 		</div>

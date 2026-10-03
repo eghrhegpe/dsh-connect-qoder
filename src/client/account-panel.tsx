@@ -55,10 +55,19 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 			mounted.current = false;
 		};
 	}, []);
+	// Guards the account read against its own earlier response, the way
+	// `usage-panel.tsx` already does. `load` has two concurrent entry points —
+	// the mount effect and `reload()` (which the tab strip can trigger again
+	// while the first read is still out) — and without a sequence number the
+	// later-started read can be overtaken by the older one, leaving the panel
+	// showing a snapshot that the newer response had already replaced.
+	const loadSeq = react.useRef(0);
+	const [loadError, setLoadError] = react.useState<string | undefined>(undefined);
 	const load = react.useCallback(async () => {
+		const seq = ++loadSeq.current;
 		try {
 			const value = await getJson<{ regions?: unknown; enabledRegions?: unknown }>(QODER_ACCOUNT_PATH);
-			if (!mounted.current) return;
+			if (!mounted.current || seq !== loadSeq.current) return;
 			const regions = Array.isArray(value.regions) ? (value.regions as CardAccountEntry[]) : [];
 			setAccounts(regions);
 			// Prefer the host-resolved map; fall back to each region's
@@ -67,8 +76,17 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 			const map = value.enabledRegions !== null && typeof value.enabledRegions === "object" ? (value.enabledRegions as Record<string, boolean>) : Object.fromEntries(regions.filter((entry) => entry.region !== undefined).map((entry) => [entry.region as string, entry.enabled !== false]));
 			setEnabledRegions(map);
 			setStatus("ready");
-		} catch {
-			if (mounted.current) setStatus("error");
+			setLoadError(undefined);
+		} catch (error) {
+			if (!mounted.current || seq !== loadSeq.current) return;
+			// Keep the host's own wording. `http.ts` goes out of its way to throw
+			// the host's `error` field rather than a bare status ("origin-not-trusted"
+			// and "loopback-…" are the two that actually happen), and swallowing it
+			// here left the panel saying only "could not read" — the exact
+			// failure-that-does-not-say-why class red line 1 names. `describeThrown`
+			// is what the rest of this file already uses for the same job.
+			setLoadError(describeThrown(error));
+			setStatus("error");
 		}
 	}, []);
 	react.useEffect(() => {
@@ -286,8 +304,13 @@ function QoderAccountPanel({ t, onReconciled, settingsScope, activeRegion = "qod
 				{status === "error" ? (
 					// A failure says so with its own retry inside the card,
 					// rather than a button that is otherwise redundant.
+					//
+					// The reason is appended when the host supplied one, so the
+					// reader can tell "the loopback origin was refused" from "the
+					// panel and the host are not talking at all" — a distinction
+					// this paragraph used to flatten into one sentence.
 					<div className="dsm-qoder-account-error">
-						<p className="dsm-qoder-error">{t("account.error")}</p>
+						<p className="dsm-qoder-error">{loadError === void 0 ? t("account.error") : `${t("account.error")} (${loadError})`}</p>
 						<button
 							type="button"
 							className="dsm-qoder-button"
