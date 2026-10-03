@@ -49,7 +49,7 @@ import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.ts
 import { normalizeEntry } from './catalog-entry.ts'
 import type { FetchedEntry } from './catalog-entry.ts'
 import type { RouteRelease } from './lifecycle.ts'
-import type { CatalogEntry, CatalogOutcome, HostContext, PluginLogger, RefreshFailure, Region } from './domain.ts'
+import type { CatalogEntry, CatalogOutcome, HostContext, PluginLogger, RefreshFailure, RefreshFailureReason, Region } from './domain.ts'
 import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
 import { releaseRoutes } from './lifecycle.ts'
 import { mountRouteGroup } from './route-mount.ts'
@@ -314,7 +314,7 @@ class RegionRuntime {
   /** The controller for the catalog fetch currently in flight. */
   refreshAbort: AbortController | undefined
   /** Why the last refresh did not produce a catalog, or `undefined`. */
-  refreshFailed: { reason: string; error?: unknown } | undefined
+  refreshFailed: { reason: RefreshFailureReason; error?: unknown } | undefined
   /**
    * Re-advertise the provider after a catalog change.
    *
@@ -506,10 +506,34 @@ class RegionRuntime {
    * without the Cordis peer dependencies; this is the seam that lets the
    * untestable runtime delegate to it.
    *
+   * NEVER THROWS, and that is the contract rather than a convenience. Every
+   * caller runs inside a `catch` or at the tail of an error path, and three of
+   * the four call sites are not themselves guarded — so a throw from here would
+   * escape `doRefreshCatalog` entirely, and every caller of THAT is a bare
+   * `void runtime.refreshCatalog()` with no `.catch`. The consequences are
+   * worse than a lost log line: `beginCatalogUpdates` installs its refresh
+   * interval in a `.then`, so a rejection means the timer is never installed
+   * and this region silently stops updating for the life of the plugin — the
+   * exact staleness `catalog-refresh.ts` exists to report.
+   *
+   * Failing to record an outcome is therefore logged, not propagated: the
+   * caller has already handled the failure being recorded, and this is the
+   * second-order failure of *describing* it.
+   *
    * @param outcome - `{ ok: true, entries }` or `{ ok: false, reason, error }`.
    */
   applyOutcome(outcome: CatalogOutcome): { committed: boolean; previousFailure: RefreshFailure | undefined } {
-    return applyCatalogOutcome(this, outcome)
+    try {
+      return applyCatalogOutcome(this, outcome)
+    } catch (error) {
+      this.logger?.error?.(
+        `dsh-connect-qoder: ${this.region.displayName} could not record a catalog refresh outcome`,
+        error,
+      )
+      // `committed: false` is the honest answer: nothing observable was
+      // recorded, so no caller may treat the previous reading as replaced.
+      return { committed: false, previousFailure: undefined }
+    }
   }
 
   /**
@@ -660,6 +684,28 @@ async function startRegion(
   try {
     await shim.ready
   } catch (error) {
+    // Close before giving up. The shim calls `server.listen(0, '127.0.0.1')`
+    // before it settles `ready` (shim.ts), so by the time this rejects the
+    // server may already be listening and bound to a port. Dropping the
+    // reference here does not undo that: the handle keeps the port open and the
+    // process alive, and because `startRegion` returned `undefined` nothing
+    // downstream ever learns the shim exists — `disposeFiber` closes what is in
+    // `started`, and this entry never gets there.
+    //
+    // The other two early exits in this function are BEFORE `createQoderShim`,
+    // which is why only this one needs the cleanup; the asymmetry is the signal
+    // that this path was missed rather than deliberately exempt.
+    //
+    // Skipped only if `close` itself throws, which must not replace the error
+    // that is actually being reported.
+    try {
+      await shim.close()
+    } catch (closeError) {
+      ctx.logger.warn?.(
+        `dsh-connect-qoder: ${region.displayName} loopback endpoint could not be closed after a failed start`,
+        closeError,
+      )
+    }
     ctx.logger.error?.(`dsh-connect-qoder: ${region.displayName} loopback endpoint failed to start`, error)
     return undefined
   }
@@ -780,6 +826,15 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
   }
 
   const started: Array<{ region: Region; runtime: RegionRuntime; shim: ShimHandle }> = []
+  /**
+   * Region ids whose start is currently in flight.
+   *
+   * Held separately from `started` because `started` records COMPLETION, and the
+   * window that matters is the one before it: `startStoppedRegions` awaits a
+   * credential read and `shim.ready` before it pushes, so the array alone
+   * cannot witness a concurrent start. See the guard there.
+   */
+  const pendingStarts = new Set<string>()
   for (const region of REGIONS) {
     const entry = await startRegion(region, ctx, enabledIdsFor)
     if (entry !== undefined) started.push(entry)
@@ -1153,7 +1208,27 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     for (const region of REGIONS) {
       if (onlyRegionId !== undefined && region.id !== onlyRegionId) continue
       if (started.some((entry) => entry.region.id === region.id)) continue
-      const entry = await startRegion(region, ctx, enabledIdsFor)
+      // A start already in flight for this region. `started` cannot answer this
+      // on its own: the entry is pushed only AFTER `await startRegion`, so two
+      // overlapping calls both pass the check above for the same region, both
+      // build a shim, and both push — leaving the first entry unreachable to
+      // `disposeFiber`, which iterates `started`. Its HTTP server keeps the port
+      // and its catalog interval keeps running for the life of the process.
+      //
+      // Not hypothetical: this route is the panel's "重读登录" button, and
+      // `startRegion` awaits a credential read plus `shim.ready`, so a second
+      // click (or a client retry) lands squarely inside the window.
+      if (pendingStarts.has(region.id)) continue
+      pendingStarts.add(region.id)
+      let entry: Awaited<ReturnType<typeof startRegion>>
+      try {
+        entry = await startRegion(region, ctx, enabledIdsFor)
+      } finally {
+        // Cleared on both paths, so a failed start does not wedge the region
+        // out of every future reload — that would trade a leak for a region
+        // that can never be recovered without a DSH restart.
+        pendingStarts.delete(region.id)
+      }
       if (entry === undefined) continue
       started.push(entry)
       wireRuntime(entry.runtime)
@@ -1273,11 +1348,33 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
  * that outlives the plugin.
  */
 function beginCatalogUpdates(runtime: RegionRuntime) {
-  void runtime.refreshCatalog().then(() => {
-    if (runtime.disposed) return
-    runtime.refreshTimer = setInterval(() => {
-      void runtime.refreshCatalog()
-    }, CATALOG_TTL_MS)
-    runtime.refreshTimer.unref?.()
-  })
+  void runtime
+    .refreshCatalog()
+    .catch((error) => {
+      // `doRefreshCatalog` is written to be total, and `applyOutcome` no longer
+      // throws — so reaching here means a defect rather than a failed refresh.
+      // It is caught anyway because the cost of NOT catching it is this
+      // function's whole purpose: the interval below is installed in a
+      // continuation, so a rejection skips it and the region never updates
+      // again, silently, for the life of the plugin.
+      runtime.logger?.error?.(
+        `dsh-connect-qoder: ${runtime.region.displayName} catalog refresh threw out of its own error handling`,
+        error,
+      )
+    })
+    .then(() => {
+      if (runtime.disposed) return
+      runtime.refreshTimer = setInterval(() => {
+        // The interval must survive one bad tick: an unhandled rejection here
+        // would (in Node) terminate the process, and the region would lose its
+        // updates either way.
+        void runtime.refreshCatalog().catch((error) => {
+          runtime.logger?.error?.(
+            `dsh-connect-qoder: ${runtime.region.displayName} catalog refresh threw out of its own error handling`,
+            error,
+          )
+        })
+      }, CATALOG_TTL_MS)
+      runtime.refreshTimer.unref?.()
+    })
 }
