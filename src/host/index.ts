@@ -17,7 +17,6 @@
  */
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { join } from 'node:path'
-import { isDeepStrictEqual } from 'node:util'
 import z from '@deepseek-ai/schemastery'
 import { resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import { createQoderAdapter, offPeakActive, offPeakRemaining, rateNow } from './adapter.ts'
@@ -25,7 +24,6 @@ import { createQoderShim } from './shim.ts'
 import type { ShimHandle } from './shim.ts'
 import {
   REGIONS,
-  loadCredential,
   loadCredentialAsync,
   loadEnvCredential,
   sweepStaleOscryptDirs,
@@ -35,7 +33,7 @@ import {
 import { buildAccountPayload } from './account-payload.ts'
 import { CredentialCache } from './credential-cache.ts'
 import { FileThrottleStore } from './throttle-store.ts'
-import { saveFieldOutcome, settingsNamespaceOf } from './settings-save.ts'
+import { settingsNamespaceOf } from './settings-save.ts'
 import type { SettingsService } from './settings-save.ts'
 import { createSingleFlight } from './single-flight.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -48,27 +46,24 @@ import {
 } from './preferences.ts'
 import type { Preferences } from './preferences.ts'
 import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.ts'
-import { normalizeEntry, projectModelRow, buildModelRowsPayload } from './catalog-entry.ts'
+import { normalizeEntry } from './catalog-entry.ts'
 import type { FetchedEntry } from './catalog-entry.ts'
 import type { RouteRelease } from './lifecycle.ts'
 import type { CatalogEntry, CatalogOutcome, HostContext, PluginLogger, RefreshFailure, Region } from './domain.ts'
 import { applyCatalogOutcome, isRefreshObsolete } from './catalog-refresh.ts'
 import { rememberRouteRelease, releaseRoutes } from './lifecycle.ts'
-import { __dshQoderUmidState, exchangePat, fetchModels, fetchUsage, fetchUserInfo, readCampaigns, claimCampaign } from './upstream.ts'
+import { __dshQoderUmidState, exchangePat, fetchModels, fetchUsage } from './upstream.ts'
 import type { UsageSnapshot } from './upstream.ts'
-import { classifyUpstreamError, describeThrown, isProtocolShapeChangedError } from './errors.ts'
+import { isProtocolShapeChangedError } from './errors.ts'
 import {
-  campaignIsClaimed,
-  checkinStateFrom,
-  claimableCampaignOf,
-  normalizeClaimResult,
-} from './claim.ts'
-import { sendJson } from './http-utils.ts'
-// The request gates every card route passes through, moved out so they can be
-// tested: `lib/index.js` is not importable without the Cordis peer
-// dependencies, and the authentication surface is exactly the kind of thing
-// that must not be able to be wrong while the suite is green.
-import { readJsonBody, readJsonBodyOr400, methodAllowed, originAllowed } from './routes.ts'
+  modelsHandler,
+  saveHandler,
+  usageHandler,
+  checkinHandler,
+  accountHandler,
+  reloadHandler,
+  confirmHandler,
+} from './handlers.ts'
 import { regionPublishDecision, unreadableSignInDecision } from './region-gate.ts'
 
 /** Loader row id; also the plugin's identity in the composition. */
@@ -1041,43 +1036,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
       rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_MODELS_PATH,
-        handler: async (req: IncomingMessage, res: ServerResponse) => {
-          if (!methodAllowed(req, res, 'GET')) return
-          if (!originAllowed(req, res)) return
-          // `refresh=1` re-reads the catalog from upstream. It matters because
-          // both the roster and the rates move on their own: Qoder adds and
-          // retires models, and an off-peak discount flips the effective price
-          // at 22:00 and 08:00 Asia/Shanghai. Without this the picker would
-          // keep showing whatever was true at process start.
-          const force = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('refresh') === '1'
-          if (force) {
-            for (const { runtime } of started) {
-              try {
-                await runtime.refreshCatalog()
-              } catch (error) {
-                // A refresh failure must not blank the card: the last good
-                // catalog is still served below.
-                ctx.logger.warn?.(
-                  `dsh-connect-qoder: ${runtime.region.displayName} catalog refresh failed`,
-                  error,
-                )
-              }
-            }
-          }
-          const now = new Date()
-          const settings = current()
-          sendJson(
-            res,
-            200,
-            buildModelRowsPayload({
-              runtimes: started,
-              settings,
-              now,
-              projectRow: projectModelRow,
-              rates: MODEL_RATES,
-            }),
-          )
-        },
+        handler: (req: IncomingMessage, res: ServerResponse) => modelsHandler(req, res, {
+          started,
+          currentSettings: current,
+          logger: ctx.logger,
+          rates: MODEL_RATES,
+        }),
       }))
     } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: model route unavailable', error)
@@ -1104,51 +1068,12 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
       rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_SAVE_PATH,
-        handler: async (req: IncomingMessage, res: ServerResponse) => {
-          if (!methodAllowed(req, res, 'POST')) return
-          if (!originAllowed(req, res)) return
-          // `webCtx.get` answers `unknown` (see `HostContext.get`): the name is
-          // a string, so nothing ties it to a type. `saveFieldOutcome` narrows it
-          // to the two methods `applySettingsSave` actually calls rather than
-          // trusting an `any`, and owns the service-absent 503 — a body the
-          // client can read, not the 404 that used to paper over it.
-          const settings = webCtx.get?.('settings') as SettingsService | undefined
-          try {
-            const body = await readJsonBody(req)
-            // `readJsonBody` is a raw reader — it parses JSON and nothing else,
-            // so the shape is whatever the client sent. `saveFieldOutcome`
-            // validates it (a non-string `field` is a 400 there, not a crash
-            // here) and answers the whole verdict.
-            const outcome = await saveFieldOutcome(settings, body, {
-              // The live namespace first: on the 0.2 line `settingsNs` is the
-              // Loader entry id (`llm-qoder`), and the constant is the
-              // fallback for a host that mounts this plugin without a Loader
-              // entry. The two are the same value in the entry case, so the
-              // list is what it is — no third candidate.
-              candidates: [settingsNs, QODER_SETTINGS_NS],
-              equals: isDeepStrictEqual,
-            })
-            if (outcome.body.ok !== true) return sendJson(res, outcome.status, outcome.body)
-            // No `Object.assign(preferences, …)` here, and its absence used to
-            // be a bug report: the old comment claimed folding the merged value
-            // into the base snapshot was "belt-and-braces for a host whose
-            // mutate does not dispatch the event". It never was — `current()`
-            // resolves `{ ...snapshot, ...liveSource }`, so a live source that
-            // HAS the field shadows whatever was folded in, and one that LACKS
-            // it means the write never landed, which `applySettingsSave`'s
-            // read-back has already rejected. The assignment was therefore
-            // dead in both directions, and on the 0.2 line it could only ever
-            // make the snapshot disagree with the document.
-            refreshPicker()
-            return sendJson(res, outcome.status, outcome.body)
-          } catch (error) {
-            sendJson(res, 500, {
-              ok: false,
-              errorName: (error as { name?: unknown } | undefined)?.name ?? 'unknown',
-              error: describeThrown(error),
-            })
-          }
-        },
+        handler: (req: IncomingMessage, res: ServerResponse) => saveHandler(req, res, {
+          getSettings: () => webCtx.get?.('settings') as SettingsService | undefined,
+          settingsNs,
+          fallbackNs: QODER_SETTINGS_NS,
+          refreshPicker,
+        }),
       }))
     } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: save route unavailable', error)
@@ -1170,32 +1095,10 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
       rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_USAGE_PATH,
-        handler: async (req: IncomingMessage, res: ServerResponse) => {
-          if (!methodAllowed(req, res, 'GET')) return
-          if (!originAllowed(req, res)) return
-          const force = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('refresh') === '1'
-          const regions = await Promise.all(
-            started.map(async ({ runtime }) => {
-              const base = {
-                region: runtime.region.id,
-                regionName: runtime.region.displayName,
-                manageUrl: runtime.region.manageUrl,
-                downloadUrl: runtime.region.downloadUrl,
-              }
-              try {
-                const usage = await runtime.readUsage(force)
-                return usage === undefined ? { ...base, available: false } : { ...base, available: true, ...usage }
-              } catch (error) {
-                ctx.logger.warn?.(
-                  `dsh-connect-qoder: ${runtime.region.displayName} usage read failed`,
-                  error,
-                )
-                return { ...base, available: false }
-              }
-            }),
-          )
-          sendJson(res, 200, { regions })
-        },
+        handler: (req: IncomingMessage, res: ServerResponse) => usageHandler(req, res, {
+          started,
+          logger: ctx.logger,
+        }),
       }))
     } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: usage route unavailable', error)
@@ -1218,84 +1121,15 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
       rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_CHECKIN_PATH,
-        handler: async (req: IncomingMessage, res: ServerResponse) => {
-          if (!methodAllowed(req, res, 'POST')) return
-          if (!originAllowed(req, res)) return
-          const requested = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('region')
-          const entry = started.find((candidate) => candidate.region.id === requested)
-          if (entry === undefined) return sendJson(res, 404, { error: 'unknown-region' })
-          try {
-            sendJson(res, 200, await claimToday(entry.runtime))
-          } catch (error) {
-            // The one route where failure must name itself: an unusable sign-in,
-            // a round that ended minutes ago, and a rejected claim are three
-            // different problems wearing the same "nothing happened".
-            ctx.logger.warn?.(`dsh-connect-qoder: ${entry.region.displayName} check-in failed`, error)
-            sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) })
-          }
-        },
+        handler: (req: IncomingMessage, res: ServerResponse) => checkinHandler(req, res, {
+          started,
+          logger: ctx.logger,
+        }),
       }))
     } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: check-in route unavailable', error)
     }
   })
-
-  /**
-   * Claim one region's daily check-in, reporting what actually happened.
-   *
-   * Extracted from the route so the interesting part — which round gets claimed
-   * and what the answer means — is assertable without a Cordis context. Same
-   * `(input) => result` shape `applySettingsSave` established for the settings
-   * pipeline.
-   *
-   * @param runtime - the region's runtime.
-   * @returns `{ region, claimed, replayed, amount?, alreadyClaimed, checkin }`.
-   */
-  async function claimToday(runtime: RegionRuntime) {
-    const credential = await runtime.resolveCredential()
-    if (credential === undefined) throw new Error('no usable sign-in on this machine')
-
-    const campaigns = await readCampaigns(runtime.region, credential)
-    const campaign = claimableCampaignOf(campaigns)
-    if (campaign === undefined) throw new Error('Qoder is not running a check-in for this account today')
-    if (campaignIsClaimed(campaign)) {
-      // Already collected today: posting anyway would buy a round trip to be
-      // told the same thing, and the upstream would grant nothing.
-      return {
-        region: runtime.region.id,
-        claimed: false,
-        replayed: true,
-        alreadyClaimed: true,
-        checkin: checkinStateFrom(campaigns),
-      }
-    }
-
-    // `campaignId` is not read by `claim.ts` on purpose — the card-facing state
-    // never publishes it — but the CLAIM POST needs it, so it is read here off
-    // the record the picker returned. An absent id is the upstream changing the
-    // protocol, and `claimCampaign` answers a 400 for it rather than posting an
-    // empty id.
-    const campaignId = campaign.campaignId
-    if (typeof campaignId !== 'string') throw new Error('campaign record carries no campaign id')
-    const raw = await claimCampaign(runtime.region, credential, campaignId)
-    const result = normalizeClaimResult(raw, campaign)
-    if (result.claimed !== true) throw new Error('Qoder did not confirm this check-in')
-
-    // The Credits land in the add-on quota this same panel renders, so the
-    // cached reading is now wrong about the balance.
-    runtime.invalidateUsage()
-
-    // Read the result back instead of assuming it: a claim that the upstream
-    // answered without recording would otherwise read as claimed forever.
-    let checkin = { ...checkinStateFrom(campaigns), todayCheckedIn: true }
-    try {
-      checkin = checkinStateFrom(await readCampaigns(runtime.region, credential))
-    } catch {
-      // An unreadable acknowledgement still leaves a claimed round; the derived
-      // state above is the most honest answer available.
-    }
-    return { region: runtime.region.id, ...result, alreadyClaimed: false, checkin }
-  }
 
   /**
    * Start the regions that are not running yet, publishing the widened set.
@@ -1383,157 +1217,31 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
       rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_PATH,
-        handler: async (req: IncomingMessage, res: ServerResponse) => {
-          if (!methodAllowed(req, res, 'GET')) return
-          if (!originAllowed(req, res)) return
-          // The guard the RELOAD route below carries, and this one did not.
-          // It is the same drift that guard was written to fix: a throw from
-          // the handler reaches the web server's catch-all, which answers a
-          // bodyless 400, and the card can only render that as
-          // "读取账号状态失败" — with nothing anywhere saying WHY, because the
-          // catch-all logs nothing either. Crashing to a 500 with the reason
-          // at least names the step that failed, and `logger.error` puts the
-          // stack where it can be read.
-          try {
-            sendJson(res, 200, await accountPayload())
-          } catch (error) {
-            ctx.logger.error?.('dsh-connect-qoder: account state read failed', error)
-            sendJson(res, 500, {
-              error: 'account state read failed',
-              errorName: (error as { name?: unknown } | undefined)?.name ?? 'Error',
-              detail: describeThrown(error).slice(0, 300),
-            })
-          }
-        },
+        handler: (req: IncomingMessage, res: ServerResponse) => accountHandler(req, res, {
+          payload: accountPayload,
+          logger: ctx.logger,
+        }),
       }))
 
       rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_RELOAD_PATH,
-        handler: async (req: IncomingMessage, res: ServerResponse) => {
-          if (!methodAllowed(req, res, 'POST')) return
-          if (!originAllowed(req, res)) return
-          const read = await readJsonBodyOr400(req, res)
-          if (read.ok !== true) return
-          const body = read.body
-          // As in the save route: the body's shape is the client's, so the one
-          // read below goes through an explicit narrowing rather than off
-          // `unknown`. A non-string `region` is not an error here — it simply
-          // falls through to `undefined`, which means "every region".
-          const posted = (body ?? {}) as { region?: unknown }
-          const wanted =
-            typeof posted.region === 'string' && REGIONS.some((region) => region.id === posted.region)
-              ? posted.region
-              : undefined
-          // "Re-read" for a running region means: drop the cached credential
-          // so the next resolve re-reads the app store, and force a catalog
-          // refresh so the picker sees what is readable now.
-          for (const { runtime } of started) {
-            if (wanted !== undefined && runtime.region.id !== wanted) continue
-            runtime.invalidateCredential()
-            void runtime.refreshCatalog()
-          }
-          // A region with no runtime at all — no sign-in, or an expired one,
-          // at activation — needs more: start it now, and publish the
-          // widened set. This is the "re-sign in, and the region appears
-          // without a DSH restart" path.
-          //
-          // Guarded: a region that fails to start is left exactly as it was
-          // (the failure posture this route documents), and the panel still
-          // gets its fresh states. Without the guard a throw here reached the
-          // web server's catch-all, which answers a bare 400 with no body —
-          // undiagnosable from the card, and it hid the whole panel.
-          try {
-            await startStoppedRegions(wanted)
-          } catch (error) {
-            ctx.logger.error?.('dsh-connect-qoder: account re-read failed to start a stopped region', error)
-          }
-          // `force: true` is deliberate and unlike the GET above: this is the
-          // user pressing "重读登录", i.e. asking for the store to be read again
-          // right now. Caching the answer here would make the button a no-op
-          // exactly when someone re-signed-in to fix a `needs-app`, and `force`
-          // additionally ignores the unwrap failure window so a retry inside that
-          // window still really retries.
-          //
-          // The SHAPE is the shared `accountPayload` one — `{ regions,
-          // enabledRegions }` — not a narrower `{ regions }`. The card reads
-          // this response directly, so a thinner body meant it had to follow up
-          // with a second GET to learn the per-region switches, and the two
-          // responses could disagree in between (issue 12, item 8).
-          sendJson(res, 200, await accountPayload({ force: true }))
-        },
+        handler: (req: IncomingMessage, res: ServerResponse) => reloadHandler(req, res, {
+          regions: REGIONS,
+          started,
+          startStoppedRegions,
+          payload: accountPayload,
+          logger: ctx.logger,
+        }),
       }))
 
       rememberRouteRelease(routeReleases, webServer.register({
         kind: 'exact',
         path: QODER_ACCOUNT_CONFIRM_PATH,
-        handler: async (req: IncomingMessage, res: ServerResponse) => {
-          if (!methodAllowed(req, res, 'POST')) return
-          if (!originAllowed(req, res)) return
-          const read = await readJsonBodyOr400(req, res)
-          if (read.ok !== true) return
-          // Same narrowing as the reload route: `find` comparing against `entry.id`
-          // is the validity check, so a missing or non-string `region` simply
-          // matches nothing and the 400 below answers it.
-          const posted = (read.body ?? {}) as { region?: unknown }
-          const region = REGIONS.find((entry) => entry.id === posted.region)
-          if (region === undefined) return sendJson(res, 400, { error: 'unknown region' })
-          const runtime = started.find((entry) => entry.region.id === region.id)?.runtime
-          // Resolving a credential can now throw two ways the route has to
-          // answer for: a failed PAT exchange, and — the new one — the exchange
-          // throttle refusing to re-probe a window the platform stated. The
-          // gate throws where an exchange used to be attempted, so without this
-          // catch the confirmation press would reach the web server's catch-all
-          // as a bare 400 (no body, undiagnosable in the card) for a whole
-          // window at a time. The card maps `available: false` to "unavailable"
-          // and carries the detail through, so the refusal reads as what it is.
-          let credential
-          try {
-            credential =
-              runtime !== undefined
-                ? await runtime.resolveCredential()
-                : loadCredential(region, appDataRootFor()) ?? loadEnvCredential(region)
-          } catch (error) {
-            return sendJson(res, 200, {
-              region: region.id,
-              available: false,
-              detail: describeThrown(error).slice(0, 300),
-            })
-          }
-          if (credential === undefined) return sendJson(res, 200, { region: region.id, available: false })
-          try {
-            const info = await fetchUserInfo(region, credential)
-            // Identity only: the panel is a browser surface, and a userID is
-            // account data the card never renders, so it is dropped here
-            // rather than carried to the browser.
-            return sendJson(res, 200, {
-              region: region.id,
-              available: true,
-              confirmed: true,
-              identity: { name: info.name, email: info.email },
-            })
-          } catch (error) {
-            // Classify the way the shim does: a sign-in rejection is the one
-            // answer that changes what the user should do (re-sign in, then
-            // re-read), so it is named; everything else is a plain "could
-            // not confirm" with the transport detail.
-            const message = describeThrown(error)
-            const kind = classifyUpstreamError({ message }, '', message).kind
-            if (kind === 'sign-in-expired' && runtime !== undefined) {
-              // The upstream said this credential is dead: treat it as the
-              // sign-in rejection it is, so the re-read after a re-sign-in
-              // picks up the fresh store.
-              runtime.invalidateCredential()
-            }
-            return sendJson(res, 200, {
-              region: region.id,
-              available: true,
-              confirmed: false,
-              kind: kind === 'sign-in-expired' ? 'sign-in-expired' : 'unavailable',
-              detail: message.slice(0, 300),
-            })
-          }
-        },
+        handler: (req: IncomingMessage, res: ServerResponse) => confirmHandler(req, res, {
+          regions: REGIONS,
+          started,
+        }),
       }))
     } catch (error) {
       ctx.logger.warn?.('dsh-connect-qoder: account routes unavailable', error)

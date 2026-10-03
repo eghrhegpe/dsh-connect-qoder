@@ -62,21 +62,23 @@ test('the __save route is gated on webServer ALONE', () => {
   )
 })
 
-test('the __save handler delegates its verdict to the testable saveFieldOutcome', () => {
-  // If the 503 logic is inlined back into the handler instead of calling the
-  // extracted function, the settings-save.test.js coverage silently stops
-  // applying. This pins the boundary, the way account-route-wiring pins the
-  // payload builder.
+test('the __save handler delegates to the testable saveHandler, not an inline body', () => {
+  // If the 503 logic is inlined back into the route instead of calling the
+  // extracted handler, the handlers.test.js coverage silently stops applying
+  // (and the untestable file gains a body again). This pins the boundary, the
+  // way account-route-wiring pins the payload builder. The verdict itself —
+  // including the service-absent 503 — is asserted by EXECUTING saveHandler
+  // in test/handlers.test.js.
   const atPath = HOST.indexOf('path: QODER_SAVE_PATH')
   const handler = HOST.slice(atPath, atPath + 1600)
   assert.match(
     handler,
-    /saveFieldOutcome\(/,
-    'the __save handler must delegate to src/host/settings-save.ts saveFieldOutcome, which a test can import',
+    /saveHandler\(/,
+    'the __save route must delegate to src/host/handlers.ts saveHandler, which a test can import',
   )
   assert.doesNotMatch(
     handler,
     /settings === undefined \)\s*\{[\s\S]*?sendJson\(res, 503/,
-    'the service-absent 503 must live in saveFieldOutcome, not be inlined back into the handler',
+    'the service-absent 503 must live in saveHandler, not be inlined back into the route',
   )
 })

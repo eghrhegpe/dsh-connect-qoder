@@ -21,14 +21,18 @@ import { fileURLToPath } from 'node:url'
 
 // Normalize so the literal newline markers below match on a CRLF checkout.
 const source = readFileSync(new URL('../src/host/index.ts', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
+// The reload handler body (with its try/catch) now lives in the executable
+// handlers.ts; index.ts only delegates. Both halves are pinned: the delegation
+// here, the guard there.
+const handlersSource = readFileSync(new URL('../src/host/handlers.ts', import.meta.url), 'utf8').replaceAll('\r\n', '\n')
 
-/** Slice from a start marker to an end marker (exclusive). */
-function slice(start, end) {
-  const from = source.indexOf(start)
+/** Slice from a start marker to an end marker (exclusive), over an optional source. */
+function slice(start, end, fromSource = source) {
+  const from = fromSource.indexOf(start)
   assert.notEqual(from, -1, `marker not found: ${start}`)
-  const to = end === undefined ? source.length : source.indexOf(end, from)
+  const to = end === undefined ? fromSource.length : fromSource.indexOf(end, from)
   assert.notEqual(to, -1, `end marker not found: ${end}`)
-  return source.slice(from, to)
+  return fromSource.slice(from, to)
 }
 
 const startRegionBody = slice('async function startRegion(', '\n}\n')
@@ -55,9 +59,23 @@ test('the stopped-region check reads that shape back', () => {
 })
 
 test('the reload route survives a failing region start', () => {
+  // The try/catch now lives in the executable reloadHandler (handlers.ts) —
+  // where it can be exercised for real, not just pattern-matched. The route in
+  // index.ts must keep delegating to it, so a re-inlined body cannot smuggle
+  // the throw back past this file's reach.
   assert.match(
     reloadHandler,
-    /try \{\s*await startStoppedRegions\(wanted\)\s*\} catch \(error(?::\s*any)?\) \{/,
+    /reloadHandler\(/,
+    'POST /account/reload must delegate to src/host/handlers.ts reloadHandler',
+  )
+  const guard = slice(
+    'export async function reloadHandler(',
+    'export async function confirmHandler(',
+    handlersSource,
+  )
+  assert.match(
+    guard,
+    /try \{\s*await deps\.startStoppedRegions\(wanted\)\s*\} catch \(error(?::\s*any)?\) \{/,
     'a throw out of startStoppedRegions would reach the web server catch-all and answer a bare 400',
   )
 })

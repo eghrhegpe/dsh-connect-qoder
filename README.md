@@ -238,7 +238,8 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/http-utils.ts` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
 | `src/host/domain.ts` | 各宿主模块标注时共用的领域词表（`Region` / `CatalogEntry` / `Promotion` / `CatalogOutcome` 等）。**只有类型、没有运行时值**，所以不进产物、不改变任何 bundle 字节；刻意不描述任何 peer 模块的形状——那些包由宿主运行时提供、此处只有 `declare module` 空壳，凭空造一个"看起来对"的接口比 `any` 更危险，因为它不会承认自己不知道（无 peer 依赖） |
 | `src/host/routes.ts` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
-| `src/host/index.ts` | 按区域注册 provider 的插件入口，与模型/用量/保存/账号状态路由（账号路由含「重读登录」的上线与回滚） |
+| `src/host/handlers.ts` | 七条卡片路由的 handler，`(req, res, deps) => Promise<void>` 形态：方法/来源两道闸 + 业务判定 + 应答全在这（含签到 `claimTodayFor` 与「重读登录」的失败保护），`index.ts` 只保留 `webServer.register` 与 deps 装配（从 `index.ts` 抽出以便直测，无 peer 依赖） |
+| `src/host/index.ts` | 按区域注册 provider 的插件入口，与七条路由的注册接线（handler 本体在 `handlers.ts`；账号路由含「重读登录」的上线与回滚） |
 
 `docs/docs-qoder-cn/` 是从 Qoder CN 官方文档抓回并清洗的资料（**纯 Markdown，源 `.txt` 已删**），
 由根目录的 `convert-qoder-docs.ps1` 一次性转换而成——它**只处理这一批抓取件**，不是常规构建步骤；
