@@ -66,6 +66,7 @@ import {
   accountHandler,
   reloadHandler,
   confirmHandler,
+  statusHandler,
 } from './handlers.ts'
 import { regionPublishDecision, unreadableSignInDecision } from './region-gate.ts'
 
@@ -198,6 +199,24 @@ export const Config = z.object({
 
 /** Plugin-owned read-only route the settings card reads its model rows from. */
 const QODER_MODELS_PATH = '/plugins/dsh-connect-qoder/models'
+
+/**
+ * Plugin-owned read-only route that answers "did this plugin finish coming up,
+ * and if not, at which step".
+ *
+ * Exists because activation has more than one way to be half-alive, and before
+ * this route every one of them presented identically: the card's other routes
+ * 404, which reads as "this plugin serves no such route" rather than "this
+ * plugin failed while activating". A route that always exists and always
+ * answers is what makes those two states distinguishable — see docs/issues/20,
+ * where a failed `llm` registration produced exactly that ambiguity.
+ *
+ * It reports the provider-registration step only, because that is the one step
+ * whose failure does NOT stop the card from being available (activation
+ * continues and these routes mount). Steps that fail before any route can be
+ * registered have nothing to report through here by construction.
+ */
+const QODER_STATUS_PATH = '/plugins/dsh-connect-qoder/status'
 
 /**
  * The rate helpers `projectModelRow` resolves against, passed in rather than
@@ -1037,11 +1056,26 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
 
   for (const { runtime } of started) wireRuntime(runtime)
 
+  // Provider registration is attempted once here, and its outcome is
+  // RECORDED, not obeyed as a reason to unwind. That distinction is the whole
+  // lesson of docs/issues/20: this call used to `return` on failure — after
+  // closing every shim — which skipped every card route below it, so a failed
+  // `llm` registration presented to the user as seven 404s with no way to see
+  // why. The regions started, their catalogs are readable and the account and
+  // usage panels need no adapter at all; taking those down with the adapter
+  // destroyed the only surface that can explain the failure. Red line 1
+  // (`AGENTS.md`) forbids exactly that: a new failure path must be visible, not
+  // silent. So a failure keeps everything alive, is logged, and is published on
+  // the status route below for the card to show. The shims stay open for the
+  // same reason — `disposeFiber` owns their teardown.
   const initial = publishRegions()
+  let providerRegistrationError: unknown
   if (initial.ok !== true) {
-    await Promise.allSettled(started.map(({ shim }) => shim.close()))
-    ctx.logger.error?.('dsh-connect-qoder: provider registration failed', initial.error)
-    return
+    providerRegistrationError = initial.error
+    ctx.logger.error?.(
+      'dsh-connect-qoder: provider registration failed; the card stays available and reports this on its status route',
+      initial.error,
+    )
   }
 
   ctx.effect(() => async () => {
@@ -1105,6 +1139,28 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
     const next = current()
     if (next !== preferences) preferences = next
     refreshPicker()
+  })
+
+  // Activation health, on a route that is mounted no matter how the provider
+  // registration above went. See QODER_STATUS_PATH for why this exists, and the
+  // recording block above for why the failure no longer unwinds activation.
+  //
+  // `started` is reported as a count rather than a region list: this is a
+  // browser-visible surface, and how many regions came up is diagnostic while
+  // which sign-ins exist is the account panel's job (and has its own route).
+  ctx.inject(['webServer'], (webCtx: HostContext) => {
+    // Injection is the guarantee: `inject(['webServer'], …)` runs this callback
+    // only once that service exists, so binding it to a local states that fact
+    // once instead of re-testing the optional at each of the registrations
+    // below. See `HostContext.webServer` / `HostService.register`.
+    const webServer = injected(webCtx.webServer, 'webServer')
+    mountRouteGroup(webServer, [{
+      path: QODER_STATUS_PATH,
+      handler: (req: IncomingMessage, res: ServerResponse) => statusHandler(req, res, {
+        startedCount: started.length,
+        providerRegistrationError,
+      }),
+    }], routeReleases, ctx.logger)
   })
 
   // The settings card needs the live model roster to render one row per model,

@@ -412,6 +412,57 @@ export async function accountHandler(
   }
 }
 
+/** What activation got done, as the status route reports it. */
+export interface StatusDeps {
+  /** How many regions came up during activation. */
+  startedCount: number
+  /**
+   * The provider-registration failure, when there was one.
+   *
+   * `undefined` means registration succeeded (or had nothing to register, which
+   * is the zero-region case and is not a failure).
+   */
+  providerRegistrationError?: unknown
+}
+
+/**
+ * Report whether this plugin finished activating, and at which step it did not.
+ *
+ * The route exists so that "the card's other routes 404" stops being ambiguous
+ * between "this host serves no such route" and "this plugin failed while coming
+ * up". It always answers 200 when the route itself is reachable: the answer IS
+ * the status, so a 5xx here would collapse the two states again — an
+ * always-200 body with `providerRegistration.ok: false` is what makes the
+ * failure legible to a card that can only render a response.
+ *
+ * Only the error's NAME is published, never its message: this surface is
+ * browser-visible, and `describeThrown` returns the message verbatim — an
+ * arbitrary thrown value can carry a credential-bearing URL, and a provider
+ * registration error is not a place to bet that it does not. The name still
+ * names the failure kind (`TypeError`, `Error`), and the full error is already
+ * in the host log, where the recording block in `activate()` put it. That split
+ * is deliberate: log the whole thing, publish the shape.
+ */
+export async function statusHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: StatusDeps,
+): Promise<void> {
+  if (!methodAllowed(req, res, 'GET')) return
+  if (!originAllowed(req, res)) return
+  const ok = deps.providerRegistrationError === undefined
+  sendJson(res, 200, {
+    activated: ok,
+    startedRegions: deps.startedCount,
+    providerRegistration: ok
+      ? { ok: true }
+      : {
+          ok: false,
+          errorName: (deps.providerRegistrationError as { name?: unknown } | undefined)?.name ?? 'Error',
+        },
+  })
+}
+
 /** The regions and runtimes the reload route widens. */
 export interface ReloadDeps {
   regions: readonly Region[]
