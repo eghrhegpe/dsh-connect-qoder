@@ -37,3 +37,4 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [17-client-source-restore.md](17-client-source-restore.md) | ~~P1~~ **已修**（产物去留已由 19 拍板：`lib/` 入库 + CI 新鲜度门禁） | `src/client` 已机械还原（内容等价）；字节一致经实测不可达——这不是未决项，19 已替它决策 |
 | [18-account-expired-link-no-context.md](18-account-expired-link-no-context.md) | ~~P2~~ **已修** | 账号失效提示裸链接跳官网无说明 → 已改为「先提示客户端重登/下载 + 带说明的下载链接」（issue 文件即验收基线） |
 | [19-lib-committed-github-install.md](19-lib-committed-github-install.md) | **P2 已决策** | `github:` 源安装缺 `lib/` 静默失效 → `lib/` 改回受版本管理 + CI 新鲜度门禁（pnpm 11 allowBuilds 审批流证据链） |
+| [20-llm-handoff-detached.md](20-llm-handoff-detached.md) | ~~P0~~ **已修** | `llm` 方法以裸引用交出、`this` 丢失 → provider 注册失败短路 activate，七条卡片路由全 404（`src` 已修、`lib/` 过期未重建；接线改箭头包裹 + `this:` 类型守卫 + `host-handoff-binding.test.js` 产物级守门） |
