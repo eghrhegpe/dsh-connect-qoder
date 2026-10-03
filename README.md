@@ -341,11 +341,16 @@ npm run build           # 从 src/ 重建 lib/（宿主 bundle + 卡片产物）
 - **`npm run verify` 也走不到**：它自己的 `build` 那步就需要 `tsdown`，会先在 `build` 失败。
   换句话说，这一条**不可能**靠跳过而"绿着通过"。
 
-`verify:bundle` 另有一条容易误读的性质：它的 baseline 默认取 `HEAD`，而 CI 的 `build` job 在它
-之前已经用 `git diff --exit-code -- lib` 证明工作树产物与 HEAD 逐字节相同——于是那 8400 次调用
-是产物跟自己比，**必然 IDENTICAL，什么也没证明**。脚本现在会把这种情况显式打成
-`NOT EVIDENCE` 与 `OK (vacuous)`，不再混进正常的 `OK` 里；要真正对拍就传
-`--baseline HEAD^`（或任意一份不同的已发布产物）。
+`verify:bundle` 另有一条容易误读的性质，2026-10 起它的行为是：baseline **不再默认取 `HEAD`**
+（CI 的 `build` job 先跑 `npm run build`，那时 `HEAD:lib/client.js` 就是工作树产物本身，跟自己比
+必然 IDENTICAL，什么也没证明），而是**自动回溯历史（上限 80 条），选最新一条 `lib/client.js`
+与工作树不同的提交**作为 baseline——「最新的、其产物与我不一样的那个 ref」才是这个问题该有的
+问法。固定的 ref（比如 `HEAD^`）是错答案：`lib/client.js` 大多数提交根本没碰（本分支上曾连续
+24 条提交都相同），任何固定 ref 都可能恰好逐字节相同。回溯无果（80 条内全相同，或浅克隆没有
+历史可走）时退回 `HEAD`，而那是一次**失败而非放行**：`FAIL (vacuous)` 并 exit 1，浅克隆分支
+还单独报出（修法是给 checkout 加 `fetch-depth: 0`，CI 的 `build` job 正是为此设置的；修法恰好
+相反——走完全相同是传一个显式 ref，浅克隆是改 checkout，所以分开报）。确需跨大距离对照某份
+已发布产物时仍传 `--baseline <ref>`。
 
 对拍覆盖不到渲染：JSX 被 stub 成 `null`，所以**改了 UI 仍然要在浏览器里看一眼**（展开卡片 →
 切区域 → 改图像档位 → 保存 → 看错峰倒计时）。

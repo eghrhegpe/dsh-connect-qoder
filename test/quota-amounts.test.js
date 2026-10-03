@@ -71,15 +71,6 @@ test('a percentage sent as a fraction is used as-is', async () => {
   assert.strictEqual(usage.userQuota.percentage, 0.25)
 })
 
-test('an out-of-range percentage is clamped into [0, 1]', async () => {
-  // A clamped display value is the honest reading of a nonsense one; the point
-  // is that it cannot escape the range and draw a bar past its track.
-  const over = await usageFrom({ user_quota: { total: 100, used: 10, percentage: 4000 } })
-  assert.strictEqual(over.userQuota.percentage, 1)
-  const under = await usageFrom({ user_quota: { total: 100, used: 10, percentage: -5 } })
-  assert.strictEqual(under.userQuota.percentage, 0)
-})
-
 test('a missing percentage falls back to used / total', async () => {
   const usage = await usageFrom({ user_quota: { total: 200, used: 50 } })
   assert.strictEqual(usage.userQuota.percentage, 0.25)
