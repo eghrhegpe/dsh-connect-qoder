@@ -29,6 +29,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
 import {
   modelsHandler,
   saveHandler,
@@ -572,6 +573,81 @@ test('confirm: a GET is refused with 405', async () => {
   const { res, out } = fakeRes(req)
   await confirmHandler(req, res, { regions: REGIONS, started: [] })
   assert.equal(out.status, 405)
+})
+
+test('confirm: a region with no running runtime is read through the ASYNC unwrapper', async () => {
+  // The recovery path: a sign-in that never produced a runtime (expired, or the
+  // plugin started before sign-in). This branch used to call the SYNCHRONOUS
+  // `loadCredential`, which spawns PowerShell and blocks the event loop for as
+  // long as it takes — freezing the whole plugin because a browser button was
+  // pressed. It now resolves through `loadCredentialAsync`.
+  //
+  // The injected reader is what makes that assertable without decrypting
+  // anything on the machine running the suite.
+  const reads = []
+  const req = fakeReq({ method: 'POST', url: '/plugins/dsh-connect-qoder/account/confirm' })
+  const { res, out, bodies } = fakeRes(req)
+  const pending = confirmHandler(req, res, {
+    regions: REGIONS,
+    started: [],
+    readCredential: async (region) => { reads.push(region.id); return { token: 't' } },
+    confirmUserInfo: async () => ({ name: 'alice', email: 'alice@example.com' }),
+  })
+  post(req, { region: 'qoder-cn' })
+  await pending
+  assert.equal(out.status, 200)
+  assert.deepEqual(reads, ['qoder-cn'], 'the stopped region is read exactly once')
+  assert.equal(lastJson({ bodies }).confirmed, true, 'a region can come back without a restart')
+})
+
+test('confirm: a throwing read for a stopped region is "unavailable" with the reason', async () => {
+  // The same posture as a runtime's own resolve failure, and the reason the
+  // 200-with-detail answer exists at all: a bare catch-all 400 would tell the
+  // user nothing about which step failed.
+  const req = fakeReq({ method: 'POST', url: '/plugins/dsh-connect-qoder/account/confirm' })
+  const { res, out, bodies } = fakeRes(req)
+  const pending = confirmHandler(req, res, {
+    regions: REGIONS,
+    started: [],
+    readCredential: async () => { throw new Error('OSCrypt key material unavailable') },
+  })
+  post(req, { region: 'qoder-cn' })
+  await pending
+  assert.equal(out.status, 200)
+  const body = lastJson({ bodies })
+  assert.equal(body.available, false)
+  assert.ok(String(body.detail).includes('OSCrypt key material unavailable'))
+})
+
+test('confirm: a stopped region with no sign-in anywhere is "unavailable", plainly', async () => {
+  const req = fakeReq({ method: 'POST', url: '/plugins/dsh-connect-qoder/account/confirm' })
+  const { res, out, bodies } = fakeRes(req)
+  const pending = confirmHandler(req, res, {
+    regions: REGIONS,
+    started: [],
+    readCredential: async () => undefined,
+  })
+  post(req, { region: 'qoder-cn' })
+  await pending
+  assert.equal(out.status, 200)
+  assert.equal(lastJson({ bodies }).available, false)
+})
+
+test('no route reads a credential through the SYNCHRONOUS unwrapper', () => {
+  // Structural, for the same reason `test/async-unwrap.test.js` pins the two
+  // unwrap entries: the behavioural tests above inject a reader, so they cannot
+  // tell an async read from a sync one that happens to return the same object.
+  // The sync unwrapper spawns PowerShell and blocks the event loop for as long
+  // as it takes (up to 30 s per candidate) — inside a route handler that freezes
+  // the whole plugin, including every other open card. It belongs to the
+  // startup sweep and the `probe/` script, which have no latency budget.
+  const source = readFileSync(new URL('../src/host/handlers.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(
+    source,
+    /\bloadCredential\(/,
+    'a route must reach the credential through loadCredentialAsync, never the blocking loadCredential',
+  )
+  assert.match(source, /loadCredentialAsync\(/)
 })
 
 // ---------------------------------------------------------------------------

@@ -111,7 +111,15 @@ pi-ai 与 `@deepseek-ai/*`。本机实测**两种做法都失败**，原因写�
 （`src/host/handlers.ts`，`(req, res, deps) => Promise<void>` 形态，P2-1）。`test/handlers.test.js`
 以假 req/res 直接执行每条 handler——方法闸 405、同源闸 403（含同 host 不同端口）、未知区 404、
 缺 settings 服务 503、坏 body 400/500、签到 200/502、confirm 的 sign-in-expired 归名并失效缓存
-全部是可执行断言，不再是文本守门。claim / confirm 的上游网络调用给了注入接缝（默认仍走真实现）。
+全部是可执行断言，不再是文本守门。claim / confirm 的上游网络调用给了注入接缝（默认仍走真实现），
+confirm 读取停摆区凭据的那条接缝同理——它原先调的是**同步**解包，会在路由里把整个插件的
+事件循环冻住（`docs/issues/07` 修的就是这件事，此处是它的收尾），现改走 `loadCredentialAsync`，
+并由一条结构断言钉住「路由里不得出现同步解包」（注入 reader 的行为测试分不出同步异步，故结构守门）。
+
+**已知的一处覆盖代价**：`confirmHandler` 里默认 reader 那个箭头函数（`deps.readCredential` 缺省时
+才走的那一行）没有函数覆盖——三个用例都注入了 reader，而让它真跑会去读**本机**应用目录，
+套件从不真解包。要覆盖它得把 `appDataRootFor` 的 env 透传成第三个接缝，代价大于收益；
+`handlers.ts` 函数覆盖因此是 93.33% 而非 100%（整体 86.11%，远高于地板 66）。
 
 **剩下的风险**：`ctx.inject(['webServer'])` 里的路由**注册**接线本身；
 `ctx.effect` 的 dispose 时序（定时器与在途 `refreshCatalog` 的竞态）；

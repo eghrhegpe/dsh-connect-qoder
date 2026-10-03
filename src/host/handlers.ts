@@ -37,7 +37,7 @@ import {
   claimableCampaignOf,
   normalizeClaimResult,
 } from './claim.ts'
-import { appDataRootFor, loadCredential, loadEnvCredential } from './credentials.ts'
+import { appDataRootFor, loadCredentialAsync, loadEnvCredential } from './credentials.ts'
 import type { LoadedCredential } from './credentials.ts'
 import { claimCampaign, fetchUserInfo, readCampaigns } from './upstream.ts'
 import type { UsageSnapshot } from './upstream.ts'
@@ -453,6 +453,12 @@ export interface ConfirmDeps {
    * unavailable) is assertable without the upstream call.
    */
   confirmUserInfo?: (region: Region, credential: LoadedCredential) => Promise<{ name: unknown; email: unknown }>
+  /**
+   * Read a credential for a region that has no running runtime. Defaults to the
+   * real `loadCredentialAsync`; injectable so that branch is assertable without
+   * decrypting anything on the machine running the suite.
+   */
+  readCredential?: (region: Region) => Promise<LoadedCredential | undefined>
 }
 
 /**
@@ -487,10 +493,15 @@ export async function confirmHandler(
   // detail through.
   let credential
   try {
-    credential =
-      runtime !== undefined
-        ? await runtime.resolveCredential()
-        : loadCredential(region, appDataRootFor()) ?? loadEnvCredential(region)
+    // A region with no running runtime is a sign-in that never produced one
+    // (expired, or the plugin started before the user signed in), and confirming
+    // it is exactly how a card recovers. That read goes through the ASYNC
+    // unwrapper: the synchronous one spawns PowerShell and blocks the event loop
+    // for as long as it takes (up to 30 s per candidate), and a browser press
+    // must never freeze the whole plugin for it. The runtime path already
+    // resolves asynchronously for the same reason.
+    const read = deps.readCredential ?? ((id: Region) => loadCredentialAsync(id, appDataRootFor()))
+    credential = runtime !== undefined ? await runtime.resolveCredential() : (await read(region)) ?? loadEnvCredential(region)
   } catch (error) {
     return sendJson(res, 200, {
       region: region.id,
