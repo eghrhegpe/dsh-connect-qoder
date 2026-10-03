@@ -56,7 +56,7 @@ const REGIONS = [
 ]
 
 /** A fetch stub answering the plugin's own routes from an in-memory model. */
-function routeStub({ models = [model({})], accountRegions = REGIONS, usageRegions = [], saveStatus = 200, imageOverrides = {} } = {}) {
+function routeStub({ models = [model({})], accountRegions = REGIONS, usageRegions = [], usageCheckin, saveStatus = 200, imageOverrides = {} } = {}) {
   const calls = []
   const seen = (url) => { calls.push(String(url)); return calls }
   const json = (value) => ({
@@ -80,7 +80,9 @@ function routeStub({ models = [model({})], accountRegions = REGIONS, usageRegion
       return json({ regions: accountRegions, enabledRegions: Object.fromEntries(accountRegions.map((r) => [r.region, r.enabled !== false])) })
     }
     if (path.includes('/usage')) {
-      return json({ regions: usageRegions })
+      // `usageCheckin` is the host's machine-identity hint, sent only when the
+      // international edition's round is gated off (KNOWN_GAPS §8).
+      return usageCheckin === undefined ? json({ regions: usageRegions }) : json({ regions: usageRegions, checkin: usageCheckin })
     }
     if (path.includes('/__save')) {
       return {
@@ -312,6 +314,84 @@ test('no check-in card is rendered when upstream has no round running', async ()
     1,
     'the quota bar still renders without a check-in',
   )
+})
+
+test('a machine identity that cannot be read is named, not left as an empty panel', async () => {
+  // The international edition's campaigns endpoint is gated on the desktop
+  // app's umid machine identity. Without it upstream serves no claimable round,
+  // so the check-in card is correctly absent — and its absence is
+  // indistinguishable from "no round today", which is what this fixes
+  // (KNOWN_GAPS §8, red line 1).
+  const { container } = await mount({
+    usageRegions: [
+      {
+        region: 'qoder-cn',
+        available: true,
+        addOnQuota: { used: 0, total: 100, remaining: 100, percentage: 0, unit: 'credits' },
+        checkin: { active: false, todayCheckedIn: false },
+      },
+    ],
+    usageCheckin: { umidAvailable: false, reason: 'no matching version root' },
+  })
+
+  assert.equal(container.querySelector('.dsm-qoder-checkin'), null, 'there is genuinely no round to render')
+  const note = [...container.querySelectorAll('p')].find((n) => /no matching version root/.test(text(n)))
+  assert.ok(note !== null, `the reason must be visible; the panel said: ${text(container).slice(0, 500)}`)
+  assert.ok(
+    /签到|check-in/i.test(text(note)),
+    `the note must read as a check-in explanation; got ${text(note)}`,
+  )
+})
+
+test('a healthy machine identity shows no such note', async () => {
+  // Only a degraded machine may be told about it, or every panel on a
+  // healthy machine grows a permanent warning nobody can act on.
+  const { container } = await mount({
+    usageRegions: [
+      {
+        region: 'qoder-cn',
+        available: true,
+        addOnQuota: { used: 0, total: 100, remaining: 100, percentage: 0, unit: 'credits' },
+        checkin: { active: false, todayCheckedIn: false },
+      },
+    ],
+  })
+  assert.equal([...container.querySelectorAll('p')].find((n) => /no matching version root/.test(text(n))), undefined)
+})
+
+test('a live check-in card wins over the machine-identity note', async () => {
+  // If a round IS running, the card is the answer; the note would contradict it
+  // and is exactly the kind of permanent warning the previous test guards.
+  const { container } = await mount({
+    usageRegions: [
+      {
+        region: 'qoder-cn',
+        available: true,
+        addOnQuota: { used: 0, total: 100, remaining: 100, percentage: 0, unit: 'credits' },
+        checkin: { active: true, todayCheckedIn: false, amount: 100 },
+      },
+    ],
+    usageCheckin: { umidAvailable: false, reason: 'no matching version root' },
+  })
+  assert.ok(container.querySelector('.dsm-qoder-checkin') !== null, 'the live round must render')
+  assert.equal([...container.querySelectorAll('p')].find((n) => /no matching version root/.test(text(n))), undefined)
+})
+
+test('a machine-identity note with no reason is not shown', async () => {
+  // A hint whose reason is missing would render as a warning explaining
+  // nothing — a blank, which is the failure being fixed. Better silent.
+  const { container } = await mount({
+    usageRegions: [
+      {
+        region: 'qoder-cn',
+        available: true,
+        addOnQuota: { used: 0, total: 100, remaining: 100, percentage: 0, unit: 'credits' },
+        checkin: { active: false, todayCheckedIn: false },
+      },
+    ],
+    usageCheckin: { umidAvailable: false },
+  })
+  assert.equal([...container.querySelectorAll('p')].find((n) => /no matching version root/.test(text(n))), undefined)
 })
 
 test('a save the host endpoint refuses surfaces the reason, not a "saved" banner', async () => {

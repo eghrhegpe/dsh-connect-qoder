@@ -48,6 +48,13 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 	// own. Upstream can ship several campaigns at once, and stacked they
 	// outgrew the quota block they sit under; more than one starts collapsed.
 	const [campaignsOpen, setCampaignsOpen] = react.useState(false);
+	// Why the daily round is missing, when the host says. The international
+	// edition's campaigns endpoint is gated on the desktop app's machine
+	// identity, and without it upstream serves no claimable round — so the
+	// check-in card below is legitimately absent. "Absent" is exactly what this
+	// plugin keeps being blamed for, so the reason rides along with the usage
+	// read and is shown instead of nothing.
+	const [checkinHint, setCheckinHint] = react.useState<string | undefined>(undefined);
 	const mounted = react.useRef(true);
 	// The read sequence: `load` runs from the mount effect, the card's
 	// refreshToken bump, the refresh button and after every check-in claim,
@@ -65,13 +72,22 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 		const seq = ++loadSeq.current;
 		setBusy(true);
 		try {
-			const value = await getJson<{ regions?: unknown }>(`${QODER_USAGE_PATH}${refresh ? "?refresh=1" : ""}`);
+			const value = await getJson<{ regions?: unknown; checkin?: unknown }>(`${QODER_USAGE_PATH}${refresh ? "?refresh=1" : ""}`);
 			// A later read started while this one was in flight supersedes it;
 			// applying an out-of-date answer would show the quota from before
 			// the refresh that just landed.
 			if (seq !== loadSeq.current) return;
 			if (!mounted.current) return;
 			setRegions(Array.isArray(value.regions) ? (value.regions as CardUsageRegion[]) : []);
+			// Only trust the hint when it is a real object with a non-empty
+			// reason: anything else is a host that does not send the field, and
+			// rendering "undefined" as an explanation would be worse than silence.
+			const hint = value.checkin as { umidAvailable?: unknown; reason?: unknown } | undefined;
+			setCheckinHint(
+				hint !== undefined && hint.umidAvailable === false && typeof hint.reason === "string" && hint.reason.length > 0
+					? hint.reason
+					: undefined,
+			);
 			setStatus("ready");
 			setNotice(undefined);
 		} catch (error) {
@@ -182,6 +198,14 @@ function QoderUsagePanel({ t, refreshToken = 0, activeRegion = "qoder-cn" }: Qod
 						void claimCheckin();
 					}}
 				/>
+			) : checkinHint !== undefined ? (
+				// Only when the card is NOT rendered, and only for the edition that
+				// was actually selected: the machine identity is a property of the
+				// machine, but the CN endpoint serves rounds to a bare bearer, so
+				// a CN-only user looking at the CN tab must not be told their
+				// check-in is unavailable. The host already conditions the
+				// activation warn the same way (KNOWN_GAPS §8).
+				<p className="dsm-qoder-account-note dsm-qoder-account-note-error">{t("usage.checkinUnavailable", { reason: checkinHint })}</p>
 			) : null}
 		</div>
 	);

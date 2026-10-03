@@ -49,7 +49,9 @@ Node 没有内置 DPAPI 绑定，这一步交给 PowerShell，并通过临时文
 **平台边界：零配置路径只在 Windows 成立。** 解密链路是 PowerShell + DPAPI（`Crypt32.dll`），
 `src/host/` 里没有任何 macOS / Linux 解包分支——在其它平台上应用目录**找得到**（应用数据根目录
 已按平台解析，见下），但凭据读不出来（`loadCredential` 返回 `undefined`，该区域不注册），
-只剩上面的 PAT 兜底。
+只剩上面的 PAT 兜底。非 Windows 上的失败**说的是真话**：`runUnwrap` 在 spawn 之前就判平台，
+记下的是"这个版本只在 Windows 上读得到登录"，而不是一条在 Mac 上显示的 Windows 路径；
+账号面板的提示也随之改为指向 PAT，而不是让一个已经装了客户端的用户去确认"客户端在不在"。
 
 **这不是"没有跨平台客户端"，而是客户端已跨平台、插件尚未跟上**：Qoder 桌面版在
 macOS 12+ / Linux (.deb/.rpm) / HarmonyOS 上都有下载（[qoder.com.cn/download](https://qoder.com.cn/download)），

@@ -182,6 +182,12 @@ export async function saveHandler(
 export interface UsageDeps {
   started: RouteRuntimeEntry[]
   logger: PluginLogger
+  /**
+   * Whether this machine can supply the desktop app's umid machine identity.
+   * Optional so the route keeps working against a host that predates the
+   * field; when absent the response simply omits the hint.
+   */
+  umidState?: () => { available: boolean; reason?: string }
 }
 
 /**
@@ -221,7 +227,36 @@ export async function usageHandler(
       }
     }),
   )
-  sendJson(res, 200, { regions })
+  sendJson(res, 200, { regions, ...checkinAvailability(deps) })
+}
+
+/**
+ * Whether this machine can claim the international edition's daily round.
+ *
+ * Upstream gates `GET /campaigns` on the desktop app's umid machine identity:
+ * without it the endpoint serves only the promotional banner and NO claimable
+ * round, so `checkinStateFrom` reports `active: false` and the card correctly
+ * renders nothing (KNOWN_GAPS §8). Nothing was ever wrong with the card — but
+ * "the panel is simply absent" is indistinguishable from "there is no check-in
+ * today", which is the silent-failure shape this plugin keeps paying for.
+ *
+ * So the reason travels with the usage response and the card can say it. It is
+ * reported at the top level rather than per region because it is a property of
+ * the MACHINE, and because only the international edition is gated: the CN
+ * endpoint serves rounds to a bare bearer, so a CN-only user must not be shown
+ * a machine-identity warning (index.ts's warn is conditioned the same way).
+ *
+ * @param deps - the route's dependencies.
+ * @returns `{}` when the caller supplied no probe, or a `checkin` hint otherwise.
+ */
+function checkinAvailability(deps: UsageDeps): { checkin?: { umidAvailable: boolean; reason: string } } {
+  if (deps.umidState === undefined) return {}
+  const state = deps.umidState()
+  if (state.available === true) return {}
+  // The reason is the whole point, so it is never dropped to `undefined`: a
+  // bare `umidAvailable: false` would reach the card as a warning with nothing
+  // to say, which is the same blank the card is being fixed to stop showing.
+  return { checkin: { umidAvailable: false, reason: state.reason ?? 'the Qoder machine identity is unavailable on this machine' } }
 }
 
 /** The started regions the check-in route can claim for. */

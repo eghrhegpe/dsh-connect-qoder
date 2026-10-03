@@ -272,14 +272,33 @@ effect；六道宿主路由 fetch（名册 / 账号读 / 账号重读 / 账号�
 
 ## 6. 跨平台凭据链未实现（macOS / Linux）
 
-**状态**：**第 2 项（app-data 根目录）已修**，其余三项仍缺。修了它不是为了"支持 macOS"，
-而是为了让 macOS 上的失败变得**诚实**：此前探测 `process.env.APPDATA`（该变量在 macOS 上
-不存在）→ 得到 `''` → 报告"没登录"，而用户明明登录了。现在 `appDataRootFor()` 解析到
-`~/Library/Application Support`（macOS）与 `$XDG_CONFIG_HOME`/`~/.config`（Linux），
-应用目录**找得到**了，于是面板能说"应用装在这里、但这个版本读不出它的密钥"，
-而不是谎称应用不存在。解包本身仍只有 Windows 一条链。
+**状态**：**第 2 项（app-data 根目录）已修**，**第 5 项（失败原因说清方向）已修**，
+其余仍缺。修了它们不是为了"支持 macOS"，而是为了让 macOS 上的失败变得**诚实**：
+此前探测 `process.env.APPDATA`（该变量在 macOS 上不存在）→ 得到 `''` → 报告"没登录"，
+而用户明明登录了。现在 `appDataRootFor()` 解析到 `~/Library/Application Support`（macOS）
+与 `$XDG_CONFIG_HOME`/`~/.config`（Linux），应用目录**找得到**了。解包本身仍只有 Windows 一条链。
 
-**位置**：`src/host/credentials.ts`（OS keystore 封装）、`src/host/account-state.ts`（`appDataRoot` 注入）、
+**第 5 项（2026-10-03 补）**：解包是 PowerShell + DPAPI，在 macOS/Linux 上**没有可执行的东西**。
+原先代码不管平台就往下走，于是 `systemPowershell()` 拼出的
+`C:\Windows\System32\...\powershell.exe` 被 spawn 失败，报出来的 exec 错误就是账号面板显示的
+`detail`——在一台 Mac 上显示一条 Windows 路径，解释不了任何事。更糟的是：应用**真的**没登录时
+同一条路径报 `no Local State file`，两种答案最后都汇成卡片那句"请确认本机有已登录的
+Qoder 客户端"——对着一个已经装了并登录了的用户。现在：
+
+- `runUnwrap` 在创建临时目录与 spawn **之前**先判平台（`options.platform` 可注入，
+  与 `appDataRootFor(platform = process.platform, …)` 同一手法，理由是让非 Windows 分支
+  在 Windows 测试机上可测），非 Windows 直接记一条点名的原因并返回。于是 macOS 上省掉了
+  每次请求的建目录开销，也不会留下一个自己读不了的手递文件。
+- 卡片文案 `account.readFail` 改口：不再说"请确认本机有已登录的 Qoder 客户端"（对 macOS
+  用户是**错的**建议），改为指向**在哪个平台都成立**的兜底——环境变量 PAT
+  （`QODERCN_PAT` / `QODER_PAT`）或点「重新读取登录状态」。
+
+`async-unwrap.test.js` 新增四条（含"非 Windows 不建手递目录"、"win32 不得被这条守卫拒绝"），
+均已变异验证。**注意**：这只改好了**说法**，第 1 项的 keystore 仍缺——macOS 上这仍是
+"读不到"，只是现在说得对。
+
+**位置**：`src/host/credentials.ts`（OS keystore 封装、`runUnwrap` 平台守卫）、
+`src/client/copy-account.ts`（`account.readFail` 文案）、`src/host/account-state.ts`（`appDataRoot` 注入）、
 `src/host/upstream.ts`（`MACHINE_OS` darwin 回落）
 
 **为什么剩下的还没有**：
@@ -390,12 +409,17 @@ CN 与 PAT 凭据不受影响。二进制每进程只跑一次（`umidInfo` 缓�
   仍是回落候选。上游升版（0.4.4…）不再需要插件发版跟档。剩余：CN 端的
   `QoderCN\.qoder-versions` 布局未实测（本机无 CN 安装），按对称规则枚举，
   目录不存在时静默 no-op；枚举读失败同样 no-op（`umid-roots` 测试守着）。
-- **签到降级的用户可见性**（2026-10-03 补了 host 半边）：umid 读不到时，
-  国际版签到轮次不下发、卡片签到区不渲染，此前全程无痕迹。`index.ts` 激活期
-  现在会在「global region 已启动 + umid 不可用」时打一条 warn（条件精确到
-  CN-only / 无 Qoder 机器的日志保持干净）；判据走 `__dshQoderUmidState` 缝
-  （`umid-headers` 测试守着）。卡片半边——国际版用量面板上一行「机器身份不可
-  用，签到轮次暂缺」的提示——需要动 client 五道闸，欠着，登记在此。
+- **签到降级的用户可见性（2026-10-03 两侧都补齐了）**：umid 读不到时，国际版签到轮次
+  不下发、卡片签到区不渲染，此前**全程无痕迹**——"面板空着"与"今天没有轮次"长得一模一样。
+  现在两端都发声：
+  - host 半边：`__dshQoderUmidState` 这个既有缝同时接到 `usageHandler` 的响应上
+    （`{ checkin: { umidAvailable: false, reason } }`），判据与激活期那条 warn 同源，
+    所以卡片看到的解释与日志那行**不可能互相矛盾**；umid 可用时该字段整个不出现，
+    健康机器不会多出一条谁也处理不了的警告。`reason` 永不为空——空的 `reason` 到卡片
+    上就是"一条什么都不解释的警告"，那正是本条要消灭的东西。
+  - card 半边：`usage.checkinUnavailable` 在**签到卡不渲染时**补一行说明，{reason}
+    逐字带出宿主原话。签到卡真的在渲染时（轮次存在）不显示这行，否则会和卡片自相矛盾。
+    `card-dom.test.js` 新增四条，含"有轮次时以卡片为准"与"没有 reason 就不显示"。
 - 跨平台（第 6 条）依旧：umid 二进制是 Windows 专物，macOS / Linux 上国际版
   签到卡片会继续缺席，与跨平台凭据链缺口同源。
 - **领取幂等性未实测**：本轮只读验证了"看见轮次"，没有真发 POST 领取

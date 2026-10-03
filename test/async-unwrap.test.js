@@ -360,3 +360,85 @@ test('the async path leaves no readable key material after it settles', async ()
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// Non-Windows hosts (KNOWN_GAPS §6)
+//
+// The unwrap is PowerShell + DPAPI, so there is nothing to run on macOS or
+// Linux. Before this branch existed, such a host spawned a child against a path
+// like `C:\Windows\System32\...\powershell.exe`, and the exec error it recorded
+// is what the account panel showed — a Windows path on a Mac, explaining
+// nothing. Worse, when the app really had no sign-in the same path reported
+// "no Local State file", and both answers ended in the card telling the user to
+// install an app they already have.
+// ---------------------------------------------------------------------------
+
+test('a non-Windows host is told the platform is the reason, not told to install an app', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'qoder-platform-'))
+  try {
+    const appDir = appDirWith(root)
+    await loadCredentialAsync(REGION, root, { platform: 'darwin' })
+
+    const reason = describeUnwrapFailure(appDir)
+    assert.ok(reason !== undefined, 'the failure must be recorded, or the card has nothing to say')
+    assert.match(
+      reason,
+      /only read the Qoder sign-in on Windows/,
+      `the reason must name the platform gap; got ${JSON.stringify(reason)}`,
+    )
+    assert.doesNotMatch(
+      reason,
+      /no Local State file/,
+      'reporting "no Local State file" here is the lie this branch exists to stop',
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a non-Windows host writes no hand-off directory at all', async () => {
+  // Checked BEFORE the temp directory is created, so a Mac spends nothing per
+  // request and never leaves a key file it cannot use.
+  const root = mkdtempSync(join(tmpdir(), 'qoder-platform-'))
+  const before = new Set(readdirNames(tmpdir()))
+  try {
+    appDirWith(root)
+    await loadCredentialAsync(REGION, root, { platform: 'darwin' })
+    const fresh = readdirNames(tmpdir())
+      .filter((name) => name.startsWith('qoder-oscrypt-') && !before.has(name))
+    assert.deepStrictEqual(fresh, [], 'the platform check must run before the hand-off directory is made')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the reason names the platform it was asked about', async () => {
+  // Two unsupported platforms must not produce one identical sentence: the
+  // message is read by someone deciding whether the plugin works for them.
+  const root = mkdtempSync(join(tmpdir(), 'qoder-platform-'))
+  try {
+    const appDir = appDirWith(root)
+    await loadCredentialAsync(REGION, root, { platform: 'linux' })
+    assert.match(describeUnwrapFailure(appDir) ?? '', /linux/, 'the message must name the platform')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a Windows host is not refused by the platform check', async () => {
+  // The guard must key on the platform, not on "the unwrap looks hard" — on
+  // Windows it must still reach the spawn and return whatever the real unwrap
+  // returns. A refusal here would break the ONLY platform that works.
+  const root = mkdtempSync(join(tmpdir(), 'qoder-platform-'))
+  try {
+    const appDir = appDirWith(root)
+    await loadCredentialAsync(REGION, root, { platform: 'win32' })
+    assert.doesNotMatch(
+      describeUnwrapFailure(appDir) ?? '',
+      /only read the Qoder sign-in on Windows/,
+      'win32 must never be refused the way macOS is',
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

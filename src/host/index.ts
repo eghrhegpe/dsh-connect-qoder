@@ -1092,6 +1092,9 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
         handler: (req: IncomingMessage, res: ServerResponse) => usageHandler(req, res, {
           started,
           logger: ctx.logger,
+          // Same seam the activation warn reads, so the card's explanation and
+          // the log line can never disagree about why the round is missing.
+          umidState: __dshQoderUmidState,
         }),
       }))
     } catch (error) {

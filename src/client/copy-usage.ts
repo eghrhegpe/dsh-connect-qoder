@@ -8,6 +8,12 @@ export const zhUsage = {
 	"usage.empty": "当前账户暂无可展示的用量。",
 	"usage.unavailable": "这个区域暂时读不到用量。",
 	"usage.none": "这个版本暂时没有用量数据（未登录或尚未上线）。",
+	// `{reason}` carries the host's own words, not a guess. The international
+	// edition's campaigns endpoint is gated on the desktop app's machine
+	// identity, so the check-in card is absent for THAT reason — not because
+	// there is nothing to claim. Rendering nothing was indistinguishable from
+	// "no round today", which is the silent-failure shape (red line 1).
+	"usage.checkinUnavailable": "每日签到暂不可用：{reason}",
 	"usage.error": "读取用量失败",
 	"usage.planCredits": "套餐内 Credits",
 	"usage.resourcePackage": "个人资源包",
@@ -51,6 +57,8 @@ export const enUsage = {
 	"usage.empty": "This account has no usage to show right now.",
 	"usage.unavailable": "Usage is unavailable for this region right now.",
 	"usage.none": "No usage data for this edition (not signed in, or offline yet).",
+	// See the zh note: the reason is the host's, and it is the whole message.
+	"usage.checkinUnavailable": "Daily check-in unavailable: {reason}",
 	"usage.error": "Could not read usage",
 	"usage.planCredits": "Plan Credits",
 	"usage.resourcePackage": "Personal resource package",

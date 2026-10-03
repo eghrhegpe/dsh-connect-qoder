@@ -265,6 +265,64 @@ test('usage: a failing region is reported unavailable, the panel still answers 2
   assert.equal(lastJson({ bodies }).regions[0].available, false)
 })
 
+test('usage: an unavailable machine identity is reported so the card can explain itself', async () => {
+  // Upstream gates the international edition's campaigns endpoint on the desktop
+  // app's umid machine identity; without it no claimable round is served and the
+  // check-in card is legitimately absent. "Absent" read as "nothing to claim",
+  // so the reason travels with the usage read.
+  const req = fakeReq({ url: '/plugins/dsh-connect-qoder/usage' })
+  const { res, out, bodies } = fakeRes(req)
+  await usageHandler(req, res, {
+    started: [{ region: CN, runtime: stubRuntime({ readUsage: async () => ({ available: true }) }) }],
+    logger: quiet,
+    umidState: () => ({ available: false, reason: 'no matching version root' }),
+  })
+  assert.equal(out.status, 200)
+  const body = lastJson({ bodies })
+  assert.equal(body.checkin.umidAvailable, false)
+  assert.equal(body.checkin.reason, 'no matching version root', 'the host reason is carried verbatim')
+})
+
+test('usage: a working machine identity is not reported at all', async () => {
+  const req = fakeReq({ url: '/plugins/dsh-connect-qoder/usage' })
+  const { res, out, bodies } = fakeRes(req)
+  await usageHandler(req, res, {
+    started: [{ region: CN, runtime: stubRuntime({ readUsage: async () => ({ available: true }) }) }],
+    logger: quiet,
+    umidState: () => ({ available: true }),
+  })
+  assert.equal(out.status, 200)
+  assert.equal(lastJson({ bodies }).checkin, undefined, 'a healthy machine must not raise a warning')
+})
+
+test('usage: an unavailable machine identity STILL carries a reason', async () => {
+  // The reason is the entire message. A bare `umidAvailable: false` would reach
+  // the card as a warning that explains nothing — the blank this fixes.
+  const req = fakeReq({ url: '/plugins/dsh-connect-qoder/usage' })
+  const { res, out, bodies } = fakeRes(req)
+  await usageHandler(req, res, {
+    started: [{ region: CN, runtime: stubRuntime({ readUsage: async () => ({ available: true }) }) }],
+    logger: quiet,
+    umidState: () => ({ available: false }),
+  })
+  assert.equal(out.status, 200)
+  assert.ok(String(lastJson({ bodies }).checkin.reason).length > 0)
+})
+
+test('usage: a host that sends no umid seam gets the field omitted, not faked', async () => {
+  // `umidState` is optional so the route keeps working against a host that
+  // predates it. Inventing a reason there would be a lie; omitting it is the
+  // old, correct behaviour.
+  const req = fakeReq({ url: '/plugins/dsh-connect-qoder/usage' })
+  const { res, out, bodies } = fakeRes(req)
+  await usageHandler(req, res, {
+    started: [{ region: CN, runtime: stubRuntime({ readUsage: async () => ({ available: true }) }) }],
+    logger: quiet,
+  })
+  assert.equal(out.status, 200)
+  assert.equal(lastJson({ bodies }).checkin, undefined)
+})
+
 // ---------------------------------------------------------------------------
 // /checkin + the claim orchestration
 // ---------------------------------------------------------------------------

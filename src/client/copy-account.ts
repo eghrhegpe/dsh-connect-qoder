@@ -15,7 +15,13 @@ export const zhAccount = {
 	"account.expiresAt": "有效期至 {date}",
 	"account.unsigned": "本机没装这个版本的 Qoder 客户端",
 	"account.expiredHint": "登录已失效——请打开 Qoder 客户端（{app}）重新登录，然后点「重新读取登录状态」",
-	"account.readFail": "本地登录信息读不到：{detail}。请确认本机有已登录的 Qoder 客户端，或点「重新读取登录状态」",
+	// The advice has to be true on every platform the plugin can run on. The
+	// previous wording ("make sure a signed-in Qoder client is on this machine")
+	// is exactly wrong for a macOS or Linux user: they HAVE one, the plugin just
+	// cannot read that platform's keychain yet, and the host now says so in
+	// `detail`. A PAT is the one fallback that works everywhere, so it is what
+	// this points at; "re-read" only helps if the cause really was a stale read.
+	"account.readFail": "本地登录信息读不到：{detail}。可改用环境变量 PAT（QODERCN_PAT / QODER_PAT），或点「重新读取登录状态」",
 	"account.download": "没装 Qoder 客户端？到「下载」区安装 {edition}，装好后登录",
 	"account.downloadLink": "下载 {edition}",
 	"account.error": "读取账号状态失败",
@@ -45,7 +51,8 @@ export const enAccount = {
 	"account.expiresAt": "Valid until {date}",
 	"account.unsigned": "No Qoder client for this edition is installed on this machine",
 	"account.expiredHint": "Sign-in has lapsed — sign in again in the Qoder client ({app}), then click Re-read sign-in",
-	"account.readFail": "Could not read the local credential: {detail}. Make sure a signed-in Qoder client is on this machine, or press Re-read sign-in",
+	// See the zh note above: the remedy has to be valid everywhere, and a PAT is.
+	"account.readFail": "Could not read the local credential: {detail}. Either set an environment PAT (QODERCN_PAT / QODER_PAT), or press Re-read sign-in",
 	"account.download": "The Qoder client is missing — install {edition} from the Download section, then sign in",
 	"account.downloadLink": "Download {edition}",
 	"account.confirmExpired": "Confirmed: sign-in expired — sign in again in the Qoder client, then re-read",

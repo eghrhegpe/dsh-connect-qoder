@@ -79,7 +79,7 @@ export interface UnwrapFailure {
  */
 export type DiagnosticSink = (message: string) => void
 
-/** The knobs both unwrap entry points take. `force` is the only one today. */
+/** The knobs both unwrap entry points take. */
 export interface UnwrapOptions {
   /**
    * Ignore the failure window and unwrap again. Reserved for the explicit user
@@ -87,6 +87,16 @@ export interface UnwrapOptions {
    * no-op; every automatic caller leaves it unset.
    */
   force?: boolean
+  /**
+   * The Node platform string, defaulting to `process.platform`.
+   *
+   * Present only so the non-Windows branch is reachable from a Windows machine:
+   * the unwrap is PowerShell + DPAPI, and DPAPI has no equivalent elsewhere
+   * (KNOWN_GAPS §6). A test that could not name a foreign platform could not
+   * assert that such a host is told WHY it cannot read the sign-in — and that
+   * message is the whole reason the branch exists.
+   */
+  platform?: string
 }
 
 /**
@@ -611,7 +621,7 @@ export async function oscryptKeyForAsync(
  * is identical by construction.
  *
  * @param appDir - the app's user-data directory.
- * @param options - `{ force }`.
+ * @param options - `{ force, platform }`.
  * @param spawn - the child-process runner.
  * @returns the key, or a promise of it, depending on `spawn`.
  */
@@ -620,6 +630,7 @@ function runUnwrap(
   options: UnwrapOptions,
   spawn: UnwrapSpawn,
 ): Buffer | undefined | PromiseLike<Buffer | undefined> {
+  const platform = options.platform ?? process.platform
   const statePath = join(appDir, 'Local State')
   // Read before the cache lookup, not after: a stat is a few microseconds and
   // it is the only thing standing between a reinstall and a permanent
@@ -639,6 +650,28 @@ function runUnwrap(
     // below like any other failure, minus the diagnostic, because this is the
     // normal outcome of probing the several names a region knows.
     return recordUnwrapFailure(appDir, 'no Local State file', identity)
+  }
+  // The unwrap is a PowerShell + DPAPI script and DPAPI is Windows-only, so on
+  // macOS and Linux there is nothing to run. Checked HERE, before the spawn,
+  // for two reasons.
+  //
+  // The first is honesty. Without this, the child fails with an exec error on a
+  // path like `C:\Windows\System32\...\powershell.exe`, and that string is what
+  // the account panel shows — a Windows path on a Mac, which tells the user
+  // nothing. Worse, if the app genuinely has no sign-in the same code path
+  // reports `no Local State file`, and both answers end in the card saying
+  // "make sure a signed-in Qoder client is on this machine" to someone who has
+  // one. The sign-in is right there; the plugin simply cannot read it here.
+  //
+  // The second is cost: this is checked before the temp directory is created
+  // and before a child is spawned, so a non-Windows host never writes a
+  // hand-off file it cannot use.
+  if (platform !== 'win32') {
+    return recordUnwrapFailure(
+      appDir,
+      `this plugin can only read the Qoder sign-in on Windows; ${platform} has no supported keychain path yet`,
+      identity,
+    )
   }
   // `dir` and `lastFailure` are assigned inside `settle`, which runs AFTER the
   // child exits on the async path — so they cannot be `const`, and both need
@@ -1202,6 +1235,12 @@ export function cachedOscryptKeyFor(appDir: string): Buffer | undefined {
 export interface LoadCredentialOptions {
   cachedOnly?: boolean
   force?: boolean
+  /**
+   * Forwarded to the unwrap; see {@link UnwrapOptions.platform}. Defaults to
+   * `process.platform`, and exists so the non-Windows explanation is reachable
+   * from a Windows test machine rather than only on a Mac nobody here runs.
+   */
+  platform?: string
 }
 
 export function loadCredential(
@@ -1216,8 +1255,8 @@ export function loadCredential(
     options.cachedOnly === true
       ? cachedOscryptKeyFor
       : options.force === true
-        ? (appDir: string) => oscryptKeyFor(appDir, { force: true })
-        : oscryptKeyFor
+        ? (appDir: string) => oscryptKeyFor(appDir, { force: true, platform: options.platform })
+        : (appDir: string) => oscryptKeyFor(appDir, { platform: options.platform })
   return loadCredentialWith(region, appDataRoot, keyFor) as LoadedCredential | undefined
 }
 
@@ -1241,8 +1280,8 @@ export async function loadCredentialAsync(
     options.cachedOnly === true
       ? cachedOscryptKeyFor
       : options.force === true
-        ? (appDir: string) => oscryptKeyForAsync(appDir, { force: true })
-        : oscryptKeyForAsync
+        ? (appDir: string) => oscryptKeyForAsync(appDir, { force: true, platform: options.platform })
+        : (appDir: string) => oscryptKeyForAsync(appDir, { platform: options.platform })
   return loadCredentialWith(region, appDataRoot, keyFor) as Promise<LoadedCredential | undefined>
 }
 
