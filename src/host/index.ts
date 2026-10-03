@@ -1010,8 +1010,14 @@ async function activate(ctx: HostContext, config: Record<string, unknown>): Prom
           },
       previousReleases,
       {
-        registerAdapter: ctx.llm.registerAdapter,
-        registerConfigurableProviders: ctx.llm.registerConfigurableProviders,
+        // Bound, not handed over bare: both `llm` methods are `this`-bound in
+        // the host (`registerAdapter` calls `this.ctx.effect(...)`), so passing
+        // the extracted reference makes `this` undefined and the call throws
+        // `Cannot read properties of undefined (reading 'effect')` — which
+        // failed provider registration AND the whole activation, leaving every
+        // card route 404. See docs/issues/20.
+        registerAdapter: (providerIds, adapter) => ctx.llm.registerAdapter(providerIds, adapter),
+        registerConfigurableProviders: (rows) => ctx.llm.registerConfigurableProviders(rows),
         onRollbackFailed: (error) => ctx.logger.error?.('dsh-connect-qoder: a release did not complete', error),
       },
     )

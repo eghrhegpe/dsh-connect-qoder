@@ -576,8 +576,32 @@ export interface HostContext {
    * "this is not callable" bug gets hidden behind a shrug.
    */
   llm: {
-    registerAdapter: (providerIds: string[], adapter: unknown) => (() => void) | undefined
-    registerConfigurableProviders: (providers: unknown) => (() => void) | undefined
+    /**
+     * Declared with an explicit `this`, because the host implementation is a
+     * `this`-bound method (`registerAdapter` runs `this.ctx.effect(...)`), not a
+     * free function.
+     *
+     * The earlier arrow-property form erased that receiver: it let
+     * `registerAdapter: ctx.llm.registerAdapter` — a detached reference —
+     * typecheck, and the resulting `this === undefined` threw
+     * `Cannot read properties of undefined (reading 'effect')` at activation,
+     * which took the card's routes down with it (docs/issues/20).
+     *
+     * `this: HostContext['llm']` (not `this: void`) is what actually guards the
+     * regression: it makes the receiver mandatory, so extracting the method and
+     * calling it detached is TS2684 rather than a runtime TypeError. `this: void`
+     * would accept exactly the buggy hand-off, since a void receiver is
+     * assignable from anything.
+     */
+    registerAdapter(
+      this: HostContext['llm'],
+      providerIds: string[],
+      adapter: unknown,
+    ): (() => void) | undefined
+    registerConfigurableProviders(
+      this: HostContext['llm'],
+      providers: unknown,
+    ): (() => void) | undefined
   }
   settings?: {
     register?: (namespace: string, section: unknown) => unknown
