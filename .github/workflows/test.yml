@@ -84,7 +84,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0` is REQUIRED, not a nicety. `verify:bundle` walks history
+      # for the newest ref whose `lib/client.js` differs from the rebuilt one —
+      # that is what turns a self-comparison into real regression evidence. A
+      # default shallow clone (depth 1) has no history to walk, and the script
+      # then falls back to `HEAD` and FAILS the step on purpose (a green step
+      # that cannot fail is worse than no step). Depth 0 is the cheapest way to
+      # keep the comparison meaningful.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
