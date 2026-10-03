@@ -13,10 +13,15 @@
 
 ## 证据
 
-- `lib/upstream.js:26-40`（RSA 公钥、COSY 版本、客户端类型等协议常量）
-- `lib/upstream.js:160-167`（`MACHINE_OS` 的 darwin 分支缺失）
-- `lib/upstream.js:1043-1166`（队列等待预算——正是把"形状变化"吞成"排队"的地方）
+- `src/host/upstream.ts`（RSA 公钥、COSY 版本、客户端类型等协议常量）
+- `src/host/upstream.ts` 的 `MACHINE_OS`（darwin 分支缺失）
+- `src/host/upstream.ts`（队列等待预算——正是把"形状变化"吞成"排队"的地方）
 - `grep MACHINE_OS test/` → 0 命中
+
+> 行号已移除：旧引用写的是 `lib/upstream.js:160-167` 之类，那是**打包产物**的行号。
+> `lib/` 现在只有 `index.js`/`client.js` 两个文件，子模块的行号不再对应任何东西
+> （实测 `MACHINE_OS` 现在在 `src/host/upstream.ts:167`，与旧行号只是巧合接近）。
+> 按**符号名**查比按行号查可靠。
 
 ## 修法
 
@@ -37,7 +42,7 @@
 "请求失败时什么都不说"，而这已由刷新失败标志覆盖。要不要额外保留一条独立心跳（用于上游长期静默
 不可达时也留痕）留待以后。
 
-**判别式写在 [`../../lib/upstream.js`](../../lib/upstream.js) 的 `readModelCatalogShape`**，
+**判别式写在 [`../../src/host/upstream.ts`](../../src/host/upstream.ts) 的 `readModelCatalogShape`**，
 界线取自 [`../../probe/model-shape.mjs`](../../probe/model-shape.mjs) 的**实测**（两端真实账号）：
 
 | 收到 | 判定 | 理由（实测事实） |
@@ -49,7 +54,7 @@
 
 最后一行是关键：把形状钉在"我在 CN 上见过的全部分组"上，会把国际版的每一次例行响应都判成漂移。
 
-**不进队列**靠 `ProtocolShapeChangedError` 上的 `retryable = false`（[`../../lib/errors.js`](../../lib/errors.js)），
+**不进队列**靠 `ProtocolShapeChangedError` 上的 `retryable = false`（[`../../src/host/errors.ts`](../../src/host/errors.ts)），
 `queueWaitFor` 因此立即返回 `undefined`——这正是"插件坏了"被当成"在排队"耗掉两分钟预算的那一处。
 反方向也有断言：真实队列拒绝仍然照常等待。
 

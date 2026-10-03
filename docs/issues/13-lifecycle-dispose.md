@@ -38,7 +38,7 @@ dispose 之后再 POST `account/reload` 会**再起一个 shim + 一个 interval
 不只是"事后不认这个结果"，而是**真的掐断上游连接**。两层都要，因为二者会竞态：
 abort 可能输给一个已经读到的响应。
 
-`isRefreshObsolete`（[`../../lib/catalog-refresh.js`](../../lib/catalog-refresh.js)）是纯函数，
+`isRefreshObsolete`（[`../../src/host/catalog-refresh.ts`](../../src/host/catalog-refresh.ts)）是纯函数，
 **成功路径和失败路径都要查**：只查一条是最容易犯的"改一半"——成功路径不查会往磁盘写目录并向
 已释放的 fiber `emit`；失败路径不查会在每次禁用/热重载的日志里留下一条无主的警告。
 测试用源码断言数检查点个数（`lib/index.js` 不可 import），变异验证删掉失败路径那条即红。
@@ -51,7 +51,7 @@ abort 可能输给一个已经读到的响应。
 `app.asar.unpacked` 里没有该包、`@deepseek-ai` 下只有 `cosmokit` 与 `schemastery`。
 
 于是改成一个**两种宿主语义下都正确**的写法：把 `register()` 的返回值收集起来，
-**只有当它是可调用的**才在 dispose 时调用（[`../../lib/lifecycle.js`](../../lib/lifecycle.js)）。
+**只有当它是可调用的**才在 dispose 时调用（[`../../src/host/lifecycle.ts`](../../src/host/lifecycle.ts)）。
 随 fiber 回收的宿主会忽略这次多余调用；不随 fiber 回收的宿主则拿到了它原本缺失的注销。
 
 这样处理的关键是**不对看不见的契约下断言**。若宿主将来改变返回值的形状，退化结果是

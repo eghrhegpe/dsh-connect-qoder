@@ -8,8 +8,15 @@
 AGENTS.md 是**纪律文件**不是**教程**：它钉死红线、验证、导航，不教一步步做。按你当下的任务，
 照下面一条路走最快；每条都给「先读 → 再读 → 动手前确认」三段式。
 
+> **不知道自己是什么任务，只知道"它坏了"？** 别读这张表，直接去
+> [`docs/howto/symptom-triage.md`](docs/howto/symptom-triage.md)——那份文件按**屏幕上的原文**
+> 排（`已保存（未确认）`、`上次更新：{time}（刷新失败）`、模型标着「免费」…），
+> 用界面上那句话 Ctrl+F 就能落到结论。下面这张表是按**你要做什么**组织的，
+> 对"它坏了"没有入口。
+
 | 你的任务 | 第一站（先读） | 第二站（再读） | 动手前确认 |
 |---|---|---|---|
+| **它坏了 / 用户报了个现象** | [`docs/howto/symptom-triage.md`](docs/howto/symptom-triage.md)（按症状） | `docs/howto/plugin-error-where-to-look.md`（分清进程） | 先用界面原文定位，别按模块名猜 |
 | 改 host 逻辑 / 加路由 | 本文件「三条事实」「红线」 | `docs/issues/README.md` 索引找对应 NN | `npm run build:host` + 补/读对应 `test/*-test.js` |
 | 改 client 卡片 / 构建 | 本文件红线 3、构建注释 | `scripts/build-client.mjs` 头部 + `docs/issues/03`、`17` | `npm run build:client` 闸门不得 bypass |
 | 排查"为什么没生效 / 报错" | `docs/howto/plugin-error-where-to-look.md` | `docs/howto/host-version-probe.md` | 先分清 Host 进程 vs Client 控制台 |
@@ -121,6 +128,7 @@ npm run verify             # typecheck + 两道 audit + build + test + host/bund
 
 | 何时 | 查 |
 |---|---|
+| **它坏了 / 只有现象、没有模块名** | `docs/howto/symptom-triage.md`（按**界面原文**排；先查这份再说） |
 | 动手前通览事故史与优先级 | `docs/PLAN.md`（P0–P3 总览，三条本机实测事故在 §0） |
 | 改某个已知问题前 | `docs/issues/README.md` 索引 → 对应 `docs/issues/NN-*.md`（19 份，含证据 file:line 与验收标准） |
 | 改 client 构建/产物链路 | `scripts/build-client.mjs` 头部注释（loader ABI、字节比对、REQUIRED 闸门都是契约）+ `docs/issues/03`、`17` |

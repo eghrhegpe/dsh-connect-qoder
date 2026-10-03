@@ -1,5 +1,9 @@
 # 已知覆盖缺口
 
+> **想找"某个现象是已知问题还是新 bug"？** 先去
+> [`howto/symptom-triage.md`](howto/symptom-triage.md)——那份按界面原文排，
+> 会直接告诉你该看本篇的哪一节，还是去看 issue NN。
+
 这份文件登记**明确知道没有测试保护**的地方。每条都写清「为什么现在没有」和
 「要补上它需要先做什么」，这样缺口是待办，不是旁白。
 
@@ -327,7 +331,7 @@ Qoder 客户端"——对着一个已经装了并登录了的用户。现在：
    PBKDF2-HMAC-SHA1 派生（"peanuts" 常量 + 1003 次迭代），这与 Windows 的 DPAPI 直解是
    两种算法，不是换个命令那么简单。
 3. **`MACHINE_OS` 的 darwin 档已补**（实测网关对 `x86_64_darwin` / `aarch64_darwin` 一律 200
-   且数据一致，见 [`../../probe/machineos-probe.mjs`](../../probe/machineos-probe.mjs)）。
+   且数据一致，见 [`../probe/machineos-probe.mjs`](../probe/machineos-probe.mjs)）。
 4. **跨平台 CI 与实机验证**：GitHub Actions 的 macos / ubuntu runner 可以编译并跑单测，但
    Keychain 弹窗、签名打包、`secret-tool` 的 D-Bus session 都得在实机或 runner 上验。
 

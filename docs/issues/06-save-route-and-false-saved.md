@@ -16,7 +16,7 @@
 
 - `lib/client.js:276-325`（自读回校验在 311-322）、`lib/client.js:1565-1583`（不抛错即"已保存"）
 - `lib/client.js:1562-1563`：卡片自己写着"要么落盘、要么抛错"
-- `lib/index.js:876-887`（不可达的 503）；`lib/settings-save.js:171-180`（真正会发生的 503，README 混为一谈）
+- `lib/index.js:876-887`（不可达的 503）；`src/host/settings-save.ts`（真正会发生的 503，README 混为一谈）
 
 ## 修法
 

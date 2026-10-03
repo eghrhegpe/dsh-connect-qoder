@@ -10,7 +10,7 @@
 
 ## 证据
 
-- `lib/credentials.js:175`（`keyCache`）、`260-261`（查询）、`339-340`（只写成功）
+- `src/host/credentials.ts`（`keyCache`）、`260-261`（查询）、`339-340`（只写成功）
 - `lib/index.js:350-352`（`invalidateCredential` 只清凭据缓存）
 
 ## 修法

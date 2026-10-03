@@ -10,8 +10,8 @@
 
 ## 证据
 
-- `lib/credentials.js:779-813`（前缀匹配、`statSync`、遍历清零、`rmSync`）
-- `lib/credentials.js:429-478`（`zeroOutFile`）
+- `src/host/credentials.ts`（前缀匹配、`statSync`、遍历清零、`rmSync`）
+- `src/host/credentials.ts`（`zeroOutFile`）
 - 本机复现：建 `%TEMP%\qoder-oscrypt-<rand>` → `mklink /J` 指向自己的目标目录 →
   `sweepStaleOscryptDirs(0)` → `reclaimed=2`、无任何上报、联接被删、
   目标目录里的 `victim.txt`（20 字节）**全部变成 NUL**。

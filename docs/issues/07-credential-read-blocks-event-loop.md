@@ -11,8 +11,8 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 
 ## 证据
 
-- `lib/credentials.js:272-281`（`execFileSync` + 30 s 超时）、`326-341`（失败刻意不缓存）
-- `lib/account-state.js:89`（直调 `loadCredential`）
+- `src/host/credentials.ts`（`execFileSync` + 30 s 超时）、`326-341`（失败刻意不缓存）
+- `src/host/account-state.ts`（直调 `loadCredential`）
 - `lib/index.js:1028`（`/account` 每次请求都读状态）
 
 ## 修法

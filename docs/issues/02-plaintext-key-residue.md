@@ -9,7 +9,7 @@
 
 ## 证据
 
-- `lib/credentials.js:260-342`（`oscryptKeyFor` 的 `finally` 清理；失败不缓存但会留下临时目录）
+- `src/host/credentials.ts`（`oscryptKeyFor` 的 `finally` 清理；失败不缓存但会留下临时目录）
 - `lib/index.js:592-601`（启动时 sweep 是唯一调用点）
 - 本机实测：`%TEMP%\qoder-oscrypt-j5lTke\key.b64` = **48 字节全非零**
 

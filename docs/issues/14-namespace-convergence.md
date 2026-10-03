@@ -17,7 +17,7 @@
 
 ## 证据
 
-- `lib/settings-save.js:89-92`（推导只读 `ctx.fiber.entry?.options.id`，Cordis 本身不提供该字段）
+- `src/host/settings-save.ts`（推导只读 `ctx.fiber.entry?.options.id`，Cordis 本身不提供该字段）
 - `lib/client.js:1955-1962`（正则 + `.find`，今天能对上纯属 `llm-qoder` 恰好含 "qoder"）
 - `lib/client.js:1990-1992`（三个 slot key：`dsh-connect-qoder` / `dsh-connect-qoder#llm-qoder` / `qoder`，
    与 `llm-qoder` 都不同）

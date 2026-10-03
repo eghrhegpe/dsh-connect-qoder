@@ -1,5 +1,9 @@
 # Issue 草稿
 
+> **你是带着一个"现象"来的，不是带着编号来的？** 这份索引按**编号与状态**排，
+> 对症状没有入口。先去 [`../howto/symptom-triage.md`](../howto/symptom-triage.md)
+> —— 那份按界面原文排，能直接落到结论（或落到这里的某个 NN）。
+
 从 [`../PLAN.md`](../PLAN.md) 拆出来的可直接提交的 issue 草稿。优先级与规模见每份文件顶部。
 
 **提交方式**（本机 `gh` 已登录 `eghrhegpe`，仓库即本 fork）：
@@ -26,7 +30,8 @@ gh issue create --repo eghrhegpe/dsh-connect-qoder --label P0 --title "$(head -1
 | [10-protocol-drift-probe.md](10-protocol-drift-probe.md) | ~~P1~~ **已修**（分诊落地；6 小时周期探测仍未做） | 上游协议漂移与"没登录"不可区分 |
 | [11-coverage-denominator.md](11-coverage-denominator.md) | ~~P2~~ **大部分已修**（module mocks 实测不可行，改走抽纯模块；`handlers.ts` 与 `publish-regions.ts` 两轮已进分母） | 44.7% 的 lib 代码不在覆盖率分母里 |
 | [12-small-fixes-batch.md](12-small-fixes-batch.md) | ~~P2~~ **大部分已修** | 12 处小时级小口子：0.5.0 关 3，后续批次关 8（405/HEAD、Origin 带端口、no-store、`readJsonBodyOr400`、死码、lastSaveError 读取端、reload 形状、0 区域启动）；仅剩 `__hide-all__` 收拢为命名常量 `HIDE_ALL_MODELS` 但仍以哨兵形式存在 |
-| [13-lifecycle-dispose.md](13-lifecycle-dispose.md) | ~~P2~~ **已修**（宿主语义无法确认，按两种都对的方式处理） | dispose 两条尾巴（在途刷新、路由未注销） || [14-namespace-convergence.md](14-namespace-convergence.md) | ~~P2~~ **大部分已修**（跨 bundle 共享不可行，改为对拍 + 失配显式报错） | 设置命名空间四套说法 → 已收敛为两套（`resolveNamespace` 与 `settingsNamespaceOf` 共享精确候选对，`__save` 候选去重）；`PROVIDER_NS` 现由 `plugin-identity.test.js` 钉在 `cordis.patch.yml` 行 id 上，失配时 `console.error` 显式报错 |
+| [13-lifecycle-dispose.md](13-lifecycle-dispose.md) | ~~P2~~ **已修**（宿主语义无法确认，按两种都对的方式处理） | dispose 两条尾巴（在途刷新、路由未注销） |
+| [14-namespace-convergence.md](14-namespace-convergence.md) | ~~P2~~ **大部分已修**（跨 bundle 共享不可行，改为对拍 + 失配显式报错） | 设置命名空间四套说法 → 已收敛为两套（`resolveNamespace` 与 `settingsNamespaceOf` 共享精确候选对，`__save` 候选去重）；`PROVIDER_NS` 现由 `plugin-identity.test.js` 钉在 `cordis.patch.yml` 行 id 上，失配时 `console.error` 显式报错 |
 | [15-delivery-docs-curation.md](15-delivery-docs-curation.md) | P3 | 交付漂移、文档与事实不符、默认不策展 |
 | [16-silent-failure-policy.md](16-silent-failure-policy.md) | P2 | 门禁：新代码不得再新增静默失败分支 |
 | [17-client-source-restore.md](17-client-source-restore.md) | ~~P1~~ **已修**（产物去留已由 19 拍板：`lib/` 入库 + CI 新鲜度门禁） | `src/client` 已机械还原（内容等价）；字节一致经实测不可达——这不是未决项，19 已替它决策 |

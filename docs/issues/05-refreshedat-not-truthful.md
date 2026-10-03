@@ -9,10 +9,15 @@ payload 里的 `refreshedAt` 取的是响应生成时刻，真实抓取时间 `C
 
 ## 证据
 
-- `lib/index.js:848`：`const now = new Date()` → 传给 `buildModelRowsPayload`
-- `lib/catalog-entry.js:157`：`refreshedAt: now.getTime()`
-- `lib/index.js:837-847`：刷新失败只 `logger.warn` 后继续
-- `lib/catalog-store.js`：真实的 `fetchedAt` 没有任何外发路径
+- `src/host/index.ts`：`const now = new Date()` → 传给 `buildModelRowsPayload`
+- `src/host/catalog-entry.ts`：`refreshedAt: now.getTime()`
+- `src/host/index.ts`：刷新失败只 `logger.warn` 后继续
+- `src/host/catalog-store.ts`：真实的 `fetchedAt` 没有任何外发路径
+
+> 行号与文件名已更新：旧引用写作 `lib/index.js:848`、`lib/catalog-entry.js:157`，
+> 那是**打包产物**的行号与文件名。`lib/` 现在只有 `index.js` / `client.js`，
+> 子模块文件已不存在（源码在 `src/host/<name>.ts`）；`lib/index.js` 的行号也不能照抄
+> ——打包布局变过。按**符号名**定位（如 `buildModelRowsPayload`、`oldestFetchedAtOf`）。
 
 ## 修法
 
@@ -28,7 +33,7 @@ payload 里的 `refreshedAt` 取的是响应生成时刻，真实抓取时间 `C
 ## 实现（已修，`f8ca26f`）
 
 `buildModelRowsPayload` 现在发 `refreshedAt: oldestFetchedAtOf(runtimes)` 与
-`refreshFailures: refreshFailuresOf(runtimes)`（[`../../lib/catalog-entry.js`](../../lib/catalog-entry.js)）。
+`refreshFailures: refreshFailuresOf(runtimes)`（[`../../src/host/catalog-entry.ts`](../../src/host/catalog-entry.ts)）。
 
 **取最小值而不是渲染时刻或最新值**：两端模型行要共用一个时间戳时，只有最旧的那个时刻才代表
 "屏幕上这些行全都反映到"。取最新会替更旧的一端背书，那之后的失败就看不见了。某一端从未抓取过时

@@ -28,9 +28,9 @@
 
 ## 实现（已修，`f8ca26f`）
 
-规则抽到 [`../../lib/catalog-refresh.js`](../../lib/catalog-refresh.js) 的 `applyCatalogOutcome`，
-`RegionRuntime.doRefreshCatalog` 改为把三种结果交给它——因为 `lib/index.js` 有 peer 依赖、测试
-import 不到，规则本身必须住在够得着的地方（与 `credential-cache.js` / `catalog-entry.js` 同套路）。
+规则抽到 [`../../src/host/catalog-refresh.ts`](../../src/host/catalog-refresh.ts) 的 `applyCatalogOutcome`，
+`RegionRuntime.doRefreshCatalog` 改为把三种结果交给它——因为 `src/host/index.ts` 有 peer 依赖、测试
+import 不到，规则本身必须住在够得着的地方（与 `credential-cache.ts` / `catalog-entry.ts` 同套路）。
 
 **原方案第 3 条（删 TTL 死分支）没有做，改为保留**：`if (!force && this.catalog.fresh()) return`
 原被指为死代码，但它与新语义是一对——空目录落盘后 `fetchedAt` 会前进，于是这个分支重新有了

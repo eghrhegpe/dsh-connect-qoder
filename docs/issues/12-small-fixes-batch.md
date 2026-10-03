@@ -4,18 +4,23 @@
 
 | # | 位置 | 问题 | 修法 |
 |---|---|---|---|
-| 1 | `lib/shim.js:397-399` vs `423` | 注释说"绝不发 `[DONE]`"，代码在错误分支就发了 `data: [DONE]` | 二选一并补断言（注：`grep` 过，错误分支确实走到 423 行） |
-| 2 | `lib/index.js:1053`、`1092` | `readJsonBody` 的坏 body 打进 catch-all → 裸 400 无 body | 包 try → 400 + `errorName`，与 `__save` 一致 |
-| 3 | `lib/index.js:884-887` | 503 分支不可达 | 随 #06 |
-| 4 | `lib/index.js:826/882/939/1041/1051/1090` | 405 缺 `Allow`；HEAD 也被 405 | 补 `Allow`，HEAD 交给 GET 路径 |
-| 5 | `lib/index.js:229-233` | 响应无 `Cache-Control` | 卡片内部端点补 `no-store` |
-| 6 | `lib/catalog-store.js:36-37,63,75` | `lastSaveError` 只写不读（注释承诺"so a caller can report it"） | 删掉或真的上报 |
-| 7 | `lib/index.js:910` | `Object.assign(preferences, …)` 被 live source 覆盖（死代码） | 删掉，或让 `current()` 真的合并它 |
-| 8 | `lib/index.js:1022-1033` vs `1081-1082` | reload 响应形状与 GET 不一致，卡片还不用它 | 统一形状，去掉多余的一次 GET |
-| 9 | `lib/index.js:368` | TTL 分支 `refreshCatalog(false)` 无调用者 | 随 #04 |
-| 10 | `lib/client.js:528` | `__hide-all__` 哨兵作为合法值写进设置文档 | 用显式字段/null 表达"全隐藏"（随 #03① 一起） |
-| 11 | `lib/index.js:272-282` | 缺 Origin 即放行；Origin 只比主机名不比端口 | 至少写进文档；设置写路由可加一次性 token |
-| 12 | `lib/index.js:608-611` | 0 区域启动时整块 return → "没登录"文案不可达，用户看到 404 | 路由照常注册，回答"无区域可用" |
+| 1 | `src/host/shim.ts`（`[DONE]` 写入点 vs 注释） | 注释说"绝不发 `[DONE]`"，代码在错误分支就发了 `data: [DONE]` | 二选一并补断言 |
+| 2 | `src/host/index.ts`（`readJsonBody`） | 坏 body 打进 catch-all → 裸 400 无 body | 包 try → 400 + `errorName`，与 `__save` 一致 |
+| 3 | `src/host/index.ts`（503 分支） | 503 分支不可达 | 随 #06 |
+| 4 | `src/host/index.ts`（各路由 405 出口） | 405 缺 `Allow`；HEAD 也被 405 | 补 `Allow`，HEAD 交给 GET 路径 |
+| 5 | `src/host/index.ts`（响应头） | 响应无 `Cache-Control` | 卡片内部端点补 `no-store` |
+| 6 | `src/host/catalog-store.ts`（`lastSaveError`） | `lastSaveError` 只写不读（注释承诺"so a caller can report it"） | 删掉或真的上报 |
+| 7 | `src/host/index.ts`（`preferences` 赋值） | `Object.assign(preferences, …)` 被 live source 覆盖（死代码） | 删掉，或让 `current()` 真的合并它 |
+| 8 | `src/host/index.ts`（reload 响应 vs GET） | reload 响应形状与 GET 不一致，卡片还不用它 | 统一形状，去掉多余的一次 GET |
+| 9 | `src/host/index.ts`（TTL 分支） | TTL 分支 `refreshCatalog(false)` 无调用者 | 随 #04 |
+| 10 | `src/client/card.ts`（`__hide-all__`） | `__hide-all__` 哨兵作为合法值写进设置文档 | 用显式字段/null 表达"全隐藏"（随 #03① 一起） |
+| 11 | `src/host/index.ts`（Origin 校验） | 缺 Origin 即放行；Origin 只比主机名不比端口 | 至少写进文档；设置写路由可加一次性 token |
+| 12 | `src/host/index.ts`（0 区域启动） | 0 区域启动时整块 return → "没登录"文案不可达，用户看到 404 | 路由照常注册，回答"无区域可用" |
+
+> **位置列不写行号。** 本表原本给的是 `lib/shim.js:397-399` 这类**打包产物**坐标：
+> `lib/` 现在只有 `index.js`/`client.js`，子模块文件已不存在，行号全部失效
+> （实测 `[DONE]` 现在在 `src/host/shim.ts` 的 5xx 与正常出口两处，不是 397-399）。
+> 按**文件名 + 符号名**定位，改代码后不会腐烂。
 
 ## 验收标准
 
@@ -60,7 +65,7 @@
 
 ### 后续几轮的落法
 
-- **第 2 条**：`readJsonBodyOr400`（[`../../lib/routes.js`](../../lib/routes.js)）把解析失败
+- **第 2 条**：`readJsonBodyOr400`（[`../../src/host/routes.ts`](../../src/host/routes.ts)）把解析失败
   与超限都变成**带 body 的 400**（`errorName` + `detail`），裸调它的两条路由（reload、confirm）
   改用它。空 body 仍是成功——reload 用它表达"重读所有区域"。
 - **第 7 条**：**删掉了 `Object.assign(preferences, …)`**。原注释说它让 `current()` 立即看到，

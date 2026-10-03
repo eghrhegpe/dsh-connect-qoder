@@ -16,9 +16,9 @@
 - 「本机没装」：第一行说明没装，第二行直接给「下载 {版本}」链接。
 - 「读不到」：补上原因与下一步（确认本机有已登录客户端，或点重新读取）。
 - 所有外链带 `title`（悬停可见完整 URL）与明确文字；不再出现无说明的裸链接。
-- host 侧：`lib/credentials.js` 的 `REGIONS` 新增 `downloadUrl`
+- host 侧：`src/host/credentials.ts` 的 `REGIONS` 新增 `downloadUrl`
   （国内 `https://qoder.com.cn/download`，国际 `https://qoder.com/download`），
-  经 `lib/account-state.js` 的 state record 与 `lib/index.js` 的 usage 路由一并带给卡片。
+  经 `src/host/account-state.ts` 的 state record 与 `lib/index.js` 的 usage 路由一并带给卡片。
 
 ## 验收标准
 

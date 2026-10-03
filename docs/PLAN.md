@@ -1,7 +1,16 @@
 # 修复计划（dsh-connect-qoder）
 
+> **带着一个"现象"来、不知道对应哪条？** 先去
+> [`howto/symptom-triage.md`](howto/symptom-triage.md)——那份按界面原文排，
+> 会落到具体的 issue 编号或结论。本篇按**优先级与编号**排，对症状没有入口。
+
 这份文件把一次完整的功能审计（协议层、宿主接线、凭据层、卡片产物、测试与验收声明）收敛成一份
 **可执行的优先级清单**。每条都带：症状 → 证据（file:line）→ 为什么这个优先级 → 修法 → 验收标准（含要加的测试）。
+
+> ⚠️ **证据里的 `lib/<子模块>.js:行号` 是当时的打包产物坐标。** `lib/` 现在只有
+> `index.js` 与 `client.js`，子模块只以源码形式存在于 `src/host/<name>.ts`，
+> 且行号不再对应（打包布局变过）。本文件已把可改的换成 `src/host/<name>.ts`；
+> 少数**保留原样**的是当时的测量基线，改动数字会变成伪造记录——已就地标注。
 
 拆成 issue 的草稿在 [`issues/`](issues/README.md)。
 
@@ -45,16 +54,16 @@
 
 | # | 优先级 | 症状 | 关键证据 | 规模 | 依赖 |
 |---|---|---|---|---|---|
-| P0-1 | 不可逆 | sweep 跟随联接，把插件目录**之外**的文件清成 NUL | [credentials.js:779-813](../lib/credentials.js#L779-L813) | S | — |
-| P0-2 | 不可逆 | 明文 `key.b64` 残留，回收只靠下次启动 | [credentials.js:260-342](../lib/credentials.js#L260-L342) | S | P0-1 同区 |
+| P0-1 | 不可逆 | sweep 跟随联接，把插件目录**之外**的文件清成 NUL | [credentials.ts](../src/host/credentials.ts) | S | — |
+| P0-2 | 不可逆 | 明文 `key.b64` 残留，回收只靠下次启动 | [credentials.ts](../src/host/credentials.ts) | S | P0-1 同区 |
 | P0-3 | 误导 | 产物被桩不报错，卡片可整体消失 | [test/client-bundle.test.js:49-96](../test/client-bundle.test.js#L49-L96) | S→L | 分两步 |
 | P0-4 | 误导 | 刷新成功但 0 模型时目录冻结 | [index.js:377-386](../lib/index.js#L377-L386) | S | — |
 | P0-5 | 误导 | "已更新（时间）"用的是响应时刻，刷新失败也照显 | [index.js:848](../lib/index.js#L848) | S | — |
 | P0-6 | 误导 | 假"已保存" + 503 分支不可达（同一处修复关掉两个） | [index.js:876-887](../lib/index.js#L876-L887)、[client.js:311-322](../lib/client.js#L311-L322) | M | — |
-| P1-1 | 体感 | 账号路由同步起 PowerShell（上限 30 s）阻塞事件循环 | [credentials.js:272-281](../lib/credentials.js#L272-L281) | M | — |
-| P1-2 | 功能 | `keyCache` 无失效路径 → 重装后永久 needs-app | [credentials.js:175](../lib/credentials.js#L175) | S | — |
+| P1-1 | 体感 | 账号路由同步起 PowerShell（上限 30 s）阻塞事件循环 | [credentials.ts](../src/host/credentials.ts) | M | — |
+| P1-2 | 功能 | `keyCache` 无失效路径 → 重装后永久 needs-app | [credentials.ts](../src/host/credentials.ts) | S | — |
 | P1-3 | 误导 | 卡片自算错峰价/窗口标签，与宿主分歧 | [client.js:622-693](../lib/client.js#L622-L693) | M | P0-3① |
-| P1-4 | 品类 | 上游协议漂移与"没登录"不可区分 | [upstream.js:34-40](../lib/upstream.js#L34-L40) | M | — |
+| P1-4 | 品类 | 上游协议漂移与"没登录"不可区分 | [upstream.ts](../src/host/upstream.ts) | M | — |
 | P2-1 | 债 | 44.7% 的 lib 代码不在覆盖率分母里 | 见 §5 | L | — |
 | P2-2 | 债 | 12 处小时级小口子（含注释与代码相反） | 见 §5 | S | — |
 | P2-3 | 债 | dispose 两条尾巴（在途刷新、路由未注销） | [index.js:738-754](../lib/index.js#L738-L754) | M | 需先确认宿主语义 |
@@ -73,8 +82,8 @@
 无条件 `zeroOutFile`（`open('r+')` + 写零到原长度），最后 `rmSync`。任何名字撞上
 `qoder-oscrypt-*` 的目录/联接，其内容会被静默抹成 NUL，而且**零上报**、还计入 `reclaimed`。
 
-**证据**：[credentials.js:788-800](../lib/credentials.js#L788-L800)（前缀匹配 + `statSync` + 遍历清零）、
-[429-478](../lib/credentials.js#L429-L478)（`zeroOutFile`）。本机复现见 §0-1。
+**证据**：[credentials.ts](../src/host/credentials.ts)（前缀匹配 + `statSync` + 遍历清零）、
+[429-478](../src/host/credentials.ts)（`zeroOutFile`）。本机复现见 §0-1。
 
 **威胁模型（更正一条更早的表述）**：`%TEMP%` 是 per-user ACL，所以现实威胁是
 **同用户进程/管理员 + 名字撞车的残留目录**（旧版本、其它工具的残留），不是任意本地用户、更不是远程。
@@ -97,7 +106,7 @@
 **症状**：清理失败时 `key.b64` 原样留在共享 `%TEMP%`；唯一回收点是**下次插件启动**的 sweep，
 没有定时器。实测残留文件 48 字节全非零。
 
-**证据**：[credentials.js:260-342](../lib/credentials.js#L260-L342)（`oscryptKeyFor` 的 `finally` + 只清内存缓存）、
+**证据**：[credentials.ts](../src/host/credentials.ts)（`oscryptKeyFor` 的 `finally` + 只清内存缓存）、
 [index.js:592-601](../lib/index.js#L592-L601)（启动时 sweep 是唯一调用点）。
 
 **修法**：清理失败时立刻重试一次；仍失败则**先把文件截断为 0**（保留数据比"删不掉"更糟）；
@@ -153,7 +162,7 @@
 **症状**：payload 里的 `refreshedAt` 取响应生成时刻（`const now = new Date()`），
 真实抓取时间 `CatalogStore.fetchedAt` 从不外发；刷新失败只 warn 后继续，于是卡片照显"已更新（刚）"。
 
-**证据**：[index.js:848](../lib/index.js#L848)、[catalog-entry.js:157](../lib/catalog-entry.js#L157)、
+**证据**：[index.js:848](../lib/index.js#L848)、[catalog-entry.ts](../src/host/catalog-entry.ts)、
 [index.js:837-847](../lib/index.js#L837-L847)（失败只 warn）。
 
 **修法**：外发真实 `fetchedAt` + 一个 `lastRefreshFailed` / `lastRefreshError` 标志，
@@ -176,7 +185,7 @@
 **证据**：[client.js:276-325](../lib/client.js#L276-L325)（其中 311-322 是自读回）、
 [client.js:1565-1583](../lib/client.js#L1565-L1583)（不抛错即"已保存"）、
 [index.js:876-887](../lib/index.js#L876-L887)（不可达的 503）、
-[settings-save.js:171-180](../lib/settings-save.js#L171-L180)（真正会发生的那个 503，README 把两者混为一谈）。
+[settings-save.ts](../src/host/settings-save.ts)（真正会发生的那个 503，README 把两者混为一谈）。
 卡片自己在 [client.js:1562-1563](../lib/client.js#L1562-L1563) 写着"要么落盘、要么抛错"。
 
 **修法**
@@ -220,8 +229,8 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 `invalidateCredential` 只清凭据缓存。Qoder 重装/重置 profile 使 `Local State` 的
 `encrypted_key` 变化后，本进程会一直用旧 key → 区域**永久 needs-app**，只能重启 DSH。
 
-**证据**：[credentials.js:175](../lib/credentials.js#L175)、[260-261](../lib/credentials.js#L260-L261)、
-[339-340](../lib/credentials.js#L339-L340)；`invalidateCredential` 见 [index.js:350-352](../lib/index.js#L350-L352)。
+**证据**：[credentials.ts](../src/host/credentials.ts)、[260-261](../src/host/credentials.ts)、
+[339-340](../src/host/credentials.ts)；`invalidateCredential` 见 [index.js:350-352](../lib/index.js#L350-L352)。
 
 **修法**：缓存键带上 `Local State` 的 `mtime+size`（或 `encrypted_key` 的哈希）；不一致就重解。
 
@@ -236,8 +245,8 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 历史上已经因此出过"把拿不到的折扣价显示给用户"的缺陷；现在**又有现场分歧**：
 `contextOptions=[128000,200000]` + `defaultContextWindow=0` 时宿主不显示标签、卡片显示 `128K`。
 
-**证据**：[offpeak.js](../lib/offpeak.js) 与 [client.js:622-693](../lib/client.js#L622-L693)（错峰）、
-[pi-model.js:109-134](../lib/pi-model.js#L109-L134) 与 [client.js:664-670](../lib/client.js#L664-L670)（窗口标签）、
+**证据**：[offpeak.ts](../src/host/offpeak.ts) 与 [client.js:622-693](../lib/client.js#L622-L693)（错峰）、
+[pi-model.ts](../src/host/pi-model.ts) 与 [client.js:664-670](../lib/client.js#L664-L670)（窗口标签）、
 [client.js:1957](../lib/client.js#L1957)（`/qoder/i` 正则猜命名空间）。
 
 **修法**：卡片改读宿主字段，删掉自算路径；命名空间改为宿主显式给出（或共享同一推导函数）。
@@ -254,7 +263,7 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 `session_type 'qodercli'`、`Cosy-Data-Policy: disagree`），没有版本协商、没有契约。
 上游一次更新就可能让所有请求变成 403 / `10605`，而插件自带的两分钟队列预算会把它当"排队"慢慢等——
 用户看到的是漫长等待而不是错误。平台假设也无人验证：`MACHINE_OS` 在 darwin 上回落成 `x86_64_linux`
-（[upstream.js:160-167](../lib/upstream.js#L160-L167)），全套件零引用。
+（[upstream.ts](../src/host/upstream.ts)），全套件零引用。
 
 **修法**：启动 + 每 6 小时做一次廉价探测（复用 catalog 请求），把结果分成三档并在账号状态里表达：
 `ok` / `sign-in-expired` / **`protocol-shape-changed`（新档）**；后者的日志与卡片文案明确指向
@@ -271,10 +280,15 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 
 ### P2-1 覆盖率把三个大文件纳入分母 —— L（handler 抽取部分已完成）
 
-**症状**：`lib/adapter.js`（239 行）、`lib/client.js`（2004 行）、`lib/index.js`（1166 行）
+**症状**（数字为当时实测，**文件名是当时的产物布局**）：`src/host/adapter.ts`（239 行）、`lib/client.js`（2004 行）、`lib/index.js`（1166 行）
 **从未被 import**，不在覆盖率报告里——**3409 / 7626 行 = 44.7% 的 lib 代码不受阈值约束**。
 `upstream.js` 行覆盖 49.93% / 函数 38.89%（SSE 主循环、目录抓取整段未覆盖）；
 `credentials.js` 的整条 PowerShell+DPAPI 链路 0%。
+
+> ⚠️ **这段的文件名已过时**（保留原样是因为它是当时的测量基线，改数字就变成伪造记录）。
+> 现在 `lib/` 只有 `index.js` 与 `client.js`；`adapter.js`/`upstream.js`/`credentials.js`
+> 等子模块只以源码形式存在于 `src/host/<name>.ts`。本条的**结论**（分母缺失）与
+> [issue 11](issues/11-coverage-denominator.md) 的后续进展请看那里。
 
 **修法**（KNOWN_GAPS #2 已给方案）：`--experimental-test-module-mocks` 桩掉 `@deepseek-ai/*` 与 pi-ai；
 或把路由 handler 抽成 `(req, deps) => result` 纯函数（`applySettingsSave` 已证明可行）。
@@ -306,7 +320,7 @@ release 并如实报失败，宿主两种语义（按 fiber 回收 / 返回 rele
 - [x] 至少 6 条路由有直接断言（method/鉴权/错误码）——`test/handlers.test.js` 覆盖全部 7 条，46 例；
 - [x] `handlers.ts` 进入覆盖率分母（行 100% / 函数 100%）；`publish-regions.ts`、`route-mount.ts`、
       `dispose-order.ts` 亦已进分母（回滚每个终态、挂载分组、注销次序均可执行断言）；
-      `lib/index.js`、`lib/adapter.js` **整体**尚未（余 Cordis 接线与 adapter 的 peer 依赖）；
+      `src/host/index.ts`、`src/host/adapter.ts` **整体**尚未（余 Cordis 接线与 adapter 的 peer 依赖）；
 - [ ] 门槛数字重新标定后写回 `package.json` 与 KNOWN_GAPS——本轮后整体 89.72/82.82/84.82，
       地板（68/82/66）**未动**，故此项留空（无需重标）。函数分母比上一轮低（86.41→84.82）
       是因为 `index.ts` 变长而它仍不在分母里——新抽出的两个模块本身是 100/100/100。
@@ -315,12 +329,12 @@ release 并如实报失败，宿主两种语义（按 fiber 回收 / 返回 rele
 
 | 位置 | 问题 | 修法 |
 |---|---|---|
-| [shim.js:397-399](../lib/shim.js#L397-L399) vs [423](../lib/shim.js#L423) | 注释说"绝不发 `[DONE]`"，代码发了 | 二选一，并补一条断言 |
+| [shim.ts](../src/host/shim.ts) vs [423](../src/host/shim.ts) | 注释说"绝不发 `[DONE]`"，代码发了 | 二选一，并补一条断言 |
 | [index.js:1053](../lib/index.js#L1053)、[1092](../lib/index.js#L1092) | `readJsonBody` 的坏 body 打进 catch-all → 裸 400 无 body | 包 try → 400 + `errorName` |
 | [index.js:884-887](../lib/index.js#L884-L887) | 503 分支不可达（见 P0-6） | 随 P0-6 一起 |
 | [index.js:826](../lib/index.js#L826) 等 6 处 | 405 缺 `Allow`，HEAD 也被 405 | 补 `Allow`，HEAD 交给 GET 路径 |
 | [index.js:229-233](../lib/index.js#L229-L233) | 响应无 `Cache-Control` | 卡片内部端点补 `no-store` |
-| [catalog-store.js:36-37](../lib/catalog-store.js#L36-L37) | `lastSaveError` 只写不读 | 删掉或真的上报 |
+| [catalog-store.ts](../src/host/catalog-store.ts) | `lastSaveError` 只写不读 | 删掉或真的上报 |
 | [index.js:910](../lib/index.js#L910) | `Object.assign(preferences, …)` 被 live source 覆盖（死代码） | 删掉，或让 `current()` 真的合并它 |
 | [index.js:1022-1033](../lib/index.js#L1022-L1033) vs [1081-1082](../lib/index.js#L1081-L1082) | reload 响应形状与 GET 不一致，卡片还不用它 | 统一形状 |
 | [index.js:368](../lib/index.js#L368) | TTL 分支 `refreshCatalog(false)` 无调用者 | 删掉或补调用者 |
@@ -396,14 +410,14 @@ card 正则推导已改为精确候选（`|| /qoder/i.test(...)` 那种子串匹
 
   - 协议：复用用量面板已经在读的 `GET /sash/api/v1/me/campaigns`，挑 `actionType === "CLAIM_BENEFIT"`
     且 `claimStatus === "CLAIMABLE"` 的当轮；领取走 `POST .../campaigns/{campaignId}/claim`。
-    （`fetchCampaigns` 的旧只读副本只抽促销文案，新逻辑在 `lib/claim.js` + `lib/upstream.js` 的 `claimCampaign`。）
+    （`fetchCampaigns` 的旧只读副本只抽促销文案，新逻辑在 `src/host/claim.ts` + `src/host/upstream.ts` 的 `claimCampaign`。）
   - 两个过滤器缺一不可：同一账号下还有 `VIEW_DETAILS` 活动同样带 `claimStatus:"CLAIMED"` 却无 benefit；
     顶层 `claimable` 在「已领」与「没活动」时都是 `false`，且 `c.claimable` 字段根本不存在。判据以真实返回
     （`test/claim.test.js`，2026-09-27 双区实测）锁死。
   - **只手动、不自动**：卡片按钮三态（`立即签到`/`签到中…`/`今日已签到`），每次点击先重读活动取当轮 id，
     绝不复用渲染时的旧 id（一天一轮，旧 id 即上一轮）；领取后 `invalidateUsage()` 作废用量缓存重读，
     因为 Credits 落在 `addOnQuota`。`replayed` 幂等（重复领不发券），`expiresAt` 是 RFC 3339 字符串——
-    解析统一收口到 `lib/time.js`（曾因 `upstream.js`/`claim.js` 两份 `toEpochMs` 阈值漂移而漏解析）。
+    解析统一收口到 `src/host/time.ts`（曾因 `upstream`/`claim` 两份 `toEpochMs` 阈值漂移而漏解析）。
   - 路由 loopback-only（403 守卫）、POST-only（405）、区域未知 404、失败 502 带原因；
     「未开放 / 已领 / 登录失效」三档分流，不统一弹一句失败。
   - 风险：这是替用户的账号去领额度，性质不同于读。README 免责声明与 P3-2 的「封禁/条款风险写显眼」在此闭合。
