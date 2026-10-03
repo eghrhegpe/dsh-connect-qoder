@@ -833,29 +833,57 @@ interface QuotaBucket {
   unit?: string
 }
 
-/** Coerce one quota bucket into `{ total, used, remaining, percentage, unit }`. */
-function normalizeQuotaBucket(value: unknown): QuotaBucket | undefined {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const bucket = value as Record<string, unknown>
-  const total = Number(bucket.total)
-  const used = Number(bucket.used)
-  if (!Number.isFinite(total) || total <= 0) return undefined
+/**
+ * The `used` / `remaining` / `percentage` / `unit` four-tuple, from a raw bucket.
+ *
+ * Shared by {@link normalizeQuotaBucket} and {@link normalizeDedicatedPackage}
+ * because the two used to carry this block verbatim — the same guess about
+ * percentages, the same clamp, the same default unit — and a heuristic that
+ * exists twice is a heuristic that can be corrected once. That is not
+ * hypothetical here: this plugin has already been bitten by two copies of a
+ * time comparison drifting apart, and the fix then was to merge them into one
+ * function (`time.ts`). Same shape, same fix.
+ *
+ * The `> 1 means percent` rule is a GUESS about an undeclared upstream field.
+ * It is kept as-is (it is what the IDE panel agrees with) but it is stated in
+ * one place now, so if the upstream ever starts sending `0.5` to mean 50% there
+ * is one line to change and one comment to correct.
+ *
+ * @param source - the raw bucket or package object.
+ * @param total - the already-validated total (> 0), used for the fallbacks.
+ * @returns the four display fields.
+ */
+function quotaAmountsOf(source: Record<string, unknown>, total: number): {
+  used: number
+  remaining: number
+  percentage: number
+  unit: string
+} {
+  const used = Number(source.used)
   const safeUsed = Number.isFinite(used) ? Math.max(0, used) : 0
-  const remainingRaw = Number(bucket.remaining)
+  const remainingRaw = Number(source.remaining)
   const remaining = Number.isFinite(remainingRaw) ? Math.max(0, remainingRaw) : Math.max(0, total - safeUsed)
-  const percentageRaw = Number(bucket.percentage)
+  const percentageRaw = Number(source.percentage)
   const percentage = Number.isFinite(percentageRaw)
     ? percentageRaw > 1
       ? percentageRaw / 100
       : percentageRaw
     : safeUsed / total
   return {
-    total,
     used: safeUsed,
     remaining,
     percentage: Math.min(1, Math.max(0, percentage)),
-    unit: typeof bucket.unit === 'string' && bucket.unit.length > 0 ? bucket.unit : 'credits',
+    unit: typeof source.unit === 'string' && source.unit.length > 0 ? source.unit : 'credits',
   }
+}
+
+/** Coerce one quota bucket into `{ total, used, remaining, percentage, unit }`. */
+function normalizeQuotaBucket(value: unknown): QuotaBucket | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const bucket = value as Record<string, unknown>
+  const total = Number(bucket.total)
+  if (!Number.isFinite(total) || total <= 0) return undefined
+  return { total, ...quotaAmountsOf(bucket, total) }
 }
 
 /**
@@ -892,26 +920,16 @@ function normalizeDedicatedPackage(value: unknown): DedicatedPackage | undefined
   const id = typeof pkg.id === 'string' ? pkg.id.trim() : ''
   const total = Number(pkg.total)
   if (id === '' || !Number.isFinite(total) || total <= 0) return undefined
-  const used = Number(pkg.used)
-  const remainingRaw = Number(pkg.remaining)
-  const safeUsed = Number.isFinite(used) ? Math.max(0, used) : 0
-  const remaining = Number.isFinite(remainingRaw) ? Math.max(0, remainingRaw) : Math.max(0, total - safeUsed)
-  const percentageRaw = Number(pkg.percentage)
-  const percentage = Number.isFinite(percentageRaw)
-    ? percentageRaw > 1
-      ? percentageRaw / 100
-      : percentageRaw
-    : safeUsed / total
   const expiresAt = toEpochMs(pkg.expiresAt)
   return {
     id,
     name: typeof pkg.name === 'string' ? pkg.name : '',
     description: typeof pkg.description === 'string' ? pkg.description : '',
     total,
-    used: safeUsed,
-    remaining,
-    percentage: Math.min(1, Math.max(0, percentage)),
-    unit: typeof pkg.unit === 'string' && pkg.unit.length > 0 ? pkg.unit : 'credits',
+    // The same four fields `normalizeQuotaBucket` produces, from the same
+    // helper — these two had already been copied once, and the percentage
+    // heuristic in particular is a guess that must not diverge between them.
+    ...quotaAmountsOf(pkg, total),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     available: pkg.available !== false,
   }
@@ -1187,7 +1205,18 @@ export async function fetchModels(
       contextOptions,
       maxInputTokens: Number(entry.max_input_tokens) || 0,
       isDefault: entry.is_default === true,
-      priceFactor: Number(entry.price_factor) || 0,
+      // Absence is preserved, not folded to 0 — see `priceFactorOf` in
+      // lib/catalog-entry.js for why (a manufactured zero renders as 免费, so a
+      // renamed `price_factor` would present every model as free instead of
+      // showing no rate). This is the only place the raw wire field is read, so
+      // the rule is stated here in full rather than shared across the two
+      // modules: `catalog-entry.ts` does not import this one and this one does
+      // not import that one.
+      priceFactor: (() => {
+        if (entry.price_factor === undefined || entry.price_factor === null) return undefined
+        const factor = Number(entry.price_factor)
+        return Number.isFinite(factor) ? factor : undefined
+      })(),
       isFree: entry.is_free === true,
       promotion: normalizePromotion(entry.promotion),
     })

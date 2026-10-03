@@ -20,7 +20,7 @@
 import { regionEnabledFor, HIDE_ALL_MODELS } from './preferences.ts'
 import { contextWindowLabelFor, resolveContextWindow } from './pi-model.ts'
 import { unwrapVolatile } from './volatile.ts'
-import type { CatalogEntry, Promotion, Region } from './domain.ts'
+import type { CatalogEntry, Promotion, RefreshFailureReason, Region } from './domain.ts'
 import type { Preferences } from './preferences.ts'
 
 /**
@@ -60,7 +60,7 @@ export interface RuntimeRef {
   runtime: {
     region: Region
     catalog: { current(): CatalogEntry[]; fetchedAt?: number }
-    refreshFailed?: { reason: string; error?: unknown } | undefined
+    refreshFailed?: { reason: RefreshFailureReason; error?: unknown } | undefined
   }
 }
 
@@ -86,6 +86,27 @@ function modelIdFor(entry: { display_name?: unknown }): string {
   // model, which is worse than renaming its id in a way the user never sees
   // (the picker shows the display name, not the id).
   return id === HIDE_ALL_MODELS ? `${id}_model` : id
+}
+
+/**
+ * The credit multiplier as declared, or `undefined` when it was not declared.
+ *
+ * The point of this function is the case it does NOT collapse. A missing,
+ * non-numeric or non-finite factor is a *gap*, and every consumer downstream
+ * already has a branch for "no rate" (`effectiveRate` answers `NaN`,
+ * `toPiModel` and `rateLabelOf` answer the bare name and `undefined`). Folding
+ * that gap into `0` — which is what `Number(x) || 0` did — makes all three
+ * branches unreachable and renders the model as 免费, a confident wrong fact
+ * rather than a visible absence.
+ *
+ * `0` and negative factors are kept as-is on purpose: a model the upstream
+ * really prices at zero is genuinely free, and that is not the same statement
+ * as "the upstream did not say".
+ */
+function priceFactorOf(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined
+  const factor = Number(value)
+  return Number.isFinite(factor) ? factor : undefined
 }
 
 /**
@@ -120,7 +141,20 @@ export function normalizeEntry(entry: FetchedEntry): CatalogEntry {
     // The credit multiplier Qoder charges for this model. It is display-only,
     // but the picker shows it beside the name so the cost of a choice is visible
     // before the request is sent. `toPiModel` is what formats it.
-    priceFactor: Number(entry.priceFactor) || 0,
+    //
+    // An ABSENT factor is carried through as absent, never as `0`. The two used
+    // to be the same value here (`Number(x) || 0`), and the collapse went all
+    // the way to the UI: `effectiveRate` returns `NaN` when nothing usable is
+    // declared, `toPiModel` answers the bare model name for a non-finite rate,
+    // and `rateLabelOf` answers `undefined` — three honest "no rate" branches
+    // that a manufactured `0` makes UNREACHABLE, because `0` is finite and
+    // `factor <= 0` renders as 免费. So a renamed or dropped `price_factor`
+    // showed every affected model as "free" — a confident wrong fact, which is
+    // the exact shape issue 16 forbids — instead of showing no rate at all.
+    //
+    // A genuinely free model still reads 免费: its factor really is 0 (or
+    // negative), which is a declared value rather than a missing one.
+    priceFactor: priceFactorOf(entry.priceFactor),
     // Free models skip the credit multiplier entirely; the picker reads
     // `isFree` to display 免费 instead of `x0.00`.
     isFree: entry.isFree === true,
@@ -343,10 +377,18 @@ export function projectModelRow(
     region: region.id,
     regionName: region.displayName,
     isVL: entry.isVL === true,
-    // The raw catalog multiplier, kept for reference.
-    priceFactor: Number(entry.priceFactor) || 0,
-    // Free models display 免费 instead of x0.00 in the picker; `toPiModel` also
-    // uses this flag directly.
+    // The raw catalog multiplier, kept for reference — and the field the card
+    // resolves its displayed rate from, on its own ticking clock. Absence is
+    // preserved (see `priceFactorOf`) so the card can tell "declared free" from
+    // "the upstream did not say": `rateAt` answers `undefined` for a non-finite
+    // factor and the row shows no rate, where a manufactured `0` would be
+    // labelled 免费.
+    priceFactor: priceFactorOf(entry.priceFactor),
+    // Free models display 免费 instead of x0.00 in the picker. NOTE: nothing
+    // reads this flag today — `displayNameFor` decides 免费 from the resolved
+    // `factor <= 0`, so a real zero-priced model is still labelled correctly.
+    // It is carried for the payload's sake, and it is the honest signal should
+    // "免费" ever need to mean "flagged free" rather than "priced at zero".
     isFree: entry.isFree === true,
     // Whether the Qoder app starts on this model by default.
     isDefault: entry.isDefault === true,
