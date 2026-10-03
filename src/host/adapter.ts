@@ -186,6 +186,24 @@ export function createQoderAdapter(
   const preferMaximumContext = options.preferMaximumContext ?? (() => false)
   const imageModeFor = options.imageModeFor ?? (() => 'auto')
   const enabledIdsFor = options.enabledIdsFor ?? (() => [])
+  // Omitting the resolver means "publish every region", and that is NOT the
+  // rule `buildModelsFor` applies to the value this returns — the two defaults
+  // point opposite ways on purpose, and reading either one alone gets it
+  // backwards:
+  //
+  //   - THIS fallback answers "what if the wiring forgot the switch entirely?".
+  //     A caller building an adapter has already decided which regions to adapt
+  //     (`options.regions`); refusing to describe them because a switch is
+  //     missing would publish nothing at all.
+  //   - `buildModelsFor` answers "may THIS region be offered?". There the answer
+  //     must be no unless the flag is explicitly true (`adapter-models.ts`),
+  //     because the switch exists to hide a region the user turned off, and a
+  //     default-on would republish it.
+  //
+  // They only look contradictory because both are spelled `??`. The settings
+  // semantics behind the switch default the other way again — a region is
+  // offered unless its entry is explicitly `false` (`regionEnabledFor`) — so a
+  // reader who follows either default into this line should land here.
   const regionEnabled = options.regionEnabled ?? (() => true)
   const resolveAttachments = options.resolveAttachments
   const resolveImageAccess = options.resolveImageAccess

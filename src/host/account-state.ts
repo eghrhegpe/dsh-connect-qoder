@@ -80,9 +80,21 @@ export interface AccountIdentity {
  * The state record the card receives.
  *
  * `identity` and `detail` are typed as present-but-possibly-undefined rather
- * than optional because the payload builder writes every key on purpose — the
- * card's checks are then property reads rather than `in` checks on keys that
- * might be missing.
+ * than optional so that a reader of THIS type sees two keys that always exist.
+ * Do not repeat the claim that used to sit here — that the payload builder
+ * writes every key so the card can use property reads instead of `in` checks.
+ * It is false on the wire, and measurably so: the payload goes out through
+ * `sendJson`, i.e. `JSON.stringify`, and `JSON.stringify` DROPS any key whose
+ * value is `undefined`. `{region:'cn', identity:undefined}` serialises to
+ * `{"region":"cn"}` — verified, not inferred. A card that took the old comment
+ * at its word and read `payload.identity.name` without a guard would throw.
+ *
+ * The client is safe because it does the opposite of what the old comment
+ * described: it reads with `?? undefined`-style tolerance, treating a missing
+ * key and an undefined one alike. The type above remains useful as the
+ * statement of intent for the in-process builder — it is the SERIALISED form
+ * that has fewer keys than the type promises, and that is a property of
+ * `JSON.stringify`, not something this module can fix by writing the key.
  */
 export interface AccountStateRecord {
   region: string

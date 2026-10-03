@@ -19,6 +19,9 @@ import { streamChat, toQoderMessages, toQoderTools } from './upstream.ts'
 import { filterByEnabled } from './catalog-entry.ts'
 import { describeThrown, isStaleCredentialError, thrownFlag } from './errors.ts'
 import { writeError, sendJson } from './http-utils.ts'
+// The one loopback set. `routes.ts` imports only `http-utils.ts` and
+// `errors.ts`, so this edge introduces no cycle.
+import { isLoopbackAuthority } from './routes.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type {
   CatalogEntry,
@@ -76,8 +79,17 @@ export interface ShimHandle {
 /** Reject anything that is not addressed to the loopback interface. */
 function hostIsLoopback(host: unknown): boolean {
   if (typeof host !== 'string') return false
-  const name = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.split(':')[0]
-  return name === '127.0.0.1' || name === 'localhost' || name === '::1'
+  // Delegated rather than re-spelled. This used to test the name against
+  // `'127.0.0.1' | 'localhost' | '::1'` on its own, which had already drifted
+  // from `routes.ts`'s copy in three ways: `127.0.0.2` was accepted by the card
+  // routes and refused here, `LocalHost` was case-folded there but not here, and
+  // a bare `::1` (no brackets) split to the empty string here and was accepted
+  // there. `isLoopbackAuthority` says in its own doc that it exists so "the
+  // loopback set is one list rather than a condition repeated in two places" —
+  // this is that one list, and the shim is the copy it was written for. It
+  // matters more here than anywhere else: this is the only surface that listens
+  // on a real port and holds a real token.
+  return isLoopbackAuthority(host)
 }
 
 /** Reject any request that claims a non-loopback origin. */
@@ -85,8 +97,13 @@ function originIsLoopback(origin: unknown): boolean {
   if (origin === undefined) return true
   if (typeof origin !== 'string') return false
   try {
-    const host = new URL(origin).hostname
-    return host === '127.0.0.1' || host === 'localhost' || host === '::1'
+    // `URL.hostname` has brackets stripped off an IPv6 literal, which is exactly
+    // what `isLoopbackAuthority` expects, so the shared list applies unchanged.
+    // Unlike `routes.loopbackRequest` this checks the name only, not the port:
+    // the shim is a fixed private surface, and the token is what actually gates
+    // it — an origin match here is a cheap early refusal, not the security
+    // boundary.
+    return isLoopbackAuthority(new URL(origin).hostname)
   } catch {
     return false
   }

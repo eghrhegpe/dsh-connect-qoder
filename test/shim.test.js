@@ -184,6 +184,39 @@ test('a legitimate loopback Host is accepted', async () => {
   assert.match(raw, /^HTTP\/1\.1 200/)
 })
 
+test('the shim accepts the same loopback set the card routes do', async () => {
+  // This gate used to be a second, hand-written copy of the loopback rule, and
+  // it had already drifted from `routes.isLoopbackAuthority` in three ways —
+  // each of these three lines was a request the card routes accepted and the
+  // shim refused. The shim is the wrong one to be strict on by accident: it is
+  // the only surface that listens on a real port and carries a real token, so a
+  // spurious refusal looks exactly like a broken plugin, while the drift itself
+  // is invisible in review because both copies read like the same predicate.
+  //
+  // The list is now imported rather than re-spelled, so this asserts the
+  // IMPORT — a future copy-paste back into `shim.ts` fails here.
+  const { port } = new URL(shim.base)
+  for (const host of [
+    '127.0.0.2', // loopback by definition; `127.` prefix rule
+    'LocalHost', // case-folded only in routes.ts
+    '[::1]', // bracketed IPv6
+  ]) {
+    const raw = await rawRequest(Number(port), [
+      'GET /v1/models HTTP/1.1',
+      `Host: ${host}:${port}`,
+      `Authorization: Bearer ${shim.token}`,
+      'Connection: close',
+      '',
+      '',
+    ].join('\r\n'))
+    assert.match(
+      raw,
+      /^HTTP\/1\.1 200/,
+      `Host ${host} is loopback everywhere else; the shim must use the shared list. Got: ${raw.split('\r\n')[0]}`,
+    )
+  }
+})
+
 test('a non-loopback Origin is refused', async () => {
   const { status, json } = await call(shim.base, '/v1/models', {
     token: shim.token,

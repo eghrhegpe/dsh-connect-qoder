@@ -219,9 +219,34 @@ export interface CatalogLike {
  * screen are the newest answer, yet they will not survive a restart.
  */
 export interface RefreshFailure {
-  reason: string
+  reason: RefreshFailureReason
   error?: unknown
 }
+
+/**
+ * The reasons a refresh can leave the catalog unrefreshed.
+ *
+ * The array is the source of truth and the type is DERIVED from it, rather than
+ * the two being written out separately. They had already drifted: the list was
+ * declared in `catalog-refresh.ts` and referenced nowhere, while this interface
+ * typed `reason` as a bare `string` — so the client's `refreshNoticeKey` fell
+ * through to its `default` (which says "temporary, try again") for anything it
+ * did not recognise, and a sixth reason could be introduced with no compile
+ * error and no failing test anywhere.
+ *
+ * `as const` is what makes the derivation work: it keeps the element type as the
+ * literal union rather than widening to `string`.
+ */
+export const REFRESH_FAILURE_REASONS = [
+  'credential',
+  'no-credential',
+  'fetch',
+  'persist',
+  'protocol-shape-changed',
+] as const
+
+/** One reason a refresh left the catalog unrefreshed. */
+export type RefreshFailureReason = (typeof REFRESH_FAILURE_REASONS)[number]
 
 /**
  * The runtime shape the pure refresh/catalog helpers operate on.
@@ -246,7 +271,7 @@ export interface RefreshableRuntime {
  */
 export type CatalogOutcome =
   | { ok: true; entries: CatalogEntry[] }
-  | { ok: false; reason: string; error?: unknown }
+  | { ok: false; reason: RefreshFailureReason; error?: unknown }
 
 /**
  * A logger the plugin writes to, when the host supplies one.

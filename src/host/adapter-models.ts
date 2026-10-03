@@ -79,6 +79,12 @@ export function buildModelsFor(runtime: ModelRuntime, options: BuildModelsOption
   // value reads as off, because this switch decides whether a provider is
   // offered at all and a default-on here would publish a region the user
   // turned off.
+  //
+  // Do NOT "unify" this with `adapter.ts`'s `options.regionEnabled ?? (() => true)`,
+  // which defaults the opposite way. That one answers "what if the wiring forgot
+  // the switch?" (adapt the regions the caller already chose), and this one
+  // answers "may this region be offered?" (no, unless stated). Both directions
+  // are pinned by `test/region-enabled-defaults.test.js`.
   if (options.regionEnabled !== true) return []
   const catalog = typeof runtime.catalog === 'function' ? runtime.catalog() : runtime.catalog.current()
   return filterByEnabled(catalog, options.enabledIds).map((entry) =>

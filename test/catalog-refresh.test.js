@@ -189,16 +189,35 @@ test('a runtime with no invalidate hook does not throw', () => {
 
 test('the failure reason is always a known one', () => {
   // The card maps reasons to copy. A reason invented by a future edit would
-  // render as an empty string, so an unrecognised one falls back to the generic
-  // bucket rather than travelling onward.
+  // render as the generic bucket, so an unrecognised one falls back to it here
+  // rather than travelling onward.
+  //
+  // This assertion used to read `assert.strictEqual(..., 'something-new')` —
+  // i.e. it pinned that a junk reason was carried through UNCHANGED — while the
+  // comment directly above it claimed the opposite. Both the comment and the
+  // client agreed with each other and not with the code: `refreshNoticeKey`
+  // (`card-model.ts`) recognises exactly two reasons and answers `"transient"`
+  // for everything else, so an unknown reason had no copy of its own and no way
+  // to get one. The old assertion was pinning the implementation rather than
+  // the contract, which is why the gap it described stayed open.
+  // `REFRESH_FAILURE_REASONS` is now the single source of truth and the type is
+  // derived from it, so a genuinely new reason fails to compile instead.
   const runtime = makeRuntime()
   applyCatalogOutcome(runtime, { ok: false, reason: 'something-new', error: undefined })
-  assert.strictEqual(runtime.refreshFailed.reason, 'something-new')
+  assert.strictEqual(runtime.refreshFailed.reason, 'fetch', 'an unknown reason falls back to the generic bucket')
 
   const missing = makeRuntime()
   applyCatalogOutcome(missing, { ok: false })
   assert.strictEqual(missing.refreshFailed.reason, 'fetch')
   assert.ok(REFRESH_FAILURE_REASONS.includes(missing.refreshFailed.reason))
+
+  // Every known reason must survive verbatim, so the fallback above cannot be
+  // "pass everything to fetch" in disguise.
+  for (const reason of REFRESH_FAILURE_REASONS) {
+    const known = makeRuntime()
+    applyCatalogOutcome(known, { ok: false, reason, error: undefined })
+    assert.strictEqual(known.refreshFailed.reason, reason, `${reason} must be recorded as itself`)
+  }
 })
 
 test('the applier reports which previous failure it displaced', () => {

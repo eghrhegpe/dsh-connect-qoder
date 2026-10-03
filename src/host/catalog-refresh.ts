@@ -45,16 +45,13 @@
  *
  * @module dsh-connect-qoder/catalog-refresh
  */
-import type { CatalogOutcome, RefreshableRuntime, RefreshFailure } from './domain.ts'
-
-/** The reasons a refresh can leave the catalog unrefreshed. */
-export const REFRESH_FAILURE_REASONS = [
-  'credential',
-  'no-credential',
-  'fetch',
-  'persist',
-  'protocol-shape-changed',
-]
+import { REFRESH_FAILURE_REASONS } from './domain.ts'
+import type { CatalogOutcome, RefreshableRuntime, RefreshFailure, RefreshFailureReason } from './domain.ts'
+// Re-exported so this module keeps presenting one surface for the refresh rule,
+// while the definition (and the type derived from it) lives in `domain.ts` —
+// `domain.ts` is where the interface `RefreshFailure` needs it, and importing
+// upward from here would be the cycle.
+export { REFRESH_FAILURE_REASONS }
 
 /**
  * Whether a refresh that finished after a dispose may still touch the runtime.
@@ -80,6 +77,21 @@ export function isRefreshObsolete(runtime: RefreshableRuntime | null | undefined
 }
 
 /**
+ * Every reason the fold will record, as a value list plus a type guard.
+ *
+ * The list itself lives in `domain.ts` (the `RefreshFailure` interface needs it
+ * and cannot import from here), and this is the runtime half: the union type
+ * stops a bad reason at compile time for typed callers, and the guard stops one
+ * arriving from an untyped edge — a `CatalogOutcome` built from parsed JSON, or
+ * a test double.
+ */
+function refreshFailureReasonOf(reason: unknown): RefreshFailureReason {
+  return REFRESH_FAILURE_REASONS.includes(reason as RefreshFailureReason)
+    ? (reason as RefreshFailureReason)
+    : 'fetch'
+}
+
+/**
  * Fold one refresh's outcome into a runtime.
  *
  * Split by outcome so each branch can be asserted on its own, because the bug
@@ -101,7 +113,16 @@ export function applyCatalogOutcome(
   if (outcome.ok !== true) {
     // Kept, not overwritten: a failed refresh is a statement about THIS fetch,
     // and the previous catalog is the one still on screen.
-    runtime.refreshFailed = { reason: String(outcome.reason ?? 'fetch'), error: outcome.error }
+    //
+    // The reason is VALIDATED rather than stringified. It used to be
+    // `String(outcome.reason ?? 'fetch')`, which accepted any value at all and
+    // pushed the problem into the card: `refreshNoticeKey` answers its
+    // `default` branch — the "temporary, try again" copy — for a reason it does
+    // not recognise, so a typo or a new reason with no client copy would leave
+    // the plugin telling the user to retry when the real answer was to update
+    // the plugin. Falling back to `fetch` here is the conservative choice: it
+    // claims the least.
+    runtime.refreshFailed = { reason: refreshFailureReasonOf(outcome.reason), error: outcome.error }
     return { committed: false, previousFailure }
   }
   // Empty is a value. `replace([])` advances `fetchedAt`, so the TTL refreshes

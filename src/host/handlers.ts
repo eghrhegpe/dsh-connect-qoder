@@ -41,7 +41,7 @@ import { appDataRootFor, loadCredentialAsync, loadEnvCredential } from './creden
 import type { LoadedCredential } from './credentials.ts'
 import { claimCampaign, fetchUserInfo, readCampaigns } from './upstream.ts'
 import type { UsageSnapshot } from './upstream.ts'
-import type { CatalogEntry, PluginLogger, Region } from './domain.ts'
+import type { CatalogEntry, PluginLogger, RefreshFailureReason, Region } from './domain.ts'
 import type { Preferences } from './preferences.ts'
 
 /**
@@ -57,7 +57,7 @@ export interface RouteRuntimeLike {
   readUsage(force?: boolean): Promise<UsageSnapshot | undefined>
   invalidateUsage(): void
   catalog: { current(): CatalogEntry[]; fetchedAt?: number }
-  refreshFailed?: { reason: string; error?: unknown } | undefined
+  refreshFailed?: { reason: RefreshFailureReason; error?: unknown } | undefined
 }
 
 /** One started region, as the handlers see it. */
