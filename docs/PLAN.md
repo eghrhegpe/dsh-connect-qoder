@@ -272,7 +272,7 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 
 ## 5. P2 详情（技术债）
 
-### P2-1 覆盖率把三个大文件纳入分母 —— L
+### P2-1 覆盖率把三个大文件纳入分母 —— L（handler 抽取部分已完成）
 
 **症状**：`lib/adapter.js`（239 行）、`lib/client.js`（2004 行）、`lib/index.js`（1166 行）
 **从未被 import**，不在覆盖率报告里——**3409 / 7626 行 = 44.7% 的 lib 代码不受阈值约束**。
@@ -283,10 +283,17 @@ Qoder 目录存在但 `Local State` 解不开时（正是账号面板要解释�
 或把路由 handler 抽成 `(req, deps) => result` 纯函数（`applySettingsSave` 已证明可行）。
 顺带把 KNOWN_GAPS 里那批**未登记**的凭据层缺口补进去。
 
+**进展**：module-mocks 路线经实测不可行（peer 包不装 + index.ts 顶层静态 import），已放弃；
+改走「抽出 handler」这条路——七条卡片路由的 handler 本体抽进无 peer 依赖的
+`src/host/handlers.ts`，`index.ts` 每条路由只剩 `webServer.register` + deps 装配一行委托，
+`test/handlers.test.js` 以假 req/res **直接执行**每条 handler。`handlers.ts` 已进覆盖率分母。
+**仍余**：`adapter.ts`（顶层 import pi-ai）与 `index.ts` 的注册/dispose/回滚接线还没进分母。
+
 **验收标准**
-- [ ] `lib/index.js`、`lib/adapter.js` 出现在覆盖率报告里（分母变大是好事）；
-- [ ] 至少 6 条路由有直接断言（method/鉴权/错误码）；
-- [ ] 门槛数字重新标定后写回 `package.json` 与 KNOWN_GAPS（避免"文档基线比实测高 1pp"的旧问题）。
+- [x] 至少 6 条路由有直接断言（method/鉴权/错误码）——`test/handlers.test.js` 覆盖全部 7 条，38 例；
+- [x] `handlers.ts` 进入覆盖率分母（行 100% / 函数 100%）；`lib/index.js`、`lib/adapter.js` **整体**尚未（余接线）；
+- [ ] 门槛数字重新标定后写回 `package.json` 与 KNOWN_GAPS——本轮 handlers 入分母后整体仍
+      90.29/82.33/86.35，地板（68/82/66）**未动**，故此项留空（无需重标）。
 
 ### P2-2 十二处小时级小口子（一个 PR 清掉） —— S
 

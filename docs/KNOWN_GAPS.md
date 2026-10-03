@@ -5,9 +5,12 @@
 
 新增测试时请顺手更新本文件；删掉一条时请在提交信息里说明它为什么不再成立。
 
-**最近一次复核**（`f8ca26f` + 凭据层两处 P1 修复之后）：第 1、2 条是接线缺口，等
-`--experimental-test-module-mocks`——**但要注意 `test/account-route-wiring.test.js` 补的是其中
-一小块**：它以源码文本断言两个路由调用点的模式标志，证明不了 handler 真被调用；第 3 条的根治已落地
+**最近一次复核**（P2-1 把七条路由 handler 抽进 `src/host/handlers.ts` 之后）：第 1 条是
+接线缺口，等 `--experimental-test-module-mocks`；**第 2 条已大幅收窄**——路由 handler 主体现在是
+可执行模块，`test/handlers.test.js` 以假 req/res 直接跑每条 handler（方法/来源/错误码都是真断言，
+不再是源码文本），`test/account-route-wiring.test.js` 一类文本守门随之退为只锁 `index.ts` 的委托边界；
+第 2 条**余下**的只是 `index.ts` 里的路由注册接线、`ctx.effect` dispose 时序、`registerAdapter`
+失败回滚——这些仍因顶层 peer import 不能进测试。第 3 条的根治已落地
 （见下），镜像本身是刻意接受的；第 4 条原理不可测；第 5 条是写了也测不到的等价路径；第 6 条是功能
 未实现（跨平台凭据链），不是测试缺口；第 7 条登记仓库级缺失，其中**文档漂移**一项已由
 `test/docs-facts.test.js` 建立门禁；第 8 条登记国际版 campaigns 端点的 umid 机器身份门控
@@ -102,18 +105,22 @@ pi-ai 与 `@deepseek-ai/*`。本机实测**两种做法都失败**，原因写�
 **已经测到哪一步**：这个文件里所有**纯逻辑**都已经搬出去了——
 凭据缓存（`src/host/credential-cache.ts`）、目录落盘（`src/host/catalog-store.ts`）、
 设置写入与读回（`src/host/settings-save.ts`）、行投影与过滤（`src/host/catalog-entry.ts`）、
-刷新结果如何落地（`src/host/catalog-refresh.ts`）、能否上线一个区域（`src/host/region-gate.ts`）、
-以及**每条路由共用的两道闸与 body 读取器**（`src/host/routes.ts`：方法检查含 `Allow` 与
-`HEAD`、回环来源检查、64 KiB 上限）。
+刷新结果落地（`src/host/catalog-refresh.ts`）、能否上线一个区域（`src/host/region-gate.ts`）、
+**每条路由共用的两道闸与 body 读取器**（`src/host/routes.ts`：方法检查含 `Allow` 与
+`HEAD`、回环来源检查、64 KiB 上限），以及**七条路由的 handler 本体**
+（`src/host/handlers.ts`，`(req, res, deps) => Promise<void>` 形态，P2-1）。`test/handlers.test.js`
+以假 req/res 直接执行每条 handler——方法闸 405、同源闸 403（含同 host 不同端口）、未知区 404、
+缺 settings 服务 503、坏 body 400/500、签到 200/502、confirm 的 sign-in-expired 归名并失效缓存
+全部是可执行断言，不再是文本守门。claim / confirm 的上游网络调用给了注入接缝（默认仍走真实现）。
 
-**剩下的风险**：`ctx.inject(['webServer'])` 里的路由**注册**与 handler 主体；
+**剩下的风险**：`ctx.inject(['webServer'])` 里的路由**注册**接线本身；
 `ctx.effect` 的 dispose 时序（定时器与在途 `refreshCatalog` 的竞态）；
 `registerAdapter` 失败时的回滚是否真的释放了 shim 端口。
+（handler 主体已不再是风险——见上。）
 
-**要补上需要**：把每条 handler 抽成 `(req, deps) => result` 的纯函数——
-`applySettingsSave` 已证明可行，`src/host/routes.ts` 也是同一套路的前半段（闸已抽出，
-handler 主体尚未）。**注意**：第 1 条里那条"module mocks 可行"的说法经实测是错的，
-不要按它排期。
+**要补上需要**：`index.ts` 仍因顶层 import 四个 `@deepseek-ai/*` peer 包不能被测试 import，
+所以**注册/dispose/回滚**这三块要真进分母，仍需 module-mocks 之外的新路子。
+**注意**：第 1 条里那条"module mocks 可行"的说法经实测是错的，不要按它排期。
 
 ---
 
