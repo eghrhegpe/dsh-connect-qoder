@@ -5,13 +5,13 @@
 
 国内版 **Qoder CN** 与国际版 **Qoder** 是两个并行的 provider（`qoder-cn` / `qoder`），
 装哪个就出现哪一组模型，两个都装就两组并存，各自使用自己的账号与额度。
-<img width="1527" height="1254" alt="image" src="https://github.com/user-attachments/assets/73a691b5-0633-4090-a193-0459bbf655ae" />
+![Plugins 页的 Qoder 卡片：两版（Qoder CN / Qoder）的区域状态、套餐内额度与剩余 Credits、今日请求与消耗](https://github.com/user-attachments/assets/73a691b5-0633-4090-a193-0459bbf655ae)
 
 输入框旁的**用量胶囊**：工具栏上的 `Qoder CN · 2,222` 是区域前缀加主额度剩余 Credits，
 点开就是同一份用量面板——套餐内额度与剩余、今日经本客户端的请求数与 token 消耗（含缓存命中）、
 7 天用量趋势，以及今日签到状态——与 Plugins 页卡片同款（同一套读数与阈值）。
 
-![输入框旁的用量胶囊，展开后是用量面板：余额 8%、剩余 2,222 Credits、今日请求 612 次、7 天趋势图与今日签到状态](assets/qoder-usage-capsule.png)
+![输入框旁的用量胶囊，展开后是用量面板：余额 8%、剩余 2,222 Credits、今日请求 612 次、7 天趋势图与今日签到状态](https://raw.githubusercontent.com/eghrhegpe/dsh-connect-qoder/master/assets/qoder-usage-capsule.png)
 
 ## 工作原理
 
@@ -214,8 +214,11 @@ dsh plugin --profile web add <本仓库路径>
     卡片直接说"请更新插件（重新登录没有用）"，且**不**显示时间戳——它不会被当成"排队"慢慢重试。
     判别边界取自实测（`probe/model-shape.mjs`，两端真实账号）：空分组用 `[]` 表达，
     所以"0 个模型"是可信结果、必须落盘，而"分组键缺失/类型变了"才是格式变化。
-- **卡片接口只接受同源请求**（安全）：七条路由里三条是 POST 且能改状态——「签到领积分」
-  （真实账号变更）、「保存模型勾选与图像模式」、「重读登录」。这些接口此前只按"来源主机名是不是
+- **卡片接口只接受同源请求**（安全）：**十二条**路由里**七条是 POST 且能改状态**——「签到领积分」
+  （真实账号变更）、「保存模型勾选与图像模式」（`__save`）、「重读登录」、「在线确认」，
+  以及设备登录那一组的**三条写路由**：「开授权页」、「取消」、「**登出并删掉本插件存的凭据**」。
+  逐条方法、能否改状态、谁在调用见 [docs/ROUTES.md](https://github.com/eghrhegpe/dsh-connect-qoder/blob/master/docs/ROUTES.md)
+  （本仓路由的唯一清单；改路由必须同步那张表）。这些接口此前只按"来源主机名是不是
   本机"判断，因此**本机任意端口上的任意 HTTP 服务**都能让它的网页代为调用（浏览器会挡跨域
   读响应，但操作已经发生）。现在要求来源的**地址与端口**与请求实际拨到的地址一致
   （比对请求自己的 `Host` 头，所以不写死端口、DSH 换端口也不用改），且必须是回环地址。
@@ -250,6 +253,22 @@ dsh plugin --profile web add <本仓库路径>
   `active: false` 设计不渲染。插件在 OpenAPI 请求上自动附加这组头（Windows 上定位安装
   目录的 `resources\umid\runtime-info.exe` 读取，失败静默降级为原头组；国内版与 PAT
   不受影响；发现与验证记录在 [docs/KNOWN_GAPS.md 第 8 条（国际版 campaigns 端点按 umid 机器身份门控每日签到）](docs/KNOWN_GAPS.md)）。
+
+## 文档
+
+**npm 包里只有 6 项**：`lib/`、`locale/*.json`、`cordis.patch.yml`、`icon.svg`、`README.md`、
+`CHANGELOG.md`（即 `package.json` 的 `files`；另有 npm 无论如何都会打包的 `LICENSE`）。
+`docs/`、`AGENTS.md`、`src/`、`test/`、`probe/`、`scripts/`、`assets/` 都在仓库里、**不在包里**
+——registry 页面上点这些路径会 404，请到 GitHub 仓库看。本文的截图因此一律写成
+`raw.githubusercontent.com` 绝对地址（相对路径在 registry 页面上是裂图）。
+
+阅读顺序按身份分，别从头读到尾：
+
+| 你是 | 读到哪为止 | 之后去哪 |
+|---|---|---|
+| **装它 / 用它** | 「已知行为」这一节结束 | 没有必须再读的；遇到现象先查 [`docs/README.md`](https://github.com/eghrhegpe/dsh-connect-qoder/blob/master/docs/README.md) 里的 `howto/symptom-triage.md`（按屏幕原文排） |
+| **改它 / 审它** | 继续往下：「目录」（逐文件职责）、「构建产物」、「测试」 | [`docs/README.md`](https://github.com/eghrhegpe/dsh-connect-qoder/blob/master/docs/README.md) 的完整地图：缺口 `KNOWN_GAPS.md`、路由契约 [`ROUTES.md`](https://github.com/eghrhegpe/dsh-connect-qoder/blob/master/docs/ROUTES.md)、平台事实 `docs-qoder-cn/` |
+| **AI 协作会话** | — | [`AGENTS.md`](https://github.com/eghrhegpe/dsh-connect-qoder/blob/master/AGENTS.md)（**不随包发布**，只在仓库里）：验证怎么跑、红线、门禁真源 |
 
 ## 目录
 
@@ -301,12 +320,12 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/http-utils.ts` | 回环路由共用的 JSON / OpenAI 形状错误响应（`no-store`，卡片轮询读不到陈旧数据；无 peer 依赖） |
 | `src/host/domain.ts` | 各宿主模块标注时共用的领域词表（`Region` / `CatalogEntry` / `Promotion` / `CatalogOutcome` 等）。**只有类型、没有运行时值**，所以不进产物、不改变任何 bundle 字节；刻意不描述任何 peer 模块的形状——那些包由宿主运行时提供、此处只有 `declare module` 空壳，凭空造一个"看起来对"的接口比 `any` 更危险，因为它不会承认自己不知道（无 peer 依赖） |
 | `src/host/routes.ts` | 每条卡片路由共用的两道闸：方法检查（405 带 `Allow`、`HEAD` 交给 GET）与**同源**来源检查（403；比对 `Host` 头，POST 路由靠它挡住本机其它端口的网页），以及带 64 KiB 上限的 JSON body 读取器（无 peer 依赖） |
-| `src/host/handlers.ts` | 七条卡片路由的 handler，`(req, res, deps) => Promise<void>` 形态：方法/来源两道闸 + 业务判定 + 应答全在这（含签到 `claimTodayFor` 与「重读登录」的失败保护），`index.ts` 只保留 `webServer.register` 与 deps 装配（从 `index.ts` 抽出以便直测，无 peer 依赖）。「在线校验登录」的兜底路径经 `deps.readCredential` 取凭据，宿主把它接到**按 region 共享的凭据缓存**上，所以没有 runtime 的 region 也能校验插件自有登录（无 peer 依赖） |
+| `src/host/handlers.ts` | 十二条卡片路由的 handler，`(req, res, deps) => Promise<void>` 形态：方法/来源两道闸 + 业务判定 + 应答全在这（含签到 `claimTodayFor` 与「重读登录」的失败保护），`index.ts` 只保留 `webServer.register` 与 deps 装配（从 `index.ts` 抽出以便直测，无 peer 依赖）。「在线校验登录」的兜底路径经 `deps.readCredential` 取凭据，宿主把它接到**按 region 共享的凭据缓存**上，所以没有 runtime 的 region 也能校验插件自有登录（无 peer 依赖） |
 | `src/host/publish-regions.ts` | 把当前区域集发布给宿主（`registerAdapter` + `registerConfigurableProviders`）以及失败时的三层回滚：先释放旧的一对，新注册失败则释放半注册的 adapter 并把旧的一对装回去，装不回去则如实留空而不谎称已注册（从 `index.ts` 抽出以便直测，宿主两处注册接缝靠注入，无 peer 依赖） |
 | `src/host/route-mount.ts` | 一组路由的挂载判定：**要么全挂上、要么全撤下**。三个账号路由是一个功能，宿主若只收下 `/account` 而拒了 `/account/confirm`，旧写法会留下一个"能读状态、两个按钮却不动"的半截面板，且日志写着"account routes unavailable"——那句话是假的，比没有日志更坏，因为它让人不再往下查。组内任一注册被拒即回滚已拿到的 release 并如实报失败（无 peer 依赖） |
 | `src/host/dispose-order.ts` | fiber 注销时的**次序**（次序本身就是内容）：provider 注册先撤、路由先于 runtime 拆（否则 issue 13 那条泄漏）、`disposed` 必须在 `clearInterval` **之前**置位——否则一次还在途的 `refreshCatalog().then` 会把一个全新的 interval 装到已经没人管的 runtime 上，成为活过插件的僵尸凭据解析循环。此前这条只由注释担保（无 peer 依赖） |
 | `src/host/injected.ts` | `requireInjected`：把 "`ctx.inject(['webServer'], cb)` 保证 cb 跑时该服务已在" 这个只活在注释里的前提，转成**一次**类型收窄——服务缺失就抛错点名该服务，而不是让后续注册把路由挂到 `undefined` 上、再于更晚静默失败。此前它是 `activate()` 里的内联闭包（七处调用共用），此前这条也只由注释担保；抽出以便直测，只认 `undefined`（其它 falsy 值是宿主自己的契约违反，原样交回、不改写）（无 peer 依赖） |
-| `src/host/index.ts` | 按区域注册 provider 的插件入口，与七条路由的注册接线（handler 本体在 `handlers.ts`；发布与回滚的判定在 `publish-regions.ts`；挂载分组在 `route-mount.ts`；注销次序在 `dispose-order.ts`；注入服务缺失的判定在 `injected.ts`） |
+| `src/host/index.ts` | 按区域注册 provider 的插件入口，与十二条路由的注册接线（handler 本体在 `handlers.ts`；发布与回滚的判定在 `publish-regions.ts`；挂载分组在 `route-mount.ts`；注销次序在 `dispose-order.ts`；注入服务缺失的判定在 `injected.ts`） |
 
 `docs/docs-qoder-cn/` 是从 Qoder CN 官方文档抓回并清洗的资料（**纯 Markdown，源 `.txt` 已删**），
 由根目录的 `convert-qoder-docs.ps1` 一次性转换而成——它**只处理这一批抓取件**，不是常规构建步骤；
@@ -315,7 +334,7 @@ dsh plugin --profile web add <本仓库路径>
 
 卡片侧的源码在 `src/client/`（产物是 `lib/client.js`，`react` 由宿主提供，产物不打包它）：
 
-| `src/client/paths.ts` | 卡片用到的五条插件路由 |
+| `src/client/paths.ts` | 卡片用到的**十条**路由常量（`QODER_*_PATH`）：四条读、六条写。`__save` 不在其中——它由 `settings-write.ts` 以字面量直接 POST；`status` 只供宿主诊断，卡片不读 |
 | `src/client/styles.ts` | 卡片样式与 `installStyles`（`dsm-*` 一套与 `dsh-connect-workbuddy` 逐字一致，原因见文件头） |
 | `src/client/settings-write.ts` | 「写入后读回校验」的浏览器半边 |
 | `src/client/controller.ts` | 卡片可编辑状态机（staged/saved 三字段、`dirty`、`save`、`discard` 与派生的模型视图）——无 React、无 DOM，可被 `node:test` 直接测 |
@@ -505,7 +524,7 @@ devDependencies 之前就失败。
 **本机两份安装形态不同、这是有意的**：`web` profile 是指向本仓库的符号链接（开发态，改完刷新
 即生效）；`desktop` profile 走 **npm 官方安装**，与真实用户同形态，跑的是已发布版。桌面端要试本地
 代码：`dsh plugin add <本仓库路径> --profile desktop`。
-（形态定义与"版本号相同 ≠ 内容相同"这条坑见 [AGENTS.md](AGENTS.md)「工作目录与装载方式」。）
+（形态定义与"版本号相同 ≠ 内容相同"这条坑见 [AGENTS.md](https://github.com/eghrhegpe/dsh-connect-qoder/blob/master/AGENTS.md)「工作目录与装载方式」。）
 
 CI 在 Node 22.19 / 24 × Ubuntu / Windows 上跑（`.github/workflows/test.yml`）——
 Windows 不是冗余：shim 绑定回环监听、目录缓存依赖 rename 覆盖、凭据读取要调
@@ -605,4 +624,8 @@ Qoder 当前的服务条款，请自行判断。
 
 ## 许可证
 
-MIT
+MIT，全文见 [LICENSE](./LICENSE)。
+
+第三方内容与出处（`docs/docs-qoder-cn/` 的 8 份官方文档转换件、上游产品与开发期工具链）逐项见
+[THIRD_PARTY_NOTICES.md](https://github.com/eghrhegpe/dsh-connect-qoder/blob/master/THIRD_PARTY_NOTICES.md)
+（同样**不随 npm 包发布**）。
