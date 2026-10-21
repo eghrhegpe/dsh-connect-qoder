@@ -11,13 +11,20 @@
       "changes": []
     },
     "testTypeErrorBudget": {
-      "value": 2018,
+      "value": 2016,
       "baseline": {
         "from": 2018,
         "on": "2026-10-21",
         "reason": "baseline — the test tree's type-error debt, measured with checkJs on (tsconfig.test.budget.json)"
       },
-      "changes": []
+      "changes": [
+        {
+          "from": 2018,
+          "to": 2016,
+          "on": "2026-10-21",
+          "reason": "docs-facts.test.js 的「README 图片」门禁重写（改成「图片总数 > 0 + 本地图必须在检出里 + assets/ 不在 files 时禁止相对路径」，因为旧断言恰好把 npm 页面上那张裂图保了下来）顺带消掉 2 个类型错误；实测 2016，按「只降不升」把天花板一起降下来"
+        }
+      ]
     },
     "implicitAnyBudget": {
       "value": 0,

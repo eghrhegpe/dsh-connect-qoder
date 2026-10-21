@@ -309,15 +309,36 @@ test('every screenshots.json entry is a real, non-empty image in this checkout',
   }
 })
 
-test('every local image referenced by the README exists in this checkout', () => {
+test('every local image referenced by the README exists AND is reachable on the registry page', () => {
   const readme = read('README.md')
-  // Markdown images and raw <img> tags are both used in this README; the
-  // relative-path rule has to cover whichever form the next edit picks.
+  // Markdown images and raw <img> tags are both used in this README; the rule
+  // has to cover whichever form the next edit picks.
+  /** @type {string[]} */
   const refs = [
-    ...[...readme.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)].map((m) => m[1]),
-    ...[...readme.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]),
-  ].filter((ref) => !isRemote(ref) && !ref.startsWith('#'))
+    ...[...readme.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)].map((m) => /** @type {string} */ (m[1])),
+    ...[...readme.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)].map((m) => /** @type {string} */ (m[1])),
+  ].filter((ref) => !ref.startsWith('#'))
+  const local = refs.filter((ref) => !isRemote(ref))
 
-  assert.ok(refs.length > 0, 'the README lost every local image — re-add it or delete screenshots.json')
-  for (const ref of refs) assertAssetExists(decodeURI(ref), 'README.md')
+  // 2026-10-21: this gate used to demand `local.length > 0`, and that is what
+  // kept the ONE local image alive — `assets/qoder-usage-capsule.png`, which was
+  // a BROKEN image on the npm page because `assets/` is not in `files`. The
+  // promise worth guarding is "the README still shows its screenshots", not
+  // "the README uses a path npm cannot serve". So: count every image form, hold
+  // local ones to the checkout, and hold them to whether npm actually ships them.
+  assert.ok(refs.length > 0, 'the README lost every image — the registry page would show a text-only listing')
+  for (const ref of local) assertAssetExists(decodeURI(ref), 'README.md')
+
+  /** @type {string[]} */
+  const files = JSON.parse(read('package.json')).files ?? []
+  const shipsAssets = files.some((entry) => entry.replace(/^\.\//, '').replace(/\/$/, '') === 'assets')
+  if (!shipsAssets) {
+    const unreachable = local.filter((ref) => /^(\.\/)?assets\//.test(decodeURI(ref)))
+    assert.deepEqual(
+      unreachable,
+      [],
+      `package.json 的 files 不含 assets/，README 里用相对路径引用的 ${unreachable.join(', ')} 在 registry 页面上是裂图——` +
+        '改成 raw.githubusercontent.com 绝对地址（本仓既有策略），或把 assets 加进 files',
+    )
+  }
 })
