@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "DSH Connect Qoder",
+    "title": "Qoder Model Access",
     "description": "Registers Qoder CN and international language models into DSH, fetching each model's rate automatically as it shifts with off-peak hours. It also provides a daily check-in, a usage pill and a credit lookup. Needs the Qoder login state on this machine, or one browser login."
   }
 }

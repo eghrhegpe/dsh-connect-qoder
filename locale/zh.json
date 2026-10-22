@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "DSH Connect Qoder",
+    "title": "Qoder 模型接入",
     "description": "注册 Qoder 中国版与国际版的语言模型到 DSH，自动获取每个模型的费率，随错峰时段变化。并提供每天签到、用量胶囊与积分查询功能。需要本机Qoder的登录态，或浏览器登录一次。"
   }
 }
