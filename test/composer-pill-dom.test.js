@@ -411,3 +411,103 @@ test('a failed re-read keeps the old number but marks it possibly stale', async 
     unmount()
   }
 })
+
+/* ------------------------------------------------------------------ */
+/* 新模型标记：真的渲染出来才算数                                        */
+/* ------------------------------------------------------------------ */
+
+/** 一份带新模型 id 的名册：qwen3.5-coder 老、qwen4-coder 新。 */
+const MODELS_BODY_WITH_NEW = {
+  models: [
+    { id: 'qwen3.5-coder', name: 'Qwen3.5 Coder', region: 'qoder-cn', priceFactor: 0.5 },
+    { id: 'qwen4-coder', name: 'Qwen4 Coder', region: 'qoder-cn', priceFactor: 0.4 },
+  ],
+  newModelIds: ['qwen4-coder'],
+}
+
+/**
+ * 按名册响应替换 `/models` 的桩，其余同 fetchStub。
+ *
+ * @param {string[]} newModelIds
+ */
+function stubWithNewModels(newModelIds) {
+  return async (/** @type {unknown} */ url) => {
+    const path = String(url)
+    if (path.includes('/plugins/dsh-connect-qoder/usage')) return jsonResponse(USAGE_BODY)
+    if (path.includes('/plugins/dsh-connect-qoder/models')) {
+      return jsonResponse({ ...MODELS_BODY_WITH_NEW, newModelIds })
+    }
+    return jsonResponse({})
+  }
+}
+
+test('the pill marks a new model and names it in the panel', async () => {
+  const { slots, window: w, registered, scope } = await loadCardBundle({
+    fetchImpl: stubWithNewModels(['qwen4-coder']),
+  })
+  const card = composerSlotOf(slots)
+  const { container, unmount, react } = await renderCards({
+    card,
+    registered,
+    scope,
+    window: w,
+    props: { useProjection: () => ({ next: { provider: 'qoder-cn' } }) },
+  })
+  try {
+    const button = container.querySelector('button')
+    assert.match(button.textContent ?? '', /1 新模型/, 'the pill body must carry the count')
+    assert.match(button.textContent ?? '', /Qoder CN · 1,034/, 'the existing two readings must survive')
+
+    await react.act(async () => {
+      button.dispatchEvent(new w.MouseEvent('click', { bubbles: true }))
+    })
+    const panel = container.querySelector('[role="dialog"]')
+    const text = panel.textContent ?? ''
+    assert.match(text, /本机新见/)
+    assert.match(text, /Qwen4 Coder/)
+    assert.ok(!text.includes('Qwen3.5 Coder'), 'an old model must not be named in the new-model row')
+  } finally {
+    unmount()
+  }
+})
+
+test('no new-model field renders the pill exactly as before', async () => {
+  // The backward-compatible shape: an old host sends no `newModelIds`, and the
+  // pill must stay the two readings it always was — no "0 新模型".
+  const { slots, window: w, registered, scope } = await loadCardBundle({ fetchImpl: fetchStub })
+  const card = composerSlotOf(slots)
+  const { container, unmount } = await renderCards({
+    card,
+    registered,
+    scope,
+    window: w,
+    props: { useProjection: () => ({ next: { provider: 'qoder-cn' } }) },
+  })
+  try {
+    const text = container.querySelector('button').textContent ?? ''
+    assert.ok(!/新模型/.test(text), 'no marker when there is nothing new')
+  } finally {
+    unmount()
+  }
+})
+
+test('a new id outside the rendered roster is not counted', async () => {
+  // The host already filters these, and the client filters again: the marker
+  // must never point at a row that is not on screen.
+  const { slots, window: w, registered, scope } = await loadCardBundle({
+    fetchImpl: stubWithNewModels(['qwen4-coder', 'not-in-roster']),
+  })
+  const card = composerSlotOf(slots)
+  const { container, unmount } = await renderCards({
+    card,
+    registered,
+    scope,
+    window: w,
+    props: { useProjection: () => ({ next: { provider: 'qoder-cn' } }) },
+  })
+  try {
+    assert.match(container.querySelector('button').textContent ?? '', /1 新模型/)
+  } finally {
+    unmount()
+  }
+})

@@ -38,6 +38,9 @@ import {
   usableTotal,
   matchingModel,
   offPeakSummary,
+  newModelsOf,
+  newModelNamesOf,
+  NEW_MODEL_LIMIT,
   WARN_SHARE,
 } from '../src/client/pill-model.ts'
 import { zh, en } from '../src/client/copy.ts'
@@ -166,9 +169,53 @@ test('num and usableTotal narrow numbers without inventing values', () => {
 })
 
 /* ---------------------------------------------------------------- */
-/* 6. i18n：pill.* 在 zh/en 都在，key 集一致                           */
+/* 5b. 新模型标记的纯函数                                              */
 /* ---------------------------------------------------------------- */
 
+test('newModelsOf intersects the ids with the rows it was given', () => {
+  const rows = [
+    { id: 'A', name: 'Model A', region: 'qoder-cn' },
+    { id: 'B', name: 'Model B', region: 'qoder-cn' },
+  ]
+  assert.deepEqual(newModelsOf(rows, ['B']), [rows[1]])
+  // Order follows the ROSTER, not the id list: the card's rows are what the
+  // user sees, so the marker's names must read in the same order as the list.
+  assert.deepEqual(newModelsOf(rows, ['B', 'A']).map((row) => row.id), ['A', 'B'])
+  assert.deepEqual(newModelsOf(rows, []), [])
+  assert.deepEqual(newModelsOf(rows, undefined), [], 'an absent field is "no marker", not a crash')
+  assert.deepEqual(newModelsOf(undefined, ['A']), [])
+})
+
+test('newModelsOf matches ids only, never display names', () => {
+  // The id is derived from `display_name` at refresh time; the name is upstream
+  // copy that can change. Matching on the name would report a RENAME as a new
+  // model, which is exactly the false positive this rule prevents.
+  const rows = [{ id: 'ModelA', name: 'Model A' }]
+  assert.deepEqual(newModelsOf(rows, ['Model A']), [])
+  assert.deepEqual(newModelsOf(rows, ['ModelA']), rows)
+})
+
+test('newModelsOf drops empty and non-string ids', () => {
+  const rows = [{ id: 'A', name: 'A' }]
+  assert.deepEqual(newModelsOf(rows, ['', 'A', null, 42]), rows)
+})
+
+test('newModelNamesOf falls back to the id and folds past the limit', () => {
+  const rows = [
+    { id: 'A', name: 'Model A' },
+    { id: 'B', name: '' },
+    { id: 'C' },
+    { id: 'D', name: 'Model D' },
+  ]
+  assert.deepEqual(newModelNamesOf(rows), ['Model A', 'B', 'C'], 'three by default, id as the fallback')
+  assert.equal(newModelNamesOf(rows, 2).length, 2)
+  assert.deepEqual(newModelNamesOf(rows, 0), [])
+  assert.equal(NEW_MODEL_LIMIT, 3)
+})
+
+/* ---------------------------------------------------------------- */
+/* 6. i18n：pill.* 在 zh/en 都在，key 集一致                           */
+/* ---------------------------------------------------------------- */
 test('pill copy exists in both dictionaries with the same key set', () => {
   const zhKeys = Object.keys(zh).filter((key) => key.startsWith('pill.'))
   const enKeys = Object.keys(en).filter((key) => key.startsWith('pill.'))

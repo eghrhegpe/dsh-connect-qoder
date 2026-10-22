@@ -48,6 +48,7 @@ import {
 } from './preferences.ts'
 import type { Preferences } from './preferences.ts'
 import { CatalogStore, CATALOG_TTL_MS as catalogTtlMs } from './catalog-store.ts'
+import { RosterSeenStore } from './roster-seen-store.ts'
 import { normalizeEntry } from './catalog-entry.ts'
 import type { FetchedEntry } from './catalog-entry.ts'
 import type { RouteRelease } from './lifecycle.ts'
@@ -452,6 +453,20 @@ class RegionRuntime {
   logger: PluginLogger
   /** The on-disk catalog cache for this region. */
   catalog: CatalogStore
+  /**
+   * When each model in this region's roster was first seen, so the composer
+   * pill can mark the ones that arrived recently.
+   *
+   * It is the plugin's OWN history, not a gateway fact: Qoder's catalog rows
+   * carry no "listed since" field, so "new to this user" can only mean "absent
+   * from the roster this plugin wrote down last time". The wording downstream
+   * says exactly that ("本机首次见到"), never "网关新增".
+   *
+   * Written on the refresh commit path only — never by the models route, which
+   * is a GET and documents itself as not changing state. See
+   * {@link RegionRuntime.noteRoster}.
+   */
+  rosterSeen: RosterSeenStore
   /** The per-region credential cache. */
   credentials: CredentialCache
   /**
@@ -513,6 +528,16 @@ class RegionRuntime {
     this.logger = ctx.logger
     this.catalog = new CatalogStore({
       path: qoderCatalogPath(`.qoder-catalog.${region.id}.json`),
+      logger: ctx.logger,
+    })
+    /**
+     * The roster history. Per region, like the catalog it describes: the two
+     * editions list different models, so one shared file would have each
+     * region's refresh mark the other's models as "gone" and re-announce them
+     * on the next poll.
+     */
+    this.rosterSeen = new RosterSeenStore({
+      path: qoderCatalogPath(`.qoder-roster-seen.${region.id}.json`),
       logger: ctx.logger,
     })
     /**
@@ -660,7 +685,14 @@ class RegionRuntime {
       // the reader hands over the upstream's raw object, the normalizer is the
       // one that gives it a shape — rather than pretending `fetchModels`
       // already validated fields it deliberately passes through untouched.
-      this.applyOutcome({ ok: true, entries: raw.map((entry) => normalizeEntry(entry as FetchedEntry)) })
+      const entries = raw.map((entry) => normalizeEntry(entry as FetchedEntry))
+      const outcome = this.applyOutcome({ ok: true, entries })
+      // Only a COMMITTED answer updates the history. A refresh whose write was
+      // swallowed still committed in memory (see catalog-refresh.ts), and the
+      // roster on screen is that one — so `committed` is the right gate, not
+      // `lastSaveError`. Noting a failed fetch would be the real bug: it would
+      // diff an answer nobody served.
+      if (outcome.committed) this.noteRoster(entries)
     } catch (error) {
       // A dispose mid-fetch is not a failure worth reporting: the runtime is
       // gone, there is nobody left to tell, and logging it would put a warning
@@ -730,6 +762,44 @@ class RegionRuntime {
       // `committed: false` is the honest answer: nothing observable was
       // recorded, so no caller may treat the previous reading as replaced.
       return { committed: false, previousFailure: undefined }
+    }
+  }
+
+  /**
+   * Record the roster a committed refresh just served, and let the history
+   * answer which models are new.
+   *
+   * Called from {@link RegionRuntime.doRefreshCatalog} only, so the models route
+   * stays a pure read (docs/ROUTES.md row 1: `改状态 否`). A failure here is
+   * logged and swallowed: the marker is a suggestion, and the alternative —
+   * failing the refresh over a history file — would take the model list down
+   * with it. The visible degradation is the marker's absence, which is the same
+   * screen a first-ever run shows.
+   *
+   * @param entries - the entries the refresh committed.
+   */
+  noteRoster(entries: readonly CatalogEntry[]): void {
+    try {
+      this.rosterSeen.note(entries.map((entry) => entry.id))
+    } catch (error) {
+      // `note` is written not to throw; this guard exists because it runs inside
+      // the refresh path whose failure modes are already counted, and an
+      // escaping throw here would be indistinguishable from a fetch failure.
+      this.logger?.warn?.(`dsh-connect-qoder: ${this.region.displayName} roster history update failed`, error)
+    }
+  }
+
+  /**
+   * The ids still reading as "first seen recently", oldest first.
+   *
+   * A read with no write, so the models route can call it on every GET.
+   */
+  newModelIds(): string[] {
+    try {
+      return this.rosterSeen.fresh()
+    } catch (error) {
+      this.logger?.warn?.(`dsh-connect-qoder: ${this.region.displayName} roster history unreadable`, error)
+      return []
     }
   }
 

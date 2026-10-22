@@ -83,6 +83,14 @@ export const zhUsage = {
 	"pill.offpeakActive": "错峰折扣生效 · 费率 {rate}",
 	"pill.offpeakIdle": "错峰窗口 {window} · 未生效",
 	"pill.offpeakRemaining": "剩余 {time}",
+	// 「本机首次见到」的模型标记（胶囊第三段 `· N 新模型` + 面板一行）。措辞刻意
+	// 不说「网关新增」：Qoder 的目录行没有「上架时间」字段，本插件能证明的只有
+	// 「本机上次记下的名册里没有它」，说成网关新增就是替上游宣布一件它没公布的事。
+	// 窗口 7 天，过期自动消失——这是提示不是档案。
+	"pill.newModels": "新模型",
+	"pill.newModelsRow": "本机新见",
+	"pill.newModelsTitle": "本机首次见到的模型：",
+	"pill.newModelsSep": "、",
 	// 本地请求计数器（本客户端经本插件发往上游的每日对话轮数）。上游不给每日上限，
 	// 只报「用完了」，所以这是本地自计——与魔搭社区兄弟插件同款本地口径。桌面端与
 	// Web 端各记各的；官方总量以 Qoder 为准。`requestsToday` 为 `null`（文件尚不存在）
@@ -156,6 +164,13 @@ export const enUsage = {
 	"pill.offpeakActive": "Off-peak active · rate {rate}",
 	"pill.offpeakIdle": "Off-peak window {window} · inactive",
 	"pill.offpeakRemaining": "{time} remaining",
+	// See the zh note: this is "first seen on THIS machine", not "newly listed by
+	// the gateway" — the catalog has no listed-since field, so the weaker claim
+	// is the only true one. Window is 7 days; the marker is a hint, not an archive.
+	"pill.newModels": "new",
+	"pill.newModelsRow": "New here",
+	"pill.newModelsTitle": "First seen on this device: ",
+	"pill.newModelsSep": ", ",
 	// See the zh note: local request counter, self-counted (upstream only says
 	// "used up", never the limit), same local-only accounting as the ModelScope
 	// sibling plugin. Desktop and Web count separately. When the counter is

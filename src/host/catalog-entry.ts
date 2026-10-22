@@ -62,6 +62,14 @@ export interface RuntimeRef {
     region: Region
     catalog: { current(): CatalogEntry[]; fetchedAt?: number }
     refreshFailed?: { reason: RefreshFailureReason; error?: unknown } | undefined
+    /**
+     * The ids this region's roster history still calls "first seen recently".
+     *
+     * Optional: the route's stand-ins (and a host that predates the field) have
+     * no history to read, and a roster with no marker is exactly what a
+     * first-ever run renders — so the absence is a supported state, not a hole.
+     */
+    newModelIds?: () => string[]
   }
 }
 
@@ -256,6 +264,15 @@ export function buildModelRowsPayload({
   const enabled = unwrapVolatile(settings?.enabledModelIds)
   return {
     models,
+    // Which ids the roster history still calls "first seen recently", gathered
+    // from the SAME regions that contributed rows (a switched-off region is
+    // skipped by the loop above, so it must not announce anything here either —
+    // otherwise the pill would mark a model the picker is not offering).
+    //
+    // The pill intersects these with the rows it already has, so the payload
+    // carries ids and nothing else: shipping names too would be a second copy of
+    // the roster's own field, and the two could disagree.
+    newModelIds: newModelIdsOf(runtimes, settings),
     imageOverrides: overrides !== null && typeof overrides === 'object' ? overrides : {},
     useMaximumContextWindow: unwrapVolatile(settings?.useMaximumContextWindow) === true,
     enabledModelIds: enabled !== null && typeof enabled === 'object' ? enabled : {},
@@ -275,6 +292,48 @@ export function buildModelRowsPayload({
     // is dead is exactly the state docs/issues/20 left unexplained.
     providerRegistration: providerRegistrationState(providerRegistrationError),
   }
+}
+
+/**
+ * Which model ids the roster history calls new, over the regions being served.
+ *
+ * Two filters, both deliberate:
+ *  - a switched-off region contributes nothing, matching the row loop — a marker
+ *    for a model the picker is not offering would point at a row the card does
+ *    not show;
+ *  - an id that is NOT in the region's current catalog is dropped. The history
+ *    file can lag the roster (a model retired while this process slept), and
+ *    announcing a model nobody can select is a marker that leads nowhere.
+ *
+ * An absent `newModelIds()` — a stand-in runtime, or a host older than this
+ * field — answers an empty array rather than throwing: the payload builder is
+ * pure and must not fail over a suggestion.
+ *
+ * @param runtimes - `[{ runtime }]`, as passed to the payload builder.
+ * @param settings - the resolved settings, for the per-region switch.
+ * @returns the ids, in the history's own order (oldest first).
+ */
+function newModelIdsOf(runtimes: RuntimeRef[], settings: Preferences | undefined): string[] {
+  const ids: string[] = []
+  for (const { runtime } of runtimes) {
+    if (regionEnabledFor(settings, runtime.region.id) !== true) continue
+    const read = runtime?.newModelIds
+    if (typeof read !== 'function') continue
+    let fresh: unknown
+    try {
+      fresh = read.call(runtime)
+    } catch {
+      // A history read that throws is the same absence as one that has nothing
+      // to say: the marker is skipped, the roster is still served.
+      continue
+    }
+    if (!Array.isArray(fresh)) continue
+    const offered = new Set(runtime.catalog.current().map((entry) => entry.id))
+    for (const id of fresh) {
+      if (typeof id === 'string' && id !== '' && offered.has(id)) ids.push(id)
+    }
+  }
+  return ids
 }
 
 /**

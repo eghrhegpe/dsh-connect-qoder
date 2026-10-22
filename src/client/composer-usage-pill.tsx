@@ -77,6 +77,8 @@ import {
 	usableTotal,
 	matchingModel,
 	offPeakSummary,
+	newModelsOf,
+	newModelNamesOf,
 	type Tier,
 	type ModelSelectionLike
 } from "./pill-model.ts"
@@ -130,6 +132,10 @@ function ActiveUsagePill({ t, region, modelKey }: ActiveUsagePillProps) {
 	// 名册（错峰折扣挂在模型上）。读失败保留上次：读不到就无从判断错峰，但
 	// 也不该把已读到的模型清掉。
 	const [models, setModels] = react.useState<CardModelRow[]>([]);
+	// 宿主认定的「本机首次见到」的模型 id。与名册分开存：名册读失败要保留旧值，
+	// 但新模型标记是**同一份响应**里的字段，两者必须同批落 state，否则会出现
+	// 「标记来自新名册、名字来自旧名册」的错配。
+	const [newModelIds, setNewModelIds] = react.useState<string[]>([]);
 	// 错峰倒计时用的「现在」。只在该 region 确有 promotion 窗口 active 时秒级
 	// 刷新（同卡片 `hasActiveWindow` 门控），否则静态，避免常驻每秒重渲。
 	const [clock, setClock] = react.useState(() => new Date());
@@ -170,9 +176,15 @@ function ActiveUsagePill({ t, region, modelKey }: ActiveUsagePillProps) {
 		modelGeneration.current += 1;
 		const mine = modelGeneration.current;
 		try {
-			const value = await getJson<{ models?: unknown }>(QODER_MODELS_PATH);
+			const value = await getJson<{ models?: unknown; newModelIds?: unknown }>(QODER_MODELS_PATH);
 			if (modelGeneration.current !== mine || !mounted.current) return;
 			setModels(Array.isArray(value.models) ? (value.models as CardModelRow[]) : []);
+			// 字段缺失（旧宿主）与空数组同义：没有标记可挂。
+			setNewModelIds(
+				Array.isArray(value.newModelIds)
+					? (value.newModelIds as unknown[]).filter((id): id is string => typeof id === "string" && id !== "")
+					: []
+			);
 		} catch (error) {
 			// 名册读不到 → 无从判断错峰，面板不画错峰块；不抛、不清掉已读到的名册。
 			// 用户无需看见这份安静，维护者不能——留一条控制台线索。
@@ -252,6 +264,11 @@ function ActiveUsagePill({ t, region, modelKey }: ActiveUsagePillProps) {
 	const regionModels = models.filter((model) => model.region === region);
 	const currentModel = matchingModel(regionModels, modelKey);
 	const offPeak = offPeakSummary(currentModel, clock, t);
+	// 新模型标记：与本区域名册求交（宿主已按 region 过滤过一次，这里再按行过滤
+	// 一次是为了「名册与 id 来自同一次响应」这个不变量），只列前 3 个名字。
+	const newRows = newModelsOf(regionModels, newModelIds);
+	const newNames = newModelNamesOf(newRows);
+	const newTooltip = newNames.length === 0 ? undefined : `${t("pill.newModelsTitle")}${newNames.join(t("pill.newModelsSep"))}`;
 
 	// 签到动作（不只是显示）。与 Plugins 页 `QoderUsagePanel` 走同一条 claim
 	// 路由和同一个「领完立刻重读」约定，所以面板上的按钮和设置卡里的按钮说的
@@ -346,6 +363,22 @@ function ActiveUsagePill({ t, region, modelKey }: ActiveUsagePillProps) {
 				<span style={{ fontSize: "12px", lineHeight: "1", whiteSpace: "nowrap" }}>
 					{`${prefix} · ${display}`}
 				</span>
+				{/* 第三段只在有标记时出现：没标记时胶囊的字符宽度与从前完全一致，
+				    工具栏那 28px 单行预算不受影响。措辞是「本机首次见到」，见
+				    copy-usage.ts 的注——不替上游宣布「网关新增」。 */}
+				{newNames.length > 0 ? (
+					<span
+						title={newTooltip}
+						style={{
+							fontSize: "11px",
+							lineHeight: "1",
+							whiteSpace: "nowrap",
+							color: "var(--dsw-alias-state-success-primary, #12b76a)"
+						}}
+					>
+						{` · ${newNames.length} ${t("pill.newModels")}`}
+					</span>
+				) : null}
 			</button>
 			{/* 折叠态进度条：胶囊主额度是「单个桶」，已用比例取宿主算好的
 			    `percentage`，缺失用 used/total 反推。2px 细条贴底贯穿胶囊，让
@@ -449,6 +482,21 @@ function ActiveUsagePill({ t, region, modelKey }: ActiveUsagePillProps) {
 										})}`
 									: t("pill.offpeakIdle", { window: offPeak.window })}
 							</div>
+						</div>
+					) : null}
+
+					{/* 新模型行：放在余额之上，因为它解释「这个区域为什么值得看一眼」。
+					    只列前几个名字，其余折叠成省略号——名字是举例不是清单。 */}
+					{newNames.length > 0 ? (
+						<div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+							<span style={{ fontSize: "11px", color: "var(--dsw-alias-label-secondary, #61666b)" }}>
+								{t("pill.newModelsRow")}
+							</span>
+							<span style={{ fontSize: "12px", color: "var(--dsw-alias-state-success-primary, #12b76a)" }}>
+								{newRows.length > newNames.length
+									? `${newNames.join(t("pill.newModelsSep"))}…`
+									: newNames.join(t("pill.newModelsSep"))}
+							</span>
 						</div>
 					) : null}
 

@@ -62,6 +62,15 @@ export interface RouteRuntimeLike {
   invalidateUsage(): void
   catalog: { current(): CatalogEntry[]; fetchedAt?: number }
   refreshFailed?: { reason: RefreshFailureReason; error?: unknown } | undefined
+  /**
+   * The ids this region's roster history still calls "first seen recently".
+   *
+   * A read: the history is written on the refresh commit path, never here, so
+   * this route keeps its documented "does not change state" contract. Optional
+   * because a runtime stand-in (and a host older than the field) has no history
+   * to read, which renders exactly like a first-ever run: no marker.
+   */
+  newModelIds?(): string[]
 }
 
 /** One started region, as the handlers see it. */

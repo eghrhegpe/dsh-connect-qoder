@@ -22,7 +22,7 @@
 
 | # | 方法 | 路径 | 改状态 | 谁在调 | 作用 |
 |---|---|---|---|---|---|
-| 1 | GET | `P/models` | 否 | 卡片（`QODER_MODELS_PATH`） | 模型名册：每版区域的行、单价/折扣、可用性、`providerRegistrationError` |
+| 1 | GET | `P/models` | 否 | 卡片（`QODER_MODELS_PATH`） | 模型名册：每版区域的行、单价/折扣、可用性、`newModelIds`（本机首次见到、仍在 7 天窗口内的模型 id）、`providerRegistrationError` |
 | 2 | GET | `P/usage` | 否 | 卡片（`QODER_USAGE_PATH`） | 用量：套餐内额度与剩余 Credits、今日请求/token（含缓存命中）、7 天趋势、签到状态 |
 | 3 | GET | `P/account` | 否 | 卡片（`QODER_ACCOUNT_PATH`） | 账号：每版区域的登录态、`enabledRegions`、标签条文案 |
 | 4 | GET | `P/status` | 否 | **无卡片消费者**，供宿主/诊断 | 注册结果自述：哪几条路由挂上了、provider 注册失败的原因（`QODER_STATUS_PATH` 自身的注释解释了为什么需要它） |

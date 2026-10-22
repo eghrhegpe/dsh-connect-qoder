@@ -131,6 +131,37 @@ export function matchingModel(rows: unknown, modelKey: string | undefined): Card
 	return (rows as CardModelRow[]).find((m) => m != null && (m.id === modelKey || m.name === modelKey))
 }
 
+/** 胶囊里最多列出几个新模型名（第三个之后折叠成省略号）。 */
+export const NEW_MODEL_LIMIT = 3
+
+/**
+ * 「本机首次见到」的那几行，按名册顺序。
+ *
+ * 输入是宿主给的 id 列表（`newModelIds`）与**已经按 region 过滤过的**名册行——
+ * 区域过滤放在调用方，因为「哪些行属于当前区域」是名册的既有事实，这里只做
+ * 集合求交。两边的空值都当「没有新模型」：字段缺失（旧宿主）与空数组在屏幕上
+ * 是同一件事（不挂标记），与首次运行的画面一致。
+ *
+ * 只认 id 精确相等，不做名字匹配：id 是本插件从 `display_name` 机械生成的稳定
+ * 标识，名字会随上游改文案而变——用名字对齐会把「改了个名」误报成「新模型」。
+ */
+export function newModelsOf(rows: unknown, newIds: unknown): CardModelRow[] {
+	if (!Array.isArray(rows) || !Array.isArray(newIds)) return [];
+	const ids = new Set(newIds.filter((id): id is string => typeof id === "string" && id !== ""));
+	if (ids.size === 0) return [];
+	return (rows as CardModelRow[]).filter((row) => row != null && ids.has(row.id))
+}
+
+/**
+ * 新模型在胶囊/面板里的显示名：优先显示名，缺失回落 id；超过
+ * {@link NEW_MODEL_LIMIT} 个只留前几个（面板宽度有限，名字是举例不是清单）。
+ */
+export function newModelNamesOf(rows: CardModelRow[], limit: number = NEW_MODEL_LIMIT): string[] {
+	return rows
+		.slice(0, Math.max(0, limit))
+		.map((row) => (typeof row.name === "string" && row.name !== "" ? row.name : row.id))
+}
+
 /** 错峰摘要：只有模型确实带 promotion 且 `offPeakState` 能算才给值。 */
 export interface OffPeakSummary {
 	active: boolean

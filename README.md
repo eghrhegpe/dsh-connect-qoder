@@ -311,6 +311,7 @@ dsh plugin --profile web add <本仓库路径>
 | `src/host/route-retry-policy.ts` | 本路由**交出去给宿主**的重试策略：只留 `EMPTY_RESPONSE` / `TIMEOUT` / `TRANSPORT`，让插件的队列阶梯成为唯一重试源——宿主默认策略含 `RATE_LIMIT` / `SERVER`，会把已烧完 120 s 预算的队列失败再续 5 次（≈12 min），也会白重试 shim 一律用 502 表达的终态判决；刻意不设 `maxRetries` / `backoff`（未知键会让整个 profile 注册失败；`docs/issues/24`，无 peer 依赖） |
 | `src/host/catalog-entry.ts` | 目录条目的归一化、模型过滤（含按区域开关）与卡片行投影（无 peer 依赖） |
 | `src/host/catalog-store.ts` | 目录的磁盘缓存与原子落盘（无 peer 依赖） |
+| `src/host/roster-seen-store.ts` | 「本机首次见到这个模型」的历史（每区域一份 `.qoder-roster-seen.<region>.json`，id → 首次见到时间戳）：7 天窗口、首次写入只播种不宣布、离开名册即遗忘、不认识的版本不覆盖、超过上限按形状漂移处理（不写不报）；它证明的只是「本机上次记下的名册里没有它」，不是上游的上架时间（无 peer 依赖，`docs/issues/25`） |
 | `src/host/catalog-refresh.ts` | 一次目录刷新的结果如何落地：**空目录也是结果**（照实清空并推进 `fetchedAt`），只有失败才保留上一份，且失败按 `credential` / `no-credential` / `fetch` / `protocol-shape-changed` 分档（无 peer 依赖） |
 | `src/host/credential-cache.ts` | 凭据缓存与「登录失效后重读」规则，以及 env-PAT 兑换的 429 节流闸门（平台自述窗口优先、否则指数退避；401/403 停泊，仅「重读登录」释放；无 peer 依赖）。三源顺序是「桌面端（**没过期**才算在场）→ 插件自有设备登录 → 环境变量 PAT」：过期的桌面端 access token 什么都干不了（连 provider 都不会被注册），所以它不再压住后面两条 |
 | `src/host/credential-kind.ts` | 「这个版本现在是谁在服务」的答案：凭据来源标签 → `desktop` / `device` / `env` 三档。宿主是唯一知道实际解出哪条凭据的一方，所以由它说；卡片与 status 路由据此把「桌面端登录」与「插件自有登录」两本账并成一条，不再靠面板猜（无 peer 依赖） |

@@ -399,6 +399,111 @@ test('a failed provider registration does not change the rows the payload serves
   }
 })
 
+/* ------------------------------------------------------------------ */
+/* 新模型标记（newModelIds）                                           */
+/* ------------------------------------------------------------------ */
+
+/** @typedef {Parameters<typeof buildModelRowsPayload>[0]['runtimes'][number]} RuntimeRef */
+
+/**
+ * 一个带「新模型」读数的 runtime 替身：名册 + 历史读数。
+ *
+ * @param {string} regionId
+ * @param {ReturnType<typeof entryFor>[]} entries
+ * @param {string[]} newIds
+ * @returns {RuntimeRef}
+ */
+function runtimeWithNews(regionId, entries, newIds) {
+  const base = runtimeOf(regionId, entries)
+  return /** @type {RuntimeRef} */ ({
+    runtime: {
+      ...base.runtime,
+      newModelIds: () => newIds,
+    },
+  })
+}
+
+/**
+ * 同一个替身，但历史读数是给定的任意值（用来喂坏读数）。
+ *
+ * @param {ReturnType<typeof runtimeOf>} base
+ * @param {unknown} value
+ * @returns {RuntimeRef}
+ */
+function withHistory(base, value) {
+  return /** @type {RuntimeRef} */ ({
+    runtime: {
+      ...base.runtime,
+      newModelIds: () => /** @type {string[]} */ (value),
+    },
+  })
+}
+
+test('the new-model ids are served alongside the rows', () => {
+  const payload = build([
+    runtimeWithNews('qoder-cn', [entryFor({ key: 'A', name: 'Model A' })], ['ModelA']),
+  ])
+  assert.deepStrictEqual(payload.newModelIds, ['ModelA'])
+})
+
+test('a runtime with no history serves an empty list, not a missing field', () => {
+  // The card's check is an array test, and an absent field would make an old
+  // host and a first-ever run render alike — which is fine — but a MISSING key
+  // would also make `Array.isArray` false for a host that has the field. An
+  // explicit empty array keeps the two states distinguishable in a payload dump.
+  const payload = build([runtimeOf('qoder-cn', [entryFor({ key: 'A', name: 'A' })])])
+  assert.deepStrictEqual(payload.newModelIds, [])
+})
+
+test('a new id that is not in the region roster is dropped', () => {
+  // The history file can lag the roster (a model retired while the process
+  // slept). Announcing it would point at a row the card does not render.
+  const payload = build([
+    runtimeWithNews('qoder-cn', [entryFor({ key: 'A', name: 'A' })], ['Gone', 'A']),
+  ])
+  assert.deepStrictEqual(payload.newModelIds, ['A'])
+})
+
+test('a switched-off region announces nothing', () => {
+  const payload = build(
+    [
+      runtimeWithNews('qoder-cn', [entryFor({ key: 'A', name: 'A' })], ['A']),
+      runtimeWithNews('qoder', [entryFor({ key: 'B', name: 'B' })], ['B']),
+    ],
+    { enabledRegions: { 'qoder-cn': false } },
+  )
+  assert.deepStrictEqual(payload.newModelIds, ['B'], 'the hidden region must not be marked')
+})
+
+test('a history read that throws is skipped, and the roster still serves', () => {
+  const base = runtimeOf('qoder-cn', [entryFor({ key: 'A', name: 'A' })])
+  const runtime = /** @type {RuntimeRef} */ ({
+    runtime: {
+      ...base.runtime,
+      newModelIds: /** @type {() => string[]} */ (() => {
+        throw new Error('history exploded')
+      }),
+    },
+  })
+  const payload = build([runtime])
+  assert.deepStrictEqual(payload.newModelIds, [])
+  assert.strictEqual(/** @type {unknown[]} */ (payload.models).length, 1)
+})
+
+test('a history read that answers nonsense is ignored', () => {
+  const base = runtimeOf('qoder-cn', [entryFor({ key: 'A', name: 'A' })])
+  for (const value of ['A', { A: 1 }, null, 42]) {
+    assert.deepStrictEqual(build([withHistory(base, value)]).newModelIds, [])
+  }
+})
+
+test('an empty-string id is never announced', () => {
+  const payload = build([
+    runtimeWithNews('qoder-cn', [entryFor({ key: 'A', name: 'A' })], ['', 'A']),
+  ])
+  assert.deepStrictEqual(payload.newModelIds, ['A'])
+})
+
 test('the registration verdict never carries an empty or non-string name', () => {
   // "注册失败（）" names nothing. The host narrows here so the card can render
   // the name verbatim without a second-guessing branch of its own.
