@@ -351,10 +351,22 @@ export async function* streamChat(
     // Bound this attempt on its own, and still honour the caller's abort. The
     // returned response body outlives this scope, so the deadline must NOT stay
     // armed for the whole stream — only the handshake up to response headers.
-    // `AbortSignal.any` is used rather than a manual controller so the timer is
-    // always cleared once `fetch` settles, with no listener to leak per attempt.
-    const deadline = AbortSignal.timeout(ATTEMPT_TIMEOUT_MS)
-    const attemptSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline])
+    //
+    // That is why the deadline is a timer this function owns and clears in the
+    // `finally` below, not an `AbortSignal.timeout`. `fetch` keeps the signal
+    // it was given attached to the response body, and nothing clears an
+    // `AbortSignal.timeout` once `fetch` settles: it stayed armed for the whole
+    // stream and cut every answer still streaming when it fired —
+    // `TimeoutError: The operation was aborted due to timeout`, mid-stream,
+    // after output had already been forwarded, where the attempt can no longer
+    // be retried without duplicating it. A long-thinking turn that streams
+    // past the deadline is healthy; a stalled body is the adapter's idle
+    // watchdog's job, not this one's.
+    const deadline = new AbortController()
+    const timer = setTimeout(() => {
+      deadline.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+    }, ATTEMPT_TIMEOUT_MS)
+    const attemptSignal = signal === undefined ? deadline.signal : AbortSignal.any([signal, deadline.signal])
     try {
       response = await fetch(url, {
         method: 'POST',
@@ -376,7 +388,7 @@ export async function* streamChat(
       // A deadline that fired is a stuck attempt, not a code bug. It is
       // retryable for the same reason a reset socket is: nothing was received,
       // so no output is duplicated by trying again.
-      if (deadline.aborted) {
+      if (deadline.signal.aborted) {
         throw new QueueRejection(
           0,
           `no response headers within ${Math.round(ATTEMPT_TIMEOUT_MS / 1000)}s`,
@@ -410,6 +422,10 @@ export async function* streamChat(
       // budget. Only the transport-shaped ones are retried now; everything else
       // propagates and is reported as itself.
       throw error
+    } finally {
+      // Headers are in (or the attempt is over): disarm the deadline before the
+      // body is read, so it can never fire into a live stream.
+      clearTimeout(timer)
     }
 
     if (!response.ok) {

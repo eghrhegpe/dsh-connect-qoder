@@ -30,7 +30,9 @@ export const QUEUE_WAIT_MAX_SLEEP_MS = 30000
 export const QUEUE_WAIT_MIN_SLEEP_MS = 1000
 
 /**
- * How long ONE attempt may take before it is treated as a failed try.
+ * How long ONE attempt may wait for response headers before it is treated as
+ * a failed try. It bounds the handshake only, never the body: an answer that
+ * keeps streaming past it is healthy and must not be cut (see `openAttempt`).
  *
  * Without a per-attempt deadline the queue budget below is fiction: it counts
  * only the sleeps between attempts, so a gateway that accepts the connection
