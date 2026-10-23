@@ -2,7 +2,7 @@
   "name": "@eghrhegpe/dsh-connect-qoder",
   "displayName": "DSH Connect Qoder",
   "description": "Registers Qoder CN and international language models into DSH, fetching each model's rate automatically as it shifts with off-peak hours. It also provides a daily check-in, a usage pill and a credit lookup. Needs the Qoder login state on this machine, or one browser login.",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "icon": "./icon.svg",
   "author": "eghrhegpe",
   "homepage": "https://github.com/eghrhegpe/dsh-connect-qoder",
